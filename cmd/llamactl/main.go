@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/tmlabonte/llamactl/internal/api"
@@ -21,6 +23,10 @@ func main() {
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
+	}
+
+	if err := initDataDir(cfg.DataDir); err != nil {
+		slog.Warn("could not init data dir (expected in local dev)", "error", err)
 	}
 
 	srv := api.NewServer(cfg)
@@ -45,4 +51,18 @@ func main() {
 	<-ctx.Done()
 	slog.Info("shutting down")
 	httpSrv.Shutdown(context.Background())
+}
+
+func initDataDir(dataDir string) error {
+	dirs := []string{
+		filepath.Join(dataDir, "config"),
+		filepath.Join(dataDir, "builds"),
+		filepath.Join(dataDir, "models"),
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("creating %s: %w", dir, err)
+		}
+	}
+	return nil
 }

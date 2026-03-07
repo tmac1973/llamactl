@@ -1,7 +1,9 @@
-.PHONY: build run dev start stop restart clean
+.PHONY: build run dev start stop restart clean \
+       docker docker-run docker-compose-up docker-compose-down docker-compose-logs
 
 PID_FILE = bin/llamactl.pid
 
+# Local development
 build:
 	go build -o bin/llamactl ./cmd/llamactl
 
@@ -27,3 +29,28 @@ restart: stop start
 
 clean: stop
 	rm -rf bin/
+
+# Container builds
+docker:
+	docker build -t llamactl .
+
+docker-run: docker
+	docker run -it --rm \
+		-p 3000:3000 \
+		-p 8080:8080 \
+		-v llamactl-data:/data \
+		--device /dev/kfd \
+		--device /dev/dri \
+		--group-add video \
+		--group-add render \
+		--security-opt seccomp=unconfined \
+		llamactl
+
+docker-compose-up:
+	docker compose up -d
+
+docker-compose-down:
+	docker compose down
+
+docker-compose-logs:
+	docker compose logs -f

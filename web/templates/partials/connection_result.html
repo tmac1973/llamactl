@@ -1,0 +1,7 @@
+{{define "connection_result"}}
+{{if .OK}}
+<p><ins>Connected</ins> — {{.Latency}}</p>
+{{else}}
+<p><del>Failed</del> — {{.Error}}</p>
+{{end}}
+{{end}}

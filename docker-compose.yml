@@ -1,0 +1,24 @@
+services:
+  llamactl:
+    build: .
+    container_name: llamactl
+    ports:
+      - "3000:3000"   # LlamaCtl management UI
+      - "8080:8080"   # llama-server inference + chat UI
+    volumes:
+      - llamactl-data:/data
+    devices:
+      - /dev/kfd:/dev/kfd       # AMD GPU kernel interface
+      - /dev/dri:/dev/dri       # DRM render nodes
+    group_add:
+      - video                   # GPU access group
+      - render                  # render node access
+    security_opt:
+      - seccomp=unconfined      # required for ROCm
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+    restart: unless-stopped
+
+volumes:
+  llamactl-data:
+    driver: local

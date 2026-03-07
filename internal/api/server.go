@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log/slog"
@@ -127,10 +128,15 @@ func (s *Server) buildRouter() chi.Router {
 			r.Get("/logs", s.handleServiceLogs)
 			r.Get("/health", s.handleServiceHealth)
 		})
-		// Phase 5: r.Route("/settings", ...)
+		r.Route("/settings", func(r chi.Router) {
+			r.Get("/", s.handleGetSettings)
+			r.Put("/", s.handleUpdateSettings)
+			r.Post("/test-connection", s.handleTestConnection)
+		})
 	})
 
-	// Phase 5: r.Handle("/v1/*", proxyHandler)
+	// OpenAI-compatible proxy with optional API key auth
+	r.Mount("/v1", s.apiKeyAuth(s.newProxyHandler()))
 
 	return r
 }
@@ -170,7 +176,22 @@ func (s *Server) handleServicePage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
-	s.render(w, "settings.html", pageData{Title: "Settings", Nav: "settings"})
+	data := struct {
+		pageData
+		ProxyEndpoint string
+		LlamaPort     int
+		HasAPIKey     bool
+		HasHFToken    bool
+		DataDir       string
+	}{
+		pageData:      pageData{Title: "Settings", Nav: "settings"},
+		ProxyEndpoint: fmt.Sprintf("http://localhost%s/v1", s.cfg.ListenAddr),
+		LlamaPort:     s.cfg.LlamaPort,
+		HasAPIKey:     s.cfg.APIKey != "",
+		HasHFToken:    s.cfg.HFToken != "",
+		DataDir:       s.cfg.DataDir,
+	}
+	s.render(w, "settings.html", data)
 }
 
 // render executes the "layout" template for the given page.

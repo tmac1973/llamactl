@@ -1,4 +1,53 @@
 {{define "content"}}
 <h1>Settings</h1>
-<p>Configure LlamaCtl and proxy settings.</p>
+
+<article>
+    <header>OpenAI-Compatible Proxy</header>
+    <p>Point your tools at this endpoint:</p>
+    <pre>{{.ProxyEndpoint}}</pre>
+
+    <form hx-post="/api/settings/test-connection"
+          hx-target="#connection-result"
+          hx-swap="innerHTML">
+        <button type="submit" class="outline">Test Connection</button>
+    </form>
+    <div id="connection-result"></div>
+</article>
+
+<article>
+    <header>API Key Authentication</header>
+    <p>Optional Bearer token required for /v1/* requests.</p>
+    <form hx-put="/api/settings"
+          hx-target="#api-key-status"
+          hx-swap="innerHTML">
+        <label>
+            API Key
+            <input type="password" name="api_key"
+                   placeholder="{{if .HasAPIKey}}(key is set — leave blank to keep){{else}}No key set (proxy is open){{end}}">
+        </label>
+        <button type="submit">Save</button>
+    </form>
+    <div id="api-key-status"></div>
+</article>
+
+<article>
+    <header>HuggingFace Token</header>
+    <p>Required for gated model downloads.</p>
+    <form hx-put="/api/settings"
+          hx-target="#hf-token-status"
+          hx-swap="innerHTML">
+        <label>
+            HF Token
+            <input type="password" name="hf_token"
+                   placeholder="{{if .HasHFToken}}(token is set){{else}}hf_...{{end}}">
+        </label>
+        <button type="submit">Save</button>
+    </form>
+    <div id="hf-token-status"></div>
+</article>
+
+<article>
+    <header>Data Directory</header>
+    <p><code>{{.DataDir}}</code></p>
+</article>
 {{end}}
