@@ -1,0 +1,67 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LlamaCtl{{if .Title}} — {{.Title}}{{end}}</title>
+    <link rel="stylesheet" href="/static/pico.min.css">
+    <script src="/static/htmx.min.js"></script>
+    <script src="/static/htmx-sse.js"></script>
+    <style>
+        body { display: flex; min-height: 100vh; margin: 0; }
+        nav.sidebar {
+            width: 220px;
+            min-width: 220px;
+            padding: 1rem;
+            border-right: 1px solid var(--pico-muted-border-color);
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: stretch;
+        }
+        nav.sidebar ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        nav.sidebar li { padding: 0; }
+        nav.sidebar a {
+            display: block;
+            padding: 0.4rem 0.6rem;
+            border-radius: 0.25rem;
+            text-decoration: none;
+        }
+        nav.sidebar a:hover { background: var(--pico-card-background-color); }
+        nav.sidebar a[aria-current="page"] {
+            font-weight: bold;
+            background: var(--pico-primary-background);
+            color: var(--pico-primary-inverse);
+        }
+        main { flex: 1; padding: 1.5rem; max-width: 1200px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <nav class="sidebar">
+        <hgroup>
+            <h3>LlamaCtl</h3>
+            <p>Inference Manager</p>
+        </hgroup>
+        <ul>
+            <li><a href="/"{{if eq .Nav "home"}} aria-current="page"{{end}}>Dashboard</a></li>
+            <li><a href="/builds"{{if eq .Nav "builds"}} aria-current="page"{{end}}>Builds</a></li>
+            <li><a href="/models"{{if eq .Nav "models"}} aria-current="page"{{end}}>Models</a></li>
+            <li><a href="/models/browse"{{if eq .Nav "browse"}} aria-current="page"{{end}}>Browse HF</a></li>
+            <li><a href="/service"{{if eq .Nav "service"}} aria-current="page"{{end}}>Service</a></li>
+            <li><a href="/settings"{{if eq .Nav "settings"}} aria-current="page"{{end}}>Settings</a></li>
+        </ul>
+    </nav>
+    <main class="container">
+        {{template "content" .}}
+    </main>
+</body>
+</html>
+{{end}}
