@@ -1,0 +1,37 @@
+{{define "hf_files"}}
+<article>
+    <header>{{.ID}} — Files</header>
+    <table role="grid">
+        <thead>
+            <tr><th>File</th><th>Quant</th><th>Size</th><th>VRAM Est.</th><th>Fit</th><th></th></tr>
+        </thead>
+        <tbody>
+            {{range .Files}}
+            <tr>
+                <td><small>{{.Filename}}</small></td>
+                <td><kbd>{{.Quant}}</kbd></td>
+                <td>{{printf "%.1f" (divGB .Size)}} GB</td>
+                <td>{{printf "%.1f" .VRAMEstGB}} GB</td>
+                <td>
+                    {{if eq (vramFit .VRAMEstGB) "single"}}
+                        <ins>1 GPU</ins>
+                    {{else if eq (vramFit .VRAMEstGB) "dual"}}
+                        <mark>2 GPU</mark>
+                    {{else}}
+                        <del>Too Large</del>
+                    {{end}}
+                </td>
+                <td>
+                    <button hx-post="/api/hf/download"
+                            hx-vals='{"model_id":"{{$.ID}}","filename":"{{.Filename}}"}'
+                            hx-target="#download-progress"
+                            hx-swap="innerHTML">
+                        Download
+                    </button>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</article>
+{{end}}

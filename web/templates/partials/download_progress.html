@@ -1,0 +1,12 @@
+{{define "download_progress"}}
+<article>
+    <header>Downloading {{.Filename}}</header>
+    <div hx-ext="sse"
+         sse-connect="/api/hf/download/{{.DownloadID}}/progress"
+         sse-swap="progress"
+         hx-swap="innerHTML">
+        <progress></progress>
+        <small>Starting...</small>
+    </div>
+</article>
+{{end}}

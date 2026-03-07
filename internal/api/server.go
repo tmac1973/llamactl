@@ -10,20 +10,28 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/tmlabonte/llamactl/internal/builder"
 	"github.com/tmlabonte/llamactl/internal/config"
+	"github.com/tmlabonte/llamactl/internal/huggingface"
+	"github.com/tmlabonte/llamactl/internal/models"
 	"github.com/tmlabonte/llamactl/web"
 )
 
 type Server struct {
-	cfg     *config.Config
-	pages   map[string]*template.Template
-	router  chi.Router
-	builder *builder.Builder
+	cfg        *config.Config
+	pages      map[string]*template.Template
+	router     chi.Router
+	builder    *builder.Builder
+	hfClient   *huggingface.Client
+	downloader *huggingface.Downloader
+	registry   *models.Registry
 }
 
 func NewServer(cfg *config.Config) *Server {
 	s := &Server{
-		cfg:     cfg,
-		builder: builder.NewBuilder(cfg.DataDir),
+		cfg:        cfg,
+		builder:    builder.NewBuilder(cfg.DataDir),
+		hfClient:   huggingface.NewClient(cfg.HFToken),
+		downloader: huggingface.NewDownloader(cfg.DataDir, cfg.HFToken),
+		registry:   models.NewRegistry(cfg.DataDir),
 	}
 	s.pages = s.parseTemplates()
 	s.router = s.buildRouter()
@@ -33,7 +41,14 @@ func NewServer(cfg *config.Config) *Server {
 // parseTemplates parses the layout+partials as a base, then clones it
 // per page so each page's {{define "content"}} doesn't collide.
 func (s *Server) parseTemplates() map[string]*template.Template {
-	base := template.Must(template.ParseFS(web.Templates,
+	funcMap := template.FuncMap{
+		"divGB": func(bytes int64) float64 {
+			return float64(bytes) / (1024 * 1024 * 1024)
+		},
+		"vramFit": models.VRAMFitCategory,
+	}
+
+	base := template.Must(template.New("").Funcs(funcMap).ParseFS(web.Templates,
 		"templates/layout.html",
 		"templates/partials/*.html",
 	))
@@ -86,7 +101,18 @@ func (s *Server) buildRouter() chi.Router {
 			r.Get("/{id}/logs", s.handleBuildLogs)
 			r.Delete("/{id}", s.handleDeleteBuild)
 		})
-		// Phase 3: r.Route("/models", ...), r.Route("/hf", ...)
+		r.Route("/models", func(r chi.Router) {
+			r.Get("/", s.handleListModels)
+			r.Get("/{id}", s.handleGetModel)
+			r.Delete("/{id}", s.handleDeleteModel)
+		})
+		r.Route("/hf", func(r chi.Router) {
+			r.Get("/search", s.handleHFSearch)
+			r.Get("/model", s.handleHFModel)
+			r.Post("/download", s.handleHFDownload)
+			r.Get("/download/{id}/progress", s.handleHFDownloadProgress)
+			r.Delete("/download/{id}", s.handleHFDownloadCancel)
+		})
 		// Phase 4: r.Route("/service", ...)
 		// Phase 5: r.Route("/settings", ...)
 	})

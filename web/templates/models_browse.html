@@ -1,4 +1,19 @@
 {{define "content"}}
 <h1>Browse HuggingFace</h1>
-<p>Search and download GGUF models from HuggingFace.</p>
+
+<form hx-get="/api/hf/search"
+      hx-target="#hf-results"
+      hx-swap="innerHTML"
+      hx-indicator="#search-spinner">
+    <div class="grid">
+        <input type="search" name="q" placeholder="Search GGUF models..." autofocus>
+        <button type="submit">Search</button>
+    </div>
+</form>
+
+<span id="search-spinner" class="htmx-indicator" aria-busy="true">Searching...</span>
+
+<div id="hf-results"></div>
+<div id="hf-detail"></div>
+<div id="download-progress"></div>
 {{end}}

@@ -1,0 +1,19 @@
+{{define "model_card"}}
+<tr>
+    <td>{{.ModelID}}</td>
+    <td><kbd>{{.Quant}}</kbd></td>
+    <td>{{printf "%.1f" .VRAMEstGB}} GB</td>
+    <td>{{printf "%.1f" (divGB .SizeBytes)}} GB</td>
+    <td>
+        <div role="group">
+            <button class="outline secondary"
+                    hx-delete="/api/models/{{.ID}}"
+                    hx-confirm="Delete this model?"
+                    hx-target="closest tr"
+                    hx-swap="outerHTML">
+                Delete
+            </button>
+        </div>
+    </td>
+</tr>
+{{end}}

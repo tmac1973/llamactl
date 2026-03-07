@@ -1,4 +1,7 @@
 {{define "content"}}
-<h1>Models</h1>
-<p>Manage locally downloaded GGUF models.</p>
+<h1>Local Models</h1>
+
+<div id="model-list" hx-get="/api/models" hx-trigger="load" hx-swap="innerHTML">
+    Loading...
+</div>
 {{end}}

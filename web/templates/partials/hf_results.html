@@ -1,0 +1,29 @@
+{{define "hf_results"}}
+{{if .Results}}
+<table role="grid">
+    <thead>
+        <tr><th>Model</th><th>Downloads</th><th>Likes</th><th>License</th><th></th></tr>
+    </thead>
+    <tbody>
+        {{range .Results}}
+        <tr>
+            <td>{{.ID}}</td>
+            <td>{{.Downloads}}</td>
+            <td>{{.Likes}}</td>
+            <td>{{.License}}</td>
+            <td>
+                <button hx-get="/api/hf/model?id={{.ID}}"
+                        hx-target="#hf-detail"
+                        hx-swap="innerHTML"
+                        class="outline">
+                    Files
+                </button>
+            </td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{else}}
+<p>No GGUF models found.</p>
+{{end}}
+{{end}}
