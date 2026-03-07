@@ -1,0 +1,61 @@
+{{define "model_config"}}
+<form hx-put="/api/models/{{.ModelID}}/config"
+      hx-target="this"
+      hx-swap="outerHTML">
+
+    <label>
+        Build
+        <select name="build_id">
+            <option value="">Auto (first available)</option>
+            {{range .AvailableBuilds}}
+            <option value="{{.ID}}" {{if eq .ID $.Config.BuildID}}selected{{end}}>
+                {{.ID}} ({{.Profile}})
+            </option>
+            {{end}}
+        </select>
+    </label>
+
+    <div class="grid">
+        <label>
+            GPU Layers
+            <input type="number" name="gpu_layers" value="{{.Config.GPULayers}}"
+                   min="0" max="999" placeholder="999 = all layers">
+        </label>
+        <label>
+            Context Size
+            <input type="number" name="context_size" value="{{.Config.ContextSize}}"
+                   min="512" step="512" placeholder="8192">
+        </label>
+    </div>
+
+    <div class="grid">
+        <label>
+            Tensor Split
+            <input type="text" name="tensor_split" value="{{.Config.TensorSplit}}"
+                   placeholder="0.5,0.5 (for dual GPU)">
+        </label>
+        <label>
+            Threads
+            <input type="number" name="threads" value="{{.Config.Threads}}"
+                   min="1" placeholder="8">
+        </label>
+    </div>
+
+    <label>
+        Extra Flags
+        <input type="text" name="extra_flags" value="{{.Config.ExtraFlags}}"
+               placeholder="--flash-attn --cont-batching">
+    </label>
+
+    <div role="group">
+        <button type="submit">Save Config</button>
+        <button type="button"
+                hx-put="/api/models/{{.ModelID}}/activate"
+                hx-target="#service-status"
+                hx-swap="innerHTML"
+                class="outline">
+            Save &amp; Restart
+        </button>
+    </div>
+</form>
+{{end}}

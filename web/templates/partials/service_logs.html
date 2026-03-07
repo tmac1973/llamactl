@@ -1,0 +1,7 @@
+{{define "service_logs"}}
+<div hx-ext="sse"
+     sse-connect="/api/service/logs"
+     sse-swap="message"
+     hx-swap="beforeend">
+</div>
+{{end}}

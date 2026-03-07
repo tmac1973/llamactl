@@ -1,4 +1,21 @@
 {{define "content"}}
 <h1>Service</h1>
-<p>Control the llama-server inference process.</p>
+
+<div id="service-status"
+     hx-get="/api/service/status"
+     hx-trigger="load, every 5s"
+     hx-swap="innerHTML">
+    Loading...
+</div>
+
+<article>
+    <header>Server Logs</header>
+    <pre id="service-logs"
+         hx-ext="sse"
+         sse-connect="/api/service/logs"
+         sse-swap="message"
+         hx-swap="beforeend"
+         style="max-height: 500px; overflow-y: auto; font-size: 0.85rem;">
+    </pre>
+</article>
 {{end}}

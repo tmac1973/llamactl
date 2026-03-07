@@ -6,7 +6,14 @@
     <td>{{printf "%.1f" (divGB .SizeBytes)}} GB</td>
     <td>
         <div role="group">
-            <button class="outline secondary"
+            <button type="button"
+                    hx-put="/api/models/{{.ID}}/activate"
+                    hx-target="#service-status"
+                    hx-swap="innerHTML"
+                    hx-confirm="Activate this model? This will restart the service.">
+                Activate
+            </button>
+            <button type="button" class="outline secondary"
                     hx-delete="/api/models/{{.ID}}"
                     hx-confirm="Delete this model?"
                     hx-target="closest tr"

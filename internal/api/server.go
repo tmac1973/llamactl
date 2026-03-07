@@ -12,6 +12,7 @@ import (
 	"github.com/tmlabonte/llamactl/internal/config"
 	"github.com/tmlabonte/llamactl/internal/huggingface"
 	"github.com/tmlabonte/llamactl/internal/models"
+	"github.com/tmlabonte/llamactl/internal/process"
 	"github.com/tmlabonte/llamactl/web"
 )
 
@@ -23,6 +24,7 @@ type Server struct {
 	hfClient   *huggingface.Client
 	downloader *huggingface.Downloader
 	registry   *models.Registry
+	process    *process.Manager
 }
 
 func NewServer(cfg *config.Config) *Server {
@@ -32,6 +34,7 @@ func NewServer(cfg *config.Config) *Server {
 		hfClient:   huggingface.NewClient(cfg.HFToken),
 		downloader: huggingface.NewDownloader(cfg.DataDir, cfg.HFToken),
 		registry:   models.NewRegistry(cfg.DataDir),
+		process:    process.NewManager(),
 	}
 	s.pages = s.parseTemplates()
 	s.router = s.buildRouter()
@@ -105,6 +108,9 @@ func (s *Server) buildRouter() chi.Router {
 			r.Get("/", s.handleListModels)
 			r.Get("/{id}", s.handleGetModel)
 			r.Delete("/{id}", s.handleDeleteModel)
+			r.Put("/{id}/activate", s.handleActivateModel)
+			r.Get("/{id}/config", s.handleGetModelConfig)
+			r.Put("/{id}/config", s.handleUpdateModelConfig)
 		})
 		r.Route("/hf", func(r chi.Router) {
 			r.Get("/search", s.handleHFSearch)
@@ -113,7 +119,14 @@ func (s *Server) buildRouter() chi.Router {
 			r.Get("/download/{id}/progress", s.handleHFDownloadProgress)
 			r.Delete("/download/{id}", s.handleHFDownloadCancel)
 		})
-		// Phase 4: r.Route("/service", ...)
+		r.Route("/service", func(r chi.Router) {
+			r.Get("/status", s.handleServiceStatus)
+			r.Post("/start", s.handleServiceStart)
+			r.Post("/stop", s.handleServiceStop)
+			r.Post("/restart", s.handleServiceRestart)
+			r.Get("/logs", s.handleServiceLogs)
+			r.Get("/health", s.handleServiceHealth)
+		})
 		// Phase 5: r.Route("/settings", ...)
 	})
 

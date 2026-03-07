@@ -1,0 +1,56 @@
+{{define "service_status"}}
+<article>
+    <header>
+        Service Status:
+        {{if eq .State "running"}}
+            <ins>Running</ins>
+        {{else if eq .State "starting"}}
+            <mark>Starting...</mark>
+        {{else if eq .State "failed"}}
+            <del>Failed</del>
+        {{else}}
+            Stopped
+        {{end}}
+    </header>
+
+    {{if .Model}}
+    <p>Model: <strong>{{.Model}}</strong></p>
+    {{end}}
+    {{if .BuildID}}
+    <p>Build: <kbd>{{.BuildID}}</kbd></p>
+    {{end}}
+    {{if .Uptime}}
+    <p>Uptime: {{.Uptime}}</p>
+    {{end}}
+    {{if .Error}}
+    <p><small style="color: var(--pico-del-color)">{{.Error}}</small></p>
+    {{end}}
+
+    <div role="group">
+        {{if ne .State "running"}}
+        <button type="button"
+                hx-post="/api/service/start"
+                hx-target="#service-status"
+                hx-swap="innerHTML">
+            Start
+        </button>
+        {{end}}
+        {{if eq .State "running"}}
+        <button type="button"
+                hx-post="/api/service/stop"
+                hx-target="#service-status"
+                hx-swap="innerHTML"
+                class="secondary">
+            Stop
+        </button>
+        <button type="button"
+                hx-post="/api/service/restart"
+                hx-target="#service-status"
+                hx-swap="innerHTML"
+                class="outline">
+            Restart
+        </button>
+        {{end}}
+    </div>
+</article>
+{{end}}
