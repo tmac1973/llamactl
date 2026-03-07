@@ -1,0 +1,19 @@
+{{define "build_card"}}
+<tr>
+    <td><kbd>{{.ID}}</kbd></td>
+    <td><mark>{{.Profile}}</mark></td>
+    <td><code>{{slice .GitSHA 0 7}}</code></td>
+    <td>{{.GitRef}}</td>
+    <td>{{.Status}}</td>
+    <td>{{.StartedAt.Format "2006-01-02 15:04"}}</td>
+    <td>
+        <button class="outline secondary"
+                hx-delete="/api/builds/{{.ID}}"
+                hx-confirm="Delete this build?"
+                hx-target="closest tr"
+                hx-swap="outerHTML">
+            Delete
+        </button>
+    </td>
+</tr>
+{{end}}

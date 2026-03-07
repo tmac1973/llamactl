@@ -1,4 +1,37 @@
 {{define "content"}}
 <h1>Builds</h1>
-<p>Manage llama.cpp builds. Compile llama.cpp against different GPU backends.</p>
+
+<article>
+    <header>New Build</header>
+    <form hx-post="/api/builds"
+          hx-target="#build-output"
+          hx-swap="innerHTML">
+        <div class="grid">
+            <label>
+                Profile
+                <select name="profile">
+                    {{range .Backends}}
+                    {{if .Available}}
+                    <option value="{{.Name}}">{{.Name}}{{if .Info}} ({{.Info}}){{end}}</option>
+                    {{end}}
+                    {{end}}
+                </select>
+            </label>
+            <label>
+                Git Ref
+                <input type="text" name="git_ref" value="latest" placeholder="tag, branch, or commit">
+            </label>
+        </div>
+        <button type="submit">Start Build</button>
+    </form>
+</article>
+
+<div id="build-output"></div>
+
+<article>
+    <header>Compiled Builds</header>
+    <div id="build-list" hx-get="/api/builds" hx-trigger="load" hx-swap="innerHTML">
+        Loading...
+    </div>
+</article>
 {{end}}

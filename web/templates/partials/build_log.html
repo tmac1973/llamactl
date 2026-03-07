@@ -1,0 +1,12 @@
+{{define "build_log"}}
+<article>
+    <header>Build Log — {{.ID}}</header>
+    <pre id="log-output"
+         hx-ext="sse"
+         sse-connect="/api/builds/{{.ID}}/logs"
+         sse-swap="message"
+         hx-swap="beforeend"
+         style="max-height: 400px; overflow-y: auto; font-size: 0.85rem;">
+    </pre>
+</article>
+{{end}}

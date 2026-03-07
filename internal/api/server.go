@@ -8,18 +8,23 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/tmlabonte/llamactl/internal/builder"
 	"github.com/tmlabonte/llamactl/internal/config"
 	"github.com/tmlabonte/llamactl/web"
 )
 
 type Server struct {
-	cfg    *config.Config
-	pages  map[string]*template.Template
-	router chi.Router
+	cfg     *config.Config
+	pages   map[string]*template.Template
+	router  chi.Router
+	builder *builder.Builder
 }
 
 func NewServer(cfg *config.Config) *Server {
-	s := &Server{cfg: cfg}
+	s := &Server{
+		cfg:     cfg,
+		builder: builder.NewBuilder(cfg.DataDir),
+	}
 	s.pages = s.parseTemplates()
 	s.router = s.buildRouter()
 	return s
@@ -72,9 +77,15 @@ func (s *Server) buildRouter() chi.Router {
 	r.Get("/service", s.handleServicePage)
 	r.Get("/settings", s.handleSettingsPage)
 
-	// API routes mounted in later phases
+	// API routes
 	r.Route("/api", func(r chi.Router) {
-		// Phase 2: r.Route("/builds", ...)
+		r.Route("/builds", func(r chi.Router) {
+			r.Get("/", s.handleListBuilds)
+			r.Post("/", s.handleTriggerBuild)
+			r.Get("/backends", s.handleListBackends)
+			r.Get("/{id}/logs", s.handleBuildLogs)
+			r.Delete("/{id}", s.handleDeleteBuild)
+		})
 		// Phase 3: r.Route("/models", ...), r.Route("/hf", ...)
 		// Phase 4: r.Route("/service", ...)
 		// Phase 5: r.Route("/settings", ...)
@@ -97,7 +108,14 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBuildsPage(w http.ResponseWriter, r *http.Request) {
-	s.render(w, "builds.html", pageData{Title: "Builds", Nav: "builds"})
+	data := struct {
+		pageData
+		Backends []builder.Backend
+	}{
+		pageData: pageData{Title: "Builds", Nav: "builds"},
+		Backends: builder.DetectBackends(),
+	}
+	s.render(w, "builds.html", data)
 }
 
 func (s *Server) handleModelsPage(w http.ResponseWriter, r *http.Request) {
