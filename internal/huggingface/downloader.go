@@ -30,10 +30,14 @@ type download struct {
 	cancel context.CancelFunc
 }
 
+// CompletionFunc is called when a download finishes successfully.
+type CompletionFunc func(downloadID, modelID, filename string, sizeBytes int64)
+
 // Downloader manages resumable GGUF downloads from HuggingFace.
 type Downloader struct {
-	dataDir string
-	token   string
+	dataDir    string
+	token      string
+	onComplete CompletionFunc
 
 	mu         sync.Mutex
 	active     map[string]*download
@@ -49,6 +53,11 @@ func NewDownloader(dataDir, token string) *Downloader {
 	}
 }
 
+// SetOnComplete registers a callback invoked when a download finishes.
+func (d *Downloader) SetOnComplete(fn CompletionFunc) {
+	d.onComplete = fn
+}
+
 // Start begins a download in the background. Returns the download ID.
 func (d *Downloader) Start(ctx context.Context, modelID, filename string) (string, error) {
 	// Create a stable download ID
@@ -61,7 +70,7 @@ func (d *Downloader) Start(ctx context.Context, modelID, filename string) (strin
 		return downloadID, fmt.Errorf("download already in progress")
 	}
 
-	dlCtx, cancel := context.WithCancel(ctx)
+	dlCtx, cancel := context.WithCancel(context.Background())
 	progressCh := make(chan DownloadStatus, 64)
 	d.active[downloadID] = &download{cancel: cancel}
 	d.progressCh[downloadID] = progressCh
@@ -99,8 +108,15 @@ func (d *Downloader) run(ctx context.Context, downloadID, modelID, filename stri
 		close(progressCh)
 		d.mu.Lock()
 		delete(d.active, downloadID)
-		delete(d.progressCh, downloadID)
 		d.mu.Unlock()
+
+		// Keep channel in map briefly so late SSE connections can still find it
+		go func() {
+			time.Sleep(30 * time.Second)
+			d.mu.Lock()
+			delete(d.progressCh, downloadID)
+			d.mu.Unlock()
+		}()
 	}()
 
 	sendProgress := func(status DownloadStatus) {
@@ -260,4 +276,8 @@ func (d *Downloader) run(ctx context.Context, downloadID, modelID, filename stri
 	})
 
 	slog.Info("download complete", "model", modelID, "file", filename, "size", downloaded)
+
+	if d.onComplete != nil {
+		d.onComplete(downloadID, modelID, filename, downloaded)
+	}
 }

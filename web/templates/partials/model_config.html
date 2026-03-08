@@ -51,10 +51,10 @@
         <button type="submit">Save Config</button>
         <button type="button"
                 hx-put="/api/models/{{.ModelID}}/activate"
-                hx-target="#service-status"
+                hx-target="#activate-status"
                 hx-swap="innerHTML"
                 class="outline">
-            Save &amp; Restart
+            Save &amp; Activate
         </button>
     </div>
 </form>

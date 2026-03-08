@@ -167,18 +167,33 @@ func (b *Builder) runBuild(ctx context.Context, prof BuildProfile, srcDir string
 		return
 	}
 
-	// ninja
+	// ninja — build all targets (target names vary across llama.cpp versions)
 	sendLog("==> Running ninja...")
-	if err := b.runCmd(ctx, buildDir, logCh, "ninja", "-j", fmt.Sprintf("%d", numCPU()), "llama-server"); err != nil {
+	if err := b.runCmd(ctx, buildDir, logCh, "ninja", "-j", fmt.Sprintf("%d", numCPU())); err != nil {
 		b.finishBuild(result, "failed", fmt.Sprintf("ninja failed: %v", err))
 		sendLog(fmt.Sprintf("==> ninja FAILED: %v", err))
 		return
 	}
 
-	// Install binary
+	// Install binary — check common locations across llama.cpp versions
 	outDir := filepath.Join(b.dataDir, "builds", result.ID)
 	os.MkdirAll(outDir, 0o755)
-	srcBin := filepath.Join(buildDir, "bin", "llama-server")
+
+	srcBin := ""
+	for _, candidate := range []string{
+		filepath.Join(buildDir, "bin", "llama-server"),
+		filepath.Join(buildDir, "bin", "server"),
+	} {
+		if _, err := os.Stat(candidate); err == nil {
+			srcBin = candidate
+			break
+		}
+	}
+	if srcBin == "" {
+		b.finishBuild(result, "failed", "llama-server binary not found in build output")
+		sendLog(fmt.Sprintf("==> Install FAILED: llama-server binary not found"))
+		return
+	}
 	dstBin := filepath.Join(outDir, "llama-server")
 
 	if err := copyFile(srcBin, dstBin); err != nil {
@@ -187,6 +202,35 @@ func (b *Builder) runBuild(ctx context.Context, prof BuildProfile, srcDir string
 		return
 	}
 	os.Chmod(dstBin, 0o755)
+
+	// Copy shared libraries the binary depends on
+	libDir := filepath.Join(buildDir, "lib")
+	if entries, err := os.ReadDir(libDir); err == nil {
+		for _, e := range entries {
+			name := e.Name()
+			if strings.HasSuffix(name, ".so") || strings.Contains(name, ".so.") {
+				src := filepath.Join(libDir, name)
+				dst := filepath.Join(outDir, name)
+				if err := copyFile(src, dst); err == nil {
+					sendLog(fmt.Sprintf("    Installed lib: %s", name))
+				}
+			}
+		}
+	}
+	// Also check bin/ for .so files (some versions put them there)
+	binDir := filepath.Dir(srcBin)
+	if entries, err := os.ReadDir(binDir); err == nil {
+		for _, e := range entries {
+			name := e.Name()
+			if strings.HasSuffix(name, ".so") || strings.Contains(name, ".so.") {
+				src := filepath.Join(binDir, name)
+				dst := filepath.Join(outDir, name)
+				if err := copyFile(src, dst); err == nil {
+					sendLog(fmt.Sprintf("    Installed lib: %s", name))
+				}
+			}
+		}
+	}
 
 	// Cleanup temp build dir
 	os.RemoveAll(buildDir)
@@ -225,8 +269,9 @@ func (b *Builder) ensureRepo(ctx context.Context, srcDir string, logCh chan stri
 
 func (b *Builder) checkoutRef(ctx context.Context, srcDir string, ref string, logCh chan string) (string, error) {
 	if ref == "latest" {
-		// Find latest release tag
-		out, err := exec.CommandContext(ctx, "git", "-C", srcDir, "tag", "--sort=-v:refname").Output()
+		// Find latest b* release tag (current llama.cpp release format).
+		// Use --sort=-v:refname for proper version ordering.
+		out, err := exec.CommandContext(ctx, "git", "-C", srcDir, "tag", "--sort=-v:refname", "-l", "b*").Output()
 		if err != nil {
 			return "", fmt.Errorf("listing tags: %w", err)
 		}
@@ -296,6 +341,18 @@ func (b *Builder) loadBuilds() {
 		return
 	}
 	json.Unmarshal(data, &b.builds)
+
+	// Clean up stale "building" entries — they can't recover after restart.
+	cleaned := b.builds[:0]
+	for _, br := range b.builds {
+		if br.Status != "building" {
+			cleaned = append(cleaned, br)
+		}
+	}
+	if len(cleaned) != len(b.builds) {
+		b.builds = cleaned
+		b.saveBuilds()
+	}
 }
 
 func (b *Builder) saveBuilds() {

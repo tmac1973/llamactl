@@ -36,3 +36,12 @@ func (s *SSEWriter) SendEvent(event, data string) error {
 func (s *SSEWriter) SendData(data string) error {
 	return s.SendEvent("", data)
 }
+
+// SendLine sends data with a trailing newline embedded using multi-line SSE format.
+// SSE spec: each "data:" line appends value+LF to the buffer; trailing LF is stripped.
+// So "data: X\ndata:\n\n" produces event data = "X\n".
+func (s *SSEWriter) SendLine(data string) error {
+	fmt.Fprintf(s.w, "data: %s\ndata:\n\n", data)
+	s.flusher.Flush()
+	return nil
+}

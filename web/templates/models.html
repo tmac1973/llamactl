@@ -1,6 +1,8 @@
 {{define "content"}}
 <h1>Local Models</h1>
 
+<div id="activate-status"></div>
+
 <div id="model-list" hx-get="/api/models" hx-trigger="load" hx-swap="innerHTML">
     Loading...
 </div>

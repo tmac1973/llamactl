@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -91,7 +92,7 @@ func (s *Server) handleServiceLogs(w http.ResponseWriter, r *http.Request) {
 				sse.SendEvent("done", "Process exited")
 				return
 			}
-			sse.SendData(line)
+			sse.SendLine(line)
 		case <-r.Context().Done():
 			return
 		}
@@ -174,7 +175,8 @@ func (s *Server) handleActivateModel(w http.ResponseWriter, r *http.Request) {
 
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		s.renderPartial(w, "service_status", status)
+		fmt.Fprintf(w, `<article><p>Model <strong>%s</strong> activated. Service is <strong>%s</strong>. <a href="/service">View Service →</a></p></article>`,
+			model.ModelID, status.State)
 		return
 	}
 

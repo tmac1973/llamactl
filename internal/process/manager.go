@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"syscall"
@@ -38,6 +40,8 @@ type LaunchConfig struct {
 	ExtraFlags  []string
 }
 
+const logHistorySize = 200
+
 // Manager manages the llama-server subprocess lifecycle.
 type Manager struct {
 	mu        sync.Mutex
@@ -46,10 +50,12 @@ type Manager struct {
 	status    Status
 	config    *LaunchConfig
 	healthURL string
+	done      chan struct{} // closed when monitorProcess exits
 
 	// Fan-out log broadcasting
 	logMu       sync.Mutex
 	subscribers map[chan string]struct{}
+	logHistory  []string // ring buffer of recent log lines
 }
 
 // NewManager creates a new process manager.
@@ -93,6 +99,10 @@ func (m *Manager) Start(cfg LaunchConfig) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, cfg.BinaryPath, args...)
 
+	// Set LD_LIBRARY_PATH so the binary finds its co-located shared libs
+	binDir := filepath.Dir(cfg.BinaryPath)
+	cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+binDir)
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
@@ -105,9 +115,11 @@ func (m *Manager) Start(cfg LaunchConfig) error {
 		return fmt.Errorf("start: %w", err)
 	}
 
+	done := make(chan struct{})
 	m.cmd = cmd
 	m.cancel = cancel
 	m.config = &cfg
+	m.done = done
 	m.healthURL = fmt.Sprintf("http://localhost:%d/health", cfg.Port)
 	m.status = Status{
 		State:     "starting",
@@ -125,8 +137,8 @@ func (m *Manager) Start(cfg LaunchConfig) error {
 		}
 	}()
 
-	// Monitor process exit
-	go m.monitorProcess(cmd)
+	// Monitor process exit — only this goroutine calls cmd.Wait()
+	go m.monitorProcess(cmd, done)
 
 	// Health check polling
 	go m.pollHealth()
@@ -144,21 +156,16 @@ func (m *Manager) Stop() error {
 	}
 	cmd := m.cmd
 	cancel := m.cancel
+	done := m.done
 	m.mu.Unlock()
 
 	// Send SIGTERM
 	cmd.Process.Signal(syscall.SIGTERM)
 
-	// Wait up to 10 seconds
-	done := make(chan struct{})
-	go func() {
-		cmd.Wait()
-		close(done)
-	}()
-
+	// Wait for monitorProcess to detect exit
 	select {
 	case <-done:
-		// Process exited cleanly
+		// Process exited
 	case <-time.After(10 * time.Second):
 		// Force kill
 		cmd.Process.Signal(syscall.SIGKILL)
@@ -212,10 +219,18 @@ func (m *Manager) GetStatus() Status {
 }
 
 // Subscribe returns a new channel that receives log lines.
+// Replays recent history so reconnecting clients see past output.
 // Call Unsubscribe when done to prevent leaks.
 func (m *Manager) Subscribe() chan string {
 	ch := make(chan string, 256)
 	m.logMu.Lock()
+	// Replay history
+	for _, line := range m.logHistory {
+		select {
+		case ch <- line:
+		default:
+		}
+	}
 	m.subscribers[ch] = struct{}{}
 	m.logMu.Unlock()
 	return ch
@@ -232,6 +247,12 @@ func (m *Manager) broadcast(line string) {
 	m.logMu.Lock()
 	defer m.logMu.Unlock()
 
+	// Append to history ring buffer
+	if len(m.logHistory) >= logHistorySize {
+		m.logHistory = m.logHistory[1:]
+	}
+	m.logHistory = append(m.logHistory, line)
+
 	for ch := range m.subscribers {
 		select {
 		case ch <- line:
@@ -241,8 +262,10 @@ func (m *Manager) broadcast(line string) {
 	}
 }
 
-func (m *Manager) monitorProcess(cmd *exec.Cmd) {
+// monitorProcess is the sole goroutine that calls cmd.Wait().
+func (m *Manager) monitorProcess(cmd *exec.Cmd, done chan struct{}) {
 	err := cmd.Wait()
+	close(done)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()

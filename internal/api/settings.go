@@ -74,6 +74,9 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		if v := r.FormValue("hf_token"); v != "" {
 			s.cfg.HFToken = v
 		}
+		if r.Form.Has("external_url") {
+			s.cfg.ExternalURL = r.FormValue("external_url")
+		}
 	}
 
 	// Persist config

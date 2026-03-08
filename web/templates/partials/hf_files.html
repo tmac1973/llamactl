@@ -5,16 +5,16 @@
         <tr><th>File</th><th>Quant</th><th>Size</th><th>VRAM Est.</th><th>Fit</th><th></th></tr>
     </thead>
     <tbody>
-        {{range .Files}}
+        {{range $i, $f := .Files}}
         <tr>
-            <td><small>{{.Filename}}</small></td>
-            <td><kbd>{{.Quant}}</kbd></td>
-            <td>{{printf "%.1f" (divGB .Size)}} GB</td>
-            <td>{{printf "%.1f" .VRAMEstGB}} GB</td>
+            <td><small>{{$f.Filename}}</small></td>
+            <td><kbd>{{$f.Quant}}</kbd></td>
+            <td>{{printf "%.1f" (divGB $f.Size)}} GB</td>
+            <td>{{printf "%.1f" $f.VRAMEstGB}} GB</td>
             <td>
-                {{if eq (vramFit .VRAMEstGB) "single"}}
+                {{if eq (vramFit $f.VRAMEstGB) "single"}}
                     <ins>1 GPU</ins>
-                {{else if eq (vramFit .VRAMEstGB) "dual"}}
+                {{else if eq (vramFit $f.VRAMEstGB) "dual"}}
                     <mark>2 GPU</mark>
                 {{else}}
                     <del>Too Large</del>
@@ -23,13 +23,14 @@
             <td>
                 <button type="button"
                         hx-post="/api/hf/download"
-                        hx-vals='{"model_id":"{{$.ID}}","filename":"{{.Filename}}"}'
-                        hx-target="#download-progress"
+                        hx-vals='{"model_id":"{{$.ID}}","filename":"{{$f.Filename}}"}'
+                        hx-target="#dl-{{$i}}"
                         hx-swap="innerHTML">
                     Download
                 </button>
             </td>
         </tr>
+        <tr id="dl-{{$i}}"></tr>
         {{end}}
     </tbody>
 </table>

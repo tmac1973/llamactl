@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -37,6 +39,7 @@ func NewServer(cfg *config.Config) *Server {
 		registry:   models.NewRegistry(cfg.DataDir),
 		process:    process.NewManager(),
 	}
+	s.downloader.SetOnComplete(s.onDownloadComplete)
 	s.pages = s.parseTemplates()
 	s.router = s.buildRouter()
 	return s
@@ -95,6 +98,9 @@ func (s *Server) buildRouter() chi.Router {
 	r.Get("/models/browse", s.handleModelsBrowsePage)
 	r.Get("/service", s.handleServicePage)
 	r.Get("/settings", s.handleSettingsPage)
+
+	// Dashboard API (outside /api group, htmx-only)
+	r.Get("/api/dashboard", s.handleDashboard)
 
 	// API routes
 	r.Route("/api", func(r chi.Router) {
@@ -176,22 +182,108 @@ func (s *Server) handleServicePage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
+	proxyEndpoint := fmt.Sprintf("http://localhost%s/v1", s.cfg.ListenAddr)
+	if s.cfg.ExternalURL != "" {
+		proxyEndpoint = strings.TrimRight(s.cfg.ExternalURL, "/") + "/v1"
+	}
 	data := struct {
 		pageData
 		ProxyEndpoint string
 		LlamaPort     int
 		HasAPIKey     bool
 		HasHFToken    bool
+		HasExtURL     bool
+		ExternalURL   string
 		DataDir       string
 	}{
 		pageData:      pageData{Title: "Settings", Nav: "settings"},
-		ProxyEndpoint: fmt.Sprintf("http://localhost%s/v1", s.cfg.ListenAddr),
+		ProxyEndpoint: proxyEndpoint,
 		LlamaPort:     s.cfg.LlamaPort,
 		HasAPIKey:     s.cfg.APIKey != "",
 		HasHFToken:    s.cfg.HFToken != "",
+		HasExtURL:     s.cfg.ExternalURL != "",
+		ExternalURL:   s.cfg.ExternalURL,
 		DataDir:       s.cfg.DataDir,
 	}
 	s.render(w, "settings.html", data)
+}
+
+func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	status := s.process.GetStatus()
+	builds := s.builder.List()
+	models := s.registry.List()
+
+	successBuilds := 0
+	for _, b := range builds {
+		if b.Status == "success" {
+			successBuilds++
+		}
+	}
+
+	chatURL := ""
+	apiURL := fmt.Sprintf("http://localhost%s/v1", s.cfg.ListenAddr)
+	if s.cfg.ExternalURL != "" {
+		apiURL = strings.TrimRight(s.cfg.ExternalURL, "/") + "/v1"
+		// Extract scheme+hostname (strip port) and add llama port for chat UI
+		if u, err := url.Parse(s.cfg.ExternalURL); err == nil {
+			chatURL = fmt.Sprintf("%s://%s:%d", u.Scheme, u.Hostname(), s.cfg.LlamaPort)
+		}
+	}
+
+	// State badge
+	var stateBadge string
+	switch status.State {
+	case "running":
+		stateBadge = `<ins>Running</ins>`
+	case "starting":
+		stateBadge = `<mark>Starting</mark>`
+	case "failed":
+		stateBadge = `<del>Failed</del>`
+	default:
+		stateBadge = `Stopped`
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<div class="grid">
+    <article>
+        <header>Service</header>
+        <p>%s</p>
+        %s
+        <p><a href="/service">Manage →</a></p>
+    </article>
+    <article>
+        <header>Active Model</header>
+        <p>%s</p>
+        <p><a href="/models">Models →</a></p>
+    </article>
+    <article>
+        <header>Inventory</header>
+        <p><strong>%d</strong> builds · <strong>%d</strong> models</p>
+        <p><a href="/builds">Builds →</a> · <a href="/models/browse">Browse →</a></p>
+    </article>
+    <article>
+        <header>API Endpoint</header>
+        <pre style="user-select: all; cursor: pointer;">%s</pre>
+        <p><a href="/settings">Settings →</a></p>
+    </article>
+</div>`,
+		stateBadge,
+		func() string {
+			if chatURL != "" && status.State == "running" {
+				return fmt.Sprintf(`<p><a href="%s" target="_blank">Open Chat UI →</a></p>`, chatURL)
+			}
+			return ""
+		}(),
+		func() string {
+			if status.Model != "" {
+				return `<strong>` + status.Model + `</strong>`
+			}
+			return "None"
+		}(),
+		successBuilds,
+		len(models),
+		apiURL,
+	)
 }
 
 // render executes the "layout" template for the given page.

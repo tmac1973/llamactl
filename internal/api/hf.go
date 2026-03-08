@@ -81,9 +81,6 @@ func (s *Server) handleHFDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Register model in registry when download completes (async)
-	go s.waitForDownload(downloadID, req.ModelID, req.Filename)
-
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		s.renderPartial(w, "download_progress", struct {
@@ -160,27 +157,9 @@ func (s *Server) handleHFDownloadCancel(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// waitForDownload monitors a download and registers the model on completion.
-func (s *Server) waitForDownload(downloadID, modelID, filename string) {
-	ch, ok := s.downloader.ProgressChannel(downloadID)
-	if !ok {
-		return
-	}
-
-	var lastStatus string
-	var sizeBytes int64
-	for status := range ch {
-		lastStatus = status.Status
-		sizeBytes = status.BytesDownloaded
-	}
-
-	if lastStatus != "complete" {
-		return
-	}
-
+// onDownloadComplete is called by the downloader when a file finishes.
+func (s *Server) onDownloadComplete(downloadID, modelID, filename string, sizeBytes int64) {
 	safeName := strings.ReplaceAll(modelID, "/", "--")
-	quantName := strings.TrimSuffix(filename, ".gguf")
-	quantName = strings.TrimSuffix(quantName, ".GGUF")
 
 	m := &models.Model{
 		ID:           fmt.Sprintf("%s--%s", safeName, strings.TrimSuffix(filename, ".gguf")),

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -54,7 +55,8 @@ func (s *Server) handleTriggerBuild(w http.ResponseWriter, r *http.Request) {
 		req.GitRef = r.FormValue("git_ref")
 	}
 
-	result, err := s.builder.Build(r.Context(), req.Profile, req.GitRef)
+	// Use background context — the build must outlive the HTTP request.
+	result, err := s.builder.Build(context.Background(), req.Profile, req.GitRef)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -93,7 +95,7 @@ func (s *Server) handleBuildLogs(w http.ResponseWriter, r *http.Request) {
 				sse.SendEvent("done", "Build complete")
 				return
 			}
-			sse.SendData(line)
+			sse.SendLine(line)
 		case <-r.Context().Done():
 			return
 		}

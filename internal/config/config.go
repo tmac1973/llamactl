@@ -7,12 +7,13 @@ import (
 )
 
 type Config struct {
-	ListenAddr string `yaml:"listen_addr"` // default ":3000"
-	DataDir    string `yaml:"data_dir"`    // default "/data"
-	LlamaPort  int    `yaml:"llama_port"`  // default 8080
-	HFToken    string `yaml:"hf_token"`    // optional HuggingFace token
-	APIKey     string `yaml:"api_key"`     // optional API key for /v1/* proxy
-	LogLevel   string `yaml:"log_level"`   // default "info"
+	ListenAddr  string `yaml:"listen_addr"`  // default ":3000"
+	DataDir     string `yaml:"data_dir"`     // default "/data"
+	LlamaPort   int    `yaml:"llama_port"`   // default 8080
+	ExternalURL string `yaml:"external_url"` // e.g. "http://myserver:3000" for links
+	HFToken     string `yaml:"hf_token"`     // optional HuggingFace token
+	APIKey      string `yaml:"api_key"`      // optional API key for /v1/* proxy
+	LogLevel    string `yaml:"log_level"`    // default "info"
 }
 
 func Load(path string) (*Config, error) {

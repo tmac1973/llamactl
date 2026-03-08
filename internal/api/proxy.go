@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"time"
 )
 
 // newProxyHandler creates a reverse proxy to the llama-server OpenAI API.
@@ -15,6 +16,9 @@ func (s *Server) newProxyHandler() http.Handler {
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(target)
+
+	// Flush immediately for streaming responses (SSE chat completions).
+	proxy.FlushInterval = 50 * time.Millisecond
 
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		w.Header().Set("Content-Type", "application/json")

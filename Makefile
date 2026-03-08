@@ -1,5 +1,5 @@
 .PHONY: build run dev start stop restart clean \
-       docker docker-run docker-compose-up docker-compose-down docker-compose-logs
+       docker docker-rebuild docker-run docker-compose-up docker-compose-down docker-compose-logs
 
 PID_FILE = bin/llamactl.pid
 
@@ -34,11 +34,18 @@ clean: stop
 docker:
 	docker build -t llamactl .
 
+docker-rebuild:
+	docker compose down
+	docker compose build --no-cache
+	docker compose up -d
+
 docker-run: docker
 	docker run -it --rm \
 		-p 3000:3000 \
 		-p 8080:8080 \
 		-v llamactl-data:/data \
+		-v /etc/vulkan:/etc/vulkan:ro \
+		-v /usr/share/vulkan:/usr/share/vulkan:ro \
 		--device /dev/kfd \
 		--device /dev/dri \
 		--group-add video \

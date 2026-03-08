@@ -2,6 +2,23 @@
 <h1>Settings</h1>
 
 <article>
+    <header>External URL</header>
+    <p>Hostname/URL for accessing this server from other machines. Used for chat UI links and proxy endpoint display.</p>
+    <form hx-put="/api/settings"
+          hx-target="#ext-url-status"
+          hx-swap="innerHTML">
+        <label>
+            External URL
+            <input type="url" name="external_url"
+                   value="{{.ExternalURL}}"
+                   placeholder="http://myserver:3000">
+        </label>
+        <button type="submit">Save</button>
+    </form>
+    <div id="ext-url-status"></div>
+</article>
+
+<article>
     <header>OpenAI-Compatible Proxy</header>
     <p>Point your tools at this endpoint:</p>
     <pre>{{.ProxyEndpoint}}</pre>

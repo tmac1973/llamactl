@@ -6,9 +6,16 @@
     <td>{{printf "%.1f" (divGB .SizeBytes)}} GB</td>
     <td>
         <div role="group">
+            <button type="button" class="outline"
+                    hx-get="/api/models/{{.ID}}/config"
+                    hx-target="next .config-cell"
+                    hx-swap="innerHTML"
+                    hx-on::before-request="let t=this.closest('tr').nextElementSibling.querySelector('td'); if(t.innerHTML.trim()){t.innerHTML=''; event.preventDefault();}">
+                Configure
+            </button>
             <button type="button"
                     hx-put="/api/models/{{.ID}}/activate"
-                    hx-target="#service-status"
+                    hx-target="#activate-status"
                     hx-swap="innerHTML"
                     hx-confirm="Activate this model? This will restart the service.">
                 Activate
@@ -23,4 +30,5 @@
         </div>
     </td>
 </tr>
+<tr><td colspan="5" class="config-cell"></td></tr>
 {{end}}

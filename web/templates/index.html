@@ -1,19 +1,11 @@
 {{define "content"}}
 <h1>Dashboard</h1>
-<p>Welcome to LlamaCtl. Use the sidebar to manage builds, models, and the inference service.</p>
 
-<div class="grid">
-    <article>
-        <header>Service</header>
-        <p id="service-status">Loading...</p>
-    </article>
-    <article>
-        <header>Active Model</header>
-        <p id="active-model">None</p>
-    </article>
-    <article>
-        <header>Builds</header>
-        <p id="build-count">—</p>
-    </article>
+<div hx-get="/api/dashboard" hx-trigger="load, every 5s" hx-swap="innerHTML" id="dashboard-cards">
+    <div class="grid">
+        <article><header>Service</header><p aria-busy="true">Loading...</p></article>
+        <article><header>Active Model</header><p>—</p></article>
+        <article><header>Builds</header><p>—</p></article>
+    </div>
 </div>
 {{end}}

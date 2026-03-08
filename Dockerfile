@@ -1,5 +1,5 @@
 # Stage 1: Build the Go binary
-FROM golang:1.22-bookworm AS builder
+FROM golang:1.25-bookworm AS builder
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -19,6 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     vulkan-tools \
     libvulkan-dev \
+    hipblas-dev \
+    rocblas-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/llamactl /usr/local/bin/llamactl
