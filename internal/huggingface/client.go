@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -28,12 +31,13 @@ type ModelSearchResult struct {
 	License   string   `json:"license,omitempty"`
 }
 
-// ModelFile represents a single GGUF file in a model repo.
+// ModelFile represents a single GGUF file (or grouped shard set) in a model repo.
 type ModelFile struct {
-	Filename  string  `json:"filename"`
-	Size      int64   `json:"size"`
-	Quant     string  `json:"quant"`
-	VRAMEstGB float64 `json:"vram_est_gb"`
+	Filename  string   `json:"filename"`
+	Size      int64    `json:"size"`
+	Quant     string   `json:"quant"`
+	VRAMEstGB float64  `json:"vram_est_gb"`
+	Shards    []string `json:"shards,omitempty"` // all shard filenames if split; nil for single files
 }
 
 // ModelDetail holds model info with filtered GGUF files.
@@ -123,6 +127,9 @@ func (c *Client) GetModel(ctx context.Context, modelID string) (*ModelDetail, er
 	// Fetch file sizes via tree API
 	c.populateFileSizes(ctx, modelID, detail)
 
+	// Group split/sharded GGUF files into single entries
+	detail.Files = groupShards(detail.Files)
+
 	return detail, nil
 }
 
@@ -172,6 +179,80 @@ func (c *Client) setAuth(req *http.Request) {
 // Uses file size * 1.1 as a rough estimate (overhead for KV cache and buffers).
 func estimateVRAM(sizeBytes int64) float64 {
 	return float64(sizeBytes) * 1.1 / (1024 * 1024 * 1024)
+}
+
+// shardPattern matches split GGUF filenames like "model-00001-of-00005.gguf"
+var shardPattern = regexp.MustCompile(`^(.+)-(\d{5})-of-(\d{5})\.gguf$`)
+
+// groupShards merges split GGUF shard files into single entries.
+// e.g., 5 files "model-0000N-of-00005.gguf" become one entry with combined size.
+func groupShards(files []ModelFile) []ModelFile {
+	type shardGroup struct {
+		base   string
+		total  int
+		shards []ModelFile
+	}
+	groups := map[string]*shardGroup{}
+	var singles []ModelFile
+
+	for _, f := range files {
+		m := shardPattern.FindStringSubmatch(f.Filename)
+		if m == nil {
+			singles = append(singles, f)
+			continue
+		}
+		base := m[1]
+		total, _ := strconv.Atoi(m[3])
+		g, ok := groups[base]
+		if !ok {
+			g = &shardGroup{base: base, total: total}
+			groups[base] = g
+		}
+		g.shards = append(g.shards, f)
+	}
+
+	var result []ModelFile
+	for _, g := range groups {
+		sort.Slice(g.shards, func(i, j int) bool {
+			return g.shards[i].Filename < g.shards[j].Filename
+		})
+		var totalSize int64
+		var shardNames []string
+		for _, s := range g.shards {
+			totalSize += s.Size
+			shardNames = append(shardNames, s.Filename)
+		}
+		result = append(result, ModelFile{
+			Filename:  g.shards[0].Filename,
+			Size:      totalSize,
+			Quant:     g.shards[0].Quant,
+			VRAMEstGB: estimateVRAM(totalSize),
+			Shards:    shardNames,
+		})
+	}
+
+	// Sort grouped entries by filename for stable ordering
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Filename < result[j].Filename
+	})
+
+	return append(result, singles...)
+}
+
+// ExpandShards returns all shard filenames for a split GGUF, or a single-element
+// slice for non-split files. Exported for use by the downloader.
+func ExpandShards(filename string) []string {
+	m := shardPattern.FindStringSubmatch(filename)
+	if m == nil {
+		return []string{filename}
+	}
+	base := m[1]
+	total, _ := strconv.Atoi(m[3])
+	shards := make([]string, total)
+	for i := range total {
+		shards[i] = fmt.Sprintf("%s-%05d-of-%05d.gguf", base, i+1, total)
+	}
+	return shards
 }
 
 // parseQuant extracts quantization type from a GGUF filename.

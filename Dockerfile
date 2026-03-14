@@ -7,21 +7,42 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o llamactl ./cmd/llamactl
 
-# Stage 2: Runtime — ROCm dev image
-# Using ROCm dev image because llama.cpp builds happen inside
-# the container and need the full SDK (cmake, hipcc, ROCm headers).
-FROM rocm/dev-ubuntu-24.04:6.3
+# Stage 2: Runtime — Fedora 43 + ROCm 7.2
+# Using full dev toolchain because llama.cpp builds happen inside
+# the container and need cmake, hipcc, ROCm headers, etc.
+FROM registry.fedoraproject.org/fedora:43
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    cmake \
-    ninja-build \
-    git \
-    curl \
-    vulkan-tools \
-    libvulkan-dev \
-    hipblas-dev \
-    rocblas-dev \
-    && rm -rf /var/lib/apt/lists/*
+# ROCm 7.2 repo
+RUN <<'EOF'
+tee /etc/yum.repos.d/rocm.repo <<REPO
+[ROCm-7.2]
+name=ROCm7.2
+baseurl=https://repo.radeon.com/rocm/el9/7.2/main
+enabled=1
+priority=50
+gpgcheck=1
+gpgkey=https://repo.radeon.com/rocm/rocm.gpg.key
+REPO
+EOF
+
+# Dev tools + ROCm SDK
+RUN dnf -y --nodocs --setopt=install_weak_deps=False \
+  --exclude='*sdk*' --exclude='*samples*' --exclude='*-doc*' --exclude='*-docs*' \
+  install \
+  make gcc cmake lld clang clang-devel compiler-rt ninja-build \
+  rocm-llvm rocm-device-libs hip-runtime-amd hip-devel \
+  rocblas rocblas-devel hipblas hipblas-devel rocm-cmake libomp-devel libomp \
+  rocminfo \
+  git-core curl \
+  vulkan-loader-devel vulkan-tools \
+  && dnf clean all && rm -rf /var/cache/dnf/*
+
+# ROCm environment
+ENV ROCM_PATH=/opt/rocm \
+  HIP_PATH=/opt/rocm \
+  HIP_CLANG_PATH=/opt/rocm/llvm/bin \
+  HIP_DEVICE_LIB_PATH=/opt/rocm/amdgcn/bitcode \
+  PATH=/opt/rocm/bin:/opt/rocm/llvm/bin:$PATH
 
 COPY --from=builder /app/llamactl /usr/local/bin/llamactl
 

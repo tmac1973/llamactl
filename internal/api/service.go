@@ -154,14 +154,17 @@ func (s *Server) handleActivateModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	launchCfg := process.LaunchConfig{
-		BinaryPath:  binaryPath,
-		ModelPath:   model.FilePath,
-		GPULayers:   cfg.GPULayers,
-		TensorSplit: cfg.TensorSplit,
-		ContextSize: cfg.ContextSize,
-		Threads:     cfg.Threads,
-		Port:        s.cfg.LlamaPort,
-		ExtraFlags:  extraFlags,
+		BinaryPath:     binaryPath,
+		ModelPath:      model.FilePath,
+		GPULayers:      cfg.GPULayers,
+		TensorSplit:    cfg.TensorSplit,
+		ContextSize:    cfg.ContextSize,
+		Threads:        cfg.Threads,
+		FlashAttention: cfg.FlashAttention,
+		Jinja:          cfg.Jinja,
+		KVCacheQuant:   cfg.KVCacheQuant,
+		Port:           s.cfg.LlamaPort,
+		ExtraFlags:     extraFlags,
 	}
 
 	if err := s.process.Start(launchCfg); err != nil {
@@ -200,10 +203,12 @@ func (s *Server) handleGetModelConfig(w http.ResponseWriter, r *http.Request) {
 			ModelID         string
 			Config          *models.ModelConfig
 			AvailableBuilds interface{}
+			EffectiveFlags  string
 		}{
 			ModelID:         id,
 			Config:          cfg,
 			AvailableBuilds: s.builder.List(),
+			EffectiveFlags:  cfg.EffectiveFlags(),
 		}
 		s.renderPartial(w, "model_config", data)
 		return
@@ -230,6 +235,9 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 		cfg.TensorSplit = r.FormValue("tensor_split")
 		cfg.ContextSize, _ = strconv.Atoi(r.FormValue("context_size"))
 		cfg.Threads, _ = strconv.Atoi(r.FormValue("threads"))
+		cfg.FlashAttention = r.FormValue("flash_attention") == "on"
+		cfg.Jinja = r.FormValue("jinja") == "on"
+		cfg.KVCacheQuant = r.FormValue("kv_cache_quant")
 		cfg.ExtraFlags = r.FormValue("extra_flags")
 		cfg.BuildID = r.FormValue("build_id")
 	}

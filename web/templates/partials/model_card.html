@@ -1,4 +1,5 @@
 {{define "model_card"}}
+<tbody class="model-row-group">
 <tr>
     <td>{{.ModelID}}</td>
     <td><kbd>{{.Quant}}</kbd></td>
@@ -23,7 +24,7 @@
             <button type="button" class="outline secondary"
                     hx-delete="/api/models/{{.ID}}"
                     hx-confirm="Delete this model?"
-                    hx-target="closest tr"
+                    hx-target="closest .model-row-group"
                     hx-swap="outerHTML">
                 Delete
             </button>
@@ -31,4 +32,5 @@
     </td>
 </tr>
 <tr><td colspan="5" class="config-cell"></td></tr>
+</tbody>
 {{end}}

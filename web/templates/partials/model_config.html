@@ -24,7 +24,17 @@
         <label>
             Context Size
             <input type="number" name="context_size" value="{{.Config.ContextSize}}"
-                   min="512" step="512" placeholder="8192">
+                   min="512" step="512" placeholder="8192" list="context-sizes">
+            <datalist id="context-sizes">
+                <option value="2048">2K</option>
+                <option value="4096">4K</option>
+                <option value="8192">8K</option>
+                <option value="16384">16K</option>
+                <option value="32768">32K</option>
+                <option value="65536">64K</option>
+                <option value="131072">128K</option>
+                <option value="262144">256K</option>
+            </datalist>
         </label>
     </div>
 
@@ -41,10 +51,37 @@
         </label>
     </div>
 
+    <div class="grid">
+        <label>
+            Flash Attention
+            <input type="checkbox" name="flash_attention" role="switch"
+                   {{if .Config.FlashAttention}}checked{{end}}>
+        </label>
+        <label>
+            Jinja Templates
+            <input type="checkbox" name="jinja" role="switch"
+                   {{if .Config.Jinja}}checked{{end}}>
+        </label>
+        <label>
+            KV Cache Quantization
+            <select name="kv_cache_quant">
+                <option value="" {{if eq .Config.KVCacheQuant ""}}selected{{end}}>Off (f16)</option>
+                <option value="q8_0" {{if eq .Config.KVCacheQuant "q8_0"}}selected{{end}}>q8_0</option>
+                <option value="q4_0" {{if eq .Config.KVCacheQuant "q4_0"}}selected{{end}}>q4_0</option>
+            </select>
+        </label>
+    </div>
+
     <label>
         Extra Flags
         <input type="text" name="extra_flags" value="{{.Config.ExtraFlags}}"
-               placeholder="--flash-attn --cont-batching">
+               placeholder="--cont-batching --mlock">
+    </label>
+
+    <label>
+        Effective Flags
+        <input type="text" value="{{.EffectiveFlags}}" readonly
+               style="opacity: 0.7; cursor: default;">
     </label>
 
     <div role="group">

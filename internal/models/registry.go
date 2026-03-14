@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -24,12 +26,40 @@ type Model struct {
 
 // ModelConfig holds per-model launch configuration for llama-server.
 type ModelConfig struct {
-	GPULayers   int    `json:"gpu_layers"`
-	TensorSplit string `json:"tensor_split"`
-	ContextSize int    `json:"context_size"`
-	Threads     int    `json:"threads"`
-	ExtraFlags  string `json:"extra_flags"`
-	BuildID     string `json:"build_id"`
+	GPULayers      int    `json:"gpu_layers"`
+	TensorSplit    string `json:"tensor_split"`
+	ContextSize    int    `json:"context_size"`
+	Threads        int    `json:"threads"`
+	FlashAttention bool   `json:"flash_attention"`
+	Jinja          bool   `json:"jinja"`
+	KVCacheQuant   string `json:"kv_cache_quant"` // "", "q8_0", "q4_0"
+	ExtraFlags     string `json:"extra_flags"`
+	BuildID        string `json:"build_id"`
+}
+
+// EffectiveFlags returns the full set of llama-server flags (excluding
+// binary, model path, host, and port) that will be used at launch.
+func (c *ModelConfig) EffectiveFlags() string {
+	var parts []string
+	parts = append(parts, "--n-gpu-layers", strconv.Itoa(c.GPULayers))
+	parts = append(parts, "--ctx-size", strconv.Itoa(c.ContextSize))
+	parts = append(parts, "--threads", strconv.Itoa(c.Threads))
+	if c.TensorSplit != "" {
+		parts = append(parts, "--tensor-split", c.TensorSplit)
+	}
+	if c.FlashAttention {
+		parts = append(parts, "--flash-attn", "on")
+	}
+	if c.Jinja {
+		parts = append(parts, "--jinja")
+	}
+	if c.KVCacheQuant != "" {
+		parts = append(parts, "--cache-type-k", c.KVCacheQuant, "--cache-type-v", c.KVCacheQuant)
+	}
+	if c.ExtraFlags != "" {
+		parts = append(parts, strings.Fields(c.ExtraFlags)...)
+	}
+	return strings.Join(parts, " ")
 }
 
 type registryData struct {
@@ -69,6 +99,7 @@ func (r *Registry) Add(m *Model) error {
 			TensorSplit: "0.5,0.5",
 			ContextSize: 8192,
 			Threads:     8,
+			Jinja:       true,
 		}
 	}
 	r.save()

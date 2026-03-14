@@ -126,13 +126,117 @@ func (d *Downloader) run(ctx context.Context, downloadID, modelID, filename stri
 		}
 	}
 
+	// Expand sharded files: "model-00001-of-00005.gguf" → all 5 parts
+	filenames := ExpandShards(filename)
+
 	// Setup directory
 	safeName := strings.ReplaceAll(modelID, "/", "--")
 	modelDir := filepath.Join(d.dataDir, "models", safeName)
 	os.MkdirAll(modelDir, 0o755)
 
+	// Get combined total size via HEAD requests for accurate progress
+	var combinedTotal int64
+	if len(filenames) > 1 {
+		combinedTotal = d.fetchCombinedSize(ctx, modelID, filenames)
+	}
+
+	// Download each file (single file or all shards sequentially)
+	var totalDownloaded int64
+	for i, fn := range filenames {
+		select {
+		case <-ctx.Done():
+			sendProgress(DownloadStatus{ID: downloadID, ModelID: modelID, Filename: fn, Status: "cancelled"})
+			return
+		default:
+		}
+
+		label := fn
+		if len(filenames) > 1 {
+			label = fmt.Sprintf("%s [%d/%d]", fn, i+1, len(filenames))
+		}
+
+		downloaded, err := d.downloadFile(ctx, downloadID, modelID, fn, label, modelDir, totalDownloaded, combinedTotal, progressCh)
+		if err != nil {
+			sendProgress(DownloadStatus{ID: downloadID, ModelID: modelID, Filename: label, Status: "failed", Error: err.Error()})
+			return
+		}
+		totalDownloaded += downloaded
+	}
+
+	// Write meta.json
+	meta := map[string]any{
+		"model_id":      modelID,
+		"filename":      filenames[0],
+		"size_bytes":    totalDownloaded,
+		"downloaded_at": time.Now().Format(time.RFC3339),
+		"quant":         parseQuant(filenames[0]),
+	}
+	if len(filenames) > 1 {
+		meta["shards"] = filenames
+	}
+	metaData, _ := json.MarshalIndent(meta, "", "  ")
+	os.WriteFile(filepath.Join(modelDir, "meta.json"), metaData, 0o644)
+
+	sendProgress(DownloadStatus{
+		ID:              downloadID,
+		ModelID:         modelID,
+		Filename:        filename,
+		BytesDownloaded: totalDownloaded,
+		TotalBytes:      combinedTotal,
+		Status:          "complete",
+	})
+
+	slog.Info("download complete", "model", modelID, "file", filename, "shards", len(filenames), "size", totalDownloaded)
+
+	if d.onComplete != nil {
+		d.onComplete(downloadID, modelID, filenames[0], totalDownloaded)
+	}
+}
+
+// fetchCombinedSize does HEAD requests to get the total size of all shard files.
+func (d *Downloader) fetchCombinedSize(ctx context.Context, modelID string, filenames []string) int64 {
+	client := &http.Client{Timeout: 30 * time.Second}
+	var total int64
+	for _, fn := range filenames {
+		dlURL := fmt.Sprintf("https://huggingface.co/%s/resolve/main/%s", modelID, fn)
+		req, err := http.NewRequestWithContext(ctx, "HEAD", dlURL, nil)
+		if err != nil {
+			continue
+		}
+		if d.token != "" {
+			req.Header.Set("Authorization", "Bearer "+d.token)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		resp.Body.Close()
+		if resp.ContentLength > 0 {
+			total += resp.ContentLength
+		}
+	}
+	return total
+}
+
+// downloadFile downloads a single file, reporting progress with a base offset for multi-shard tracking.
+// Returns the number of bytes downloaded for this file.
+func (d *Downloader) downloadFile(ctx context.Context, downloadID, modelID, filename, label, modelDir string,
+	baseDownloaded, combinedTotal int64, progressCh chan DownloadStatus) (int64, error) {
+
+	sendProgress := func(status DownloadStatus) {
+		select {
+		case progressCh <- status:
+		default:
+		}
+	}
+
 	partPath := filepath.Join(modelDir, filename+".part")
 	finalPath := filepath.Join(modelDir, filename)
+
+	// Skip if already downloaded
+	if info, err := os.Stat(finalPath); err == nil {
+		return info.Size(), nil
+	}
 
 	// Check for existing partial download
 	var existingSize int64
@@ -140,45 +244,43 @@ func (d *Downloader) run(ctx context.Context, downloadID, modelID, filename stri
 		existingSize = info.Size()
 	}
 
-	// Build download URL
 	dlURL := fmt.Sprintf("https://huggingface.co/%s/resolve/main/%s", modelID, filename)
-
 	req, err := http.NewRequestWithContext(ctx, "GET", dlURL, nil)
 	if err != nil {
-		sendProgress(DownloadStatus{ID: downloadID, ModelID: modelID, Filename: filename, Status: "failed", Error: err.Error()})
-		return
+		return 0, err
 	}
 
 	if d.token != "" {
 		req.Header.Set("Authorization", "Bearer "+d.token)
 	}
-
-	// Resume support
 	if existingSize > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", existingSize))
 	}
 
-	client := &http.Client{Timeout: 0} // no timeout for large downloads
+	client := &http.Client{Timeout: 0}
 	resp, err := client.Do(req)
 	if err != nil {
-		sendProgress(DownloadStatus{ID: downloadID, ModelID: modelID, Filename: filename, Status: "failed", Error: err.Error()})
-		return
+		return 0, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-		sendProgress(DownloadStatus{ID: downloadID, ModelID: modelID, Filename: filename, Status: "failed", Error: fmt.Sprintf("HTTP %d", resp.StatusCode)})
-		return
+		return 0, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	totalBytes := resp.ContentLength
+	fileTotal := resp.ContentLength
 	if resp.StatusCode == http.StatusPartialContent {
-		totalBytes += existingSize
+		fileTotal += existingSize
 	} else {
-		existingSize = 0 // server doesn't support range, start fresh
+		existingSize = 0
 	}
 
-	// Open file for writing
+	// Use file-level total if we don't have a combined total
+	reportTotal := combinedTotal
+	if reportTotal == 0 {
+		reportTotal = fileTotal
+	}
+
 	flags := os.O_CREATE | os.O_WRONLY
 	if existingSize > 0 {
 		flags |= os.O_APPEND
@@ -188,96 +290,59 @@ func (d *Downloader) run(ctx context.Context, downloadID, modelID, filename stri
 
 	f, err := os.OpenFile(partPath, flags, 0o644)
 	if err != nil {
-		sendProgress(DownloadStatus{ID: downloadID, ModelID: modelID, Filename: filename, Status: "failed", Error: err.Error()})
-		return
+		return 0, err
 	}
 	defer f.Close()
 
-	// Stream download with progress tracking
-	buf := make([]byte, 256*1024) // 256KB buffer
+	buf := make([]byte, 256*1024)
 	downloaded := existingSize
 	lastReport := time.Now()
-	lastBytes := downloaded
-	startTime := time.Now()
+	lastBytes := baseDownloaded + downloaded
 
 	for {
 		select {
 		case <-ctx.Done():
-			sendProgress(DownloadStatus{ID: downloadID, ModelID: modelID, Filename: filename,
-				BytesDownloaded: downloaded, TotalBytes: totalBytes, Status: "cancelled"})
-			return
+			return downloaded, ctx.Err()
 		default:
 		}
 
-		n, err := resp.Body.Read(buf)
+		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
 			if _, werr := f.Write(buf[:n]); werr != nil {
-				sendProgress(DownloadStatus{ID: downloadID, ModelID: modelID, Filename: filename, Status: "failed", Error: werr.Error()})
-				return
+				return downloaded, werr
 			}
 			downloaded += int64(n)
 		}
 
-		// Report progress every 500ms
 		if time.Since(lastReport) >= 500*time.Millisecond {
-			elapsed := time.Since(startTime).Seconds()
-			var speed int64
-			if elapsed > 0 {
-				speed = int64(float64(downloaded-lastBytes) / time.Since(lastReport).Seconds())
-			}
+			globalDownloaded := baseDownloaded + downloaded
+			speed := int64(float64(globalDownloaded-lastBytes) / time.Since(lastReport).Seconds())
 			lastReport = time.Now()
-			lastBytes = downloaded
+			lastBytes = globalDownloaded
 
 			sendProgress(DownloadStatus{
 				ID:              downloadID,
 				ModelID:         modelID,
-				Filename:        filename,
-				BytesDownloaded: downloaded,
-				TotalBytes:      totalBytes,
+				Filename:        label,
+				BytesDownloaded: globalDownloaded,
+				TotalBytes:      reportTotal,
 				SpeedBPS:        speed,
 				Status:          "downloading",
 			})
 		}
 
-		if err == io.EOF {
+		if readErr == io.EOF {
 			break
 		}
-		if err != nil {
-			sendProgress(DownloadStatus{ID: downloadID, ModelID: modelID, Filename: filename, Status: "failed", Error: err.Error()})
-			return
+		if readErr != nil {
+			return downloaded, readErr
 		}
 	}
 
-	// Rename .part to final
 	f.Close()
 	if err := os.Rename(partPath, finalPath); err != nil {
-		sendProgress(DownloadStatus{ID: downloadID, ModelID: modelID, Filename: filename, Status: "failed", Error: err.Error()})
-		return
+		return downloaded, err
 	}
 
-	// Write meta.json
-	meta := map[string]any{
-		"model_id":      modelID,
-		"filename":      filename,
-		"size_bytes":    downloaded,
-		"downloaded_at": time.Now().Format(time.RFC3339),
-		"quant":         parseQuant(filename),
-	}
-	metaData, _ := json.MarshalIndent(meta, "", "  ")
-	os.WriteFile(filepath.Join(modelDir, "meta.json"), metaData, 0o644)
-
-	sendProgress(DownloadStatus{
-		ID:              downloadID,
-		ModelID:         modelID,
-		Filename:        filename,
-		BytesDownloaded: downloaded,
-		TotalBytes:      totalBytes,
-		Status:          "complete",
-	})
-
-	slog.Info("download complete", "model", modelID, "file", filename, "size", downloaded)
-
-	if d.onComplete != nil {
-		d.onComplete(downloadID, modelID, filename, downloaded)
-	}
+	return downloaded, nil
 }

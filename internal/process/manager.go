@@ -29,15 +29,18 @@ type Status struct {
 
 // LaunchConfig defines how to start llama-server.
 type LaunchConfig struct {
-	BinaryPath  string
-	ModelPath   string
-	GPULayers   int
-	TensorSplit string
-	ContextSize int
-	Threads     int
-	Host        string
-	Port        int
-	ExtraFlags  []string
+	BinaryPath     string
+	ModelPath      string
+	GPULayers      int
+	TensorSplit    string
+	ContextSize    int
+	Threads        int
+	FlashAttention bool
+	Jinja          bool
+	KVCacheQuant   string // "", "q8_0", "q4_0"
+	Host           string
+	Port           int
+	ExtraFlags     []string
 }
 
 const logHistorySize = 200
@@ -75,6 +78,11 @@ func (m *Manager) Start(cfg LaunchConfig) error {
 		return fmt.Errorf("process already %s", m.status.State)
 	}
 
+	// Clear log history from previous run
+	m.logMu.Lock()
+	m.logHistory = nil
+	m.logMu.Unlock()
+
 	if cfg.Host == "" {
 		cfg.Host = "0.0.0.0"
 	}
@@ -93,6 +101,15 @@ func (m *Manager) Start(cfg LaunchConfig) error {
 	}
 	if cfg.TensorSplit != "" {
 		args = append(args, "--tensor-split", cfg.TensorSplit)
+	}
+	if cfg.FlashAttention {
+		args = append(args, "--flash-attn", "on")
+	}
+	if cfg.Jinja {
+		args = append(args, "--jinja")
+	}
+	if cfg.KVCacheQuant != "" {
+		args = append(args, "--cache-type-k", cfg.KVCacheQuant, "--cache-type-v", cfg.KVCacheQuant)
 	}
 	args = append(args, cfg.ExtraFlags...)
 

@@ -24,9 +24,11 @@ func DefaultProfiles() []BuildProfile {
 			Name:    "rocm",
 			Backend: "rocm",
 			CMakeFlags: map[string]string{
-				"GGML_HIP":         "ON",
-				"AMDGPU_TARGETS":   gpuTargets,
-				"CMAKE_BUILD_TYPE": "Release",
+				"GGML_HIP":                        "ON",
+				"AMDGPU_TARGETS":                  gpuTargets,
+				"CMAKE_BUILD_TYPE":                "Release",
+				"LLAMA_HIP_UMA":                   "ON",
+				"GGML_CUDA_ENABLE_UNIFIED_MEMORY": "ON",
 			},
 		},
 		{

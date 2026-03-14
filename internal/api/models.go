@@ -16,11 +16,11 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("<p>No models downloaded yet. Browse HuggingFace to download models.</p>"))
 			return
 		}
-		w.Write([]byte(`<table role="grid"><thead><tr><th>Model</th><th>Quant</th><th>VRAM Est.</th><th>Size</th><th></th></tr></thead><tbody>`))
+		w.Write([]byte(`<table role="grid"><thead><tr><th>Model</th><th>Quant</th><th>VRAM Est.</th><th>Size</th><th></th></tr></thead>`))
 		for _, m := range modelList {
 			s.renderPartial(w, "model_card", m)
 		}
-		w.Write([]byte(`</tbody></table>`))
+		w.Write([]byte(`</table>`))
 		return
 	}
 

@@ -7,7 +7,7 @@
     <tbody>
         {{range $i, $f := .Files}}
         <tr>
-            <td><small>{{$f.Filename}}</small></td>
+            <td><small>{{$f.Filename}}{{if $f.Shards}} ({{len $f.Shards}} parts){{end}}</small></td>
             <td><kbd>{{$f.Quant}}</kbd></td>
             <td>{{printf "%.1f" (divGB $f.Size)}} GB</td>
             <td>{{printf "%.1f" $f.VRAMEstGB}} GB</td>

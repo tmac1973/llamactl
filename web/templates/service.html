@@ -8,8 +8,23 @@
     Loading...
 </div>
 
-<article>
-    <header>Server Logs</header>
+<article class="log-panel">
+    <header>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span>Server Logs</span>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <label style="margin: 0; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
+                    Live tail
+                    <input type="checkbox" class="log-tail-toggle" role="switch" checked
+                           style="margin: 0;">
+                </label>
+                <button type="button" class="log-copy-btn outline secondary"
+                        style="margin: 0; padding: 0.25rem 0.75rem; font-size: 0.8rem;">
+                    Copy
+                </button>
+            </div>
+        </div>
+    </header>
     <pre id="service-logs"
          hx-ext="sse"
          sse-connect="/api/service/logs"
