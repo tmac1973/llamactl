@@ -2,11 +2,11 @@
 
 A web-based management interface for [llama.cpp](https://github.com/ggerganov/llama.cpp) inference servers. Build llama.cpp from source, download models from HuggingFace, configure and run inference, and expose an OpenAI-compatible API — all from a single containerized application.
 
-Designed for self-hosted GPU servers running AMD ROCm, with support for CPU and Vulkan backends.
+Supports NVIDIA CUDA, AMD ROCm, and CPU backends. Works with Docker and Podman on all major Linux distributions.
 
 ## Features
 
-- **Build Management** — Clone and compile llama.cpp inside the container with ROCm, Vulkan, or CPU backends. View real-time build logs via SSE streaming.
+- **Build Management** — Clone and compile llama.cpp inside the container with CUDA, ROCm, Vulkan, or CPU backends. View real-time build logs via SSE streaming.
 - **Model Management** — Download GGUF models directly from HuggingFace. Search repos, browse available quantizations, and track download progress. Configure per-model inference parameters (GPU layers, context size, threads, tensor split).
 - **Service Control** — Start, stop, and restart the llama-server process. Live health monitoring and streaming server logs.
 - **OpenAI-Compatible Proxy** — Reverse proxy at `/v1` forwards to llama-server's OpenAI API. Works with any client that supports the OpenAI chat completions format (Goose, Continue, Open WebUI, etc.). Optional Bearer token authentication.
@@ -15,33 +15,72 @@ Designed for self-hosted GPU servers running AMD ROCm, with support for CPU and 
 
 ## Quick Start
 
-### Requirements
-
-- Docker or Podman with Compose
-- AMD GPU with ROCm support (for GPU inference)
-
-### Deploy
-
 ```bash
 git clone https://github.com/tmlabonte/llamactl.git
 cd llamactl
-docker compose up -d
+./setup.sh install
 ```
+
+The setup script will:
+1. Detect your GPU (NVIDIA, AMD, or CPU-only)
+2. Detect your container runtime (Docker or Podman)
+3. Install any missing prerequisites (e.g., NVIDIA Container Toolkit)
+4. Show a summary and ask for confirmation
+5. Build and start the container
 
 The management UI will be available at `http://localhost:3000`.
 
-### SELinux (Fedora/RHEL)
+### Supported Platforms
 
-If running with SELinux enforcing, allow container GPU access:
+| GPU | Backend | Docker | Podman |
+|-----|---------|--------|--------|
+| NVIDIA | CUDA 12.8 | Yes | Yes |
+| AMD | ROCm 7.2 | Yes | Yes |
+| None | CPU-only | Yes | Yes |
+
+| Distro Family | Package Manager | Tested |
+|---------------|-----------------|--------|
+| Debian / Ubuntu | apt | Yes |
+| Fedora / RHEL | dnf | Yes |
+| Arch / CachyOS | pacman | Yes |
+| openSUSE | zypper | Planned |
+
+### Setup Script Reference
+
+```
+./setup.sh <command>
+
+Lifecycle:
+  install     Detect environment, install prerequisites, build & start
+  uninstall   Stop container, disable auto-start, remove container + image
+  rebuild     Full rebuild with no cache, then start
+
+Runtime:
+  up          Start a stopped container
+  down        Stop the container
+  logs        Follow container logs
+
+Auto-start:
+  enable      Start llamactl on boot
+  disable     Stop starting on boot
+
+Info:
+  status      Show detected environment and planned actions
+  detect      Print detected GPU backend (cuda/rocm/cpu)
+  help        Show full help with details
+```
+
+Override detection with environment variables:
 
 ```bash
-sudo setsebool -P container_use_devices 1
+GPU=cpu ./setup.sh install          # force CPU-only backend
+RUNTIME=podman ./setup.sh install   # force Podman runtime
 ```
 
 ### First Run
 
 1. Open `http://localhost:3000`
-2. Go to **Builds** and compile llama.cpp (select ROCm backend for GPU)
+2. Go to **Builds** and compile llama.cpp (select the appropriate backend for your GPU)
 3. Go to **Browse** to search HuggingFace and download a GGUF model
 4. Go to **Models**, click **Configure** on your model to set GPU layers and context size, then **Activate**
 5. The service will start and the OpenAI API becomes available at `http://localhost:3000/v1`
@@ -68,26 +107,26 @@ Set `external_url` when accessing LlamaCtl from a remote machine. This configure
 
 When `api_key` is set, all requests to `/v1/*` require a `Authorization: Bearer <key>` header. This secures the inference endpoint without affecting the management UI.
 
-## Docker Compose
-
-The default `docker-compose.yml` exposes two ports:
+## Ports
 
 | Port | Service |
 |------|---------|
 | 3000 | LlamaCtl management UI + OpenAI proxy (`/v1`) |
 | 8080 | llama-server inference + built-in chat UI |
 
-GPU access is configured for AMD ROCm. The `HSA_OVERRIDE_GFX_VERSION` environment variable may need adjustment for your GPU architecture.
+## Vulkan Support
 
-### Vulkan Support
-
-To enable Vulkan backend builds, uncomment the host Vulkan mounts in `docker-compose.yml`:
+To enable Vulkan backend builds, uncomment the host Vulkan mounts in your compose file:
 
 ```yaml
 volumes:
   - /etc/vulkan:/etc/vulkan:ro
   - /usr/share/vulkan:/usr/share/vulkan:ro
 ```
+
+## ROCm Notes
+
+The `HSA_OVERRIDE_GFX_VERSION` environment variable in `docker-compose.rocm.yml` is set to `11.0.0` (RDNA 3). Adjust this for your GPU architecture if needed.
 
 ## Architecture
 
@@ -109,6 +148,18 @@ web/
 
 The UI uses server-rendered HTML with [htmx](https://htmx.org/) for interactivity and [Pico CSS](https://picocss.com/) for styling. No JavaScript build step required.
 
+### Container Files
+
+| File | Purpose |
+|------|---------|
+| `Dockerfile.cuda` | NVIDIA CUDA 12.8 runtime |
+| `Dockerfile.rocm` | AMD ROCm 7.2 runtime |
+| `Dockerfile.cpu` | CPU-only (lightweight Debian) |
+| `docker-compose.cuda.yml` | Compose for NVIDIA (works with Docker and Podman) |
+| `docker-compose.rocm.yml` | Compose for AMD |
+| `docker-compose.cpu.yml` | Compose for CPU-only |
+| `setup.sh` | Auto-detect and setup script |
+
 ## Development
 
 ### Local (without container)
@@ -117,15 +168,6 @@ The UI uses server-rendered HTML with [htmx](https://htmx.org/) for interactivit
 make dev          # go run with hot reload
 make build        # compile to bin/llamactl
 make run          # build and run
-```
-
-### Container
-
-```bash
-make docker-compose-up      # start container
-make docker-compose-down    # stop container
-make docker-compose-logs    # tail logs
-make docker-rebuild         # full rebuild (no cache)
 ```
 
 ### API Smoke Test

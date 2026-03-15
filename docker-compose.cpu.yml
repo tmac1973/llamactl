@@ -1,0 +1,16 @@
+services:
+  llamactl:
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+    container_name: llamactl
+    ports:
+      - "3000:3000"   # LlamaCtl management UI
+      - "8080:8080"   # llama-server inference + chat UI
+    volumes:
+      - llamactl-data:/data:z
+    restart: unless-stopped
+
+volumes:
+  llamactl-data:
+    driver: local

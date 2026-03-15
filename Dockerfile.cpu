@@ -7,10 +7,9 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o llamactl ./cmd/llamactl
 
-# Stage 2: Runtime — NVIDIA CUDA 12.8
-# Using dev image because llama.cpp builds happen inside
-# the container and need nvcc, cuBLAS, CUDA headers, etc.
-FROM docker.io/nvidia/cuda:12.8.1-devel-ubuntu24.04
+# Stage 2: Runtime — lightweight CPU-only image
+# No GPU SDK needed; llama.cpp will build with CPU backends only
+FROM docker.io/library/debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
@@ -18,8 +17,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     build-essential \
-    vulkan-tools \
-    libvulkan-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/llamactl /usr/local/bin/llamactl

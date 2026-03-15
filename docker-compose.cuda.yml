@@ -3,11 +3,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.cuda
+    container_name: llamactl
     ports:
-      - "3000:3000"
-      - "8080:8080"
+      - "3000:3000"   # LlamaCtl management UI
+      - "8080:8080"   # llama-server inference + chat UI
     volumes:
       - llamactl-data:/data:z
+    # Docker uses deploy.resources for GPU access
     deploy:
       resources:
         reservations:
@@ -15,7 +17,11 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    # Podman uses CDI device strings (ignored by Docker)
+    devices:
+      - nvidia.com/gpu=all
     restart: unless-stopped
 
 volumes:
   llamactl-data:
+    driver: local

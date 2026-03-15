@@ -1,6 +1,8 @@
 services:
   llamactl:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.rocm
     container_name: llamactl
     ports:
       - "3000:3000"   # LlamaCtl management UI
