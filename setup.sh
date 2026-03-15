@@ -611,6 +611,7 @@ Volume=/usr/share/vulkan:/usr/share/vulkan:ro"
         gpu_args="AddDevice=/dev/kfd
 AddDevice=/dev/dri
 SecurityLabelDisable=true
+PodmanArgs=--ipc=host
 GroupAdd=${HOST_VIDEO_GID:-video}
 GroupAdd=${HOST_RENDER_GID:-render}
 ${hsa_env}

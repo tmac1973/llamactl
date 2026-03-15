@@ -16,6 +16,7 @@ services:
     group_add:
       - "${HOST_VIDEO_GID:-video}"
       - "${HOST_RENDER_GID:-render}"
+    ipc: host                    # ROCm needs shared memory for GPU communication
     security_opt:
       - seccomp=unconfined      # required for ROCm
     environment:
