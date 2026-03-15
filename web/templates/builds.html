@@ -9,7 +9,11 @@
         <div class="grid">
             <label>
                 Profile
-                <select name="profile">
+                <select name="profile" id="build-profile"
+                        hx-get="/api/builds/options"
+                        hx-target="#build-options"
+                        hx-swap="outerHTML"
+                        hx-trigger="change, load">
                     {{range .Backends}}
                     {{if .Available}}
                     <option value="{{.Name}}">{{.Name}}{{if .Info}} ({{.Info}}){{end}}</option>
@@ -34,6 +38,11 @@
                 </div>
             </label>
         </div>
+
+        <div id="build-options">
+            <!-- Populated by htmx when profile changes -->
+        </div>
+
         <button type="submit">Start Build</button>
     </form>
 </article>

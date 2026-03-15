@@ -83,10 +83,39 @@ func (e *DuplicateBuildError) Error() string {
 // Build runs the full build pipeline asynchronously.
 // It returns the initial BuildResult immediately; logs stream via LogChannel.
 // If force is true, an existing build with the same ID will be replaced.
-func (b *Builder) Build(ctx context.Context, profile string, gitRef string, force bool) (*BuildResult, error) {
+// optionOverrides allows toggling profile-specific cmake flags.
+// extraCMake allows passing additional raw cmake flags.
+func (b *Builder) Build(ctx context.Context, profile string, gitRef string, force bool, optionOverrides map[string]bool, extraCMake string) (*BuildResult, error) {
 	prof, ok := FindProfile(profile)
 	if !ok {
 		return nil, fmt.Errorf("unknown profile: %s", profile)
+	}
+
+	// Apply option overrides to the profile's cmake flags
+	if optionOverrides != nil {
+		options := ProfileOptions(profile)
+		for _, opt := range options {
+			if enabled, ok := optionOverrides[opt.Flag]; ok && enabled {
+				prof.CMakeFlags[opt.Flag] = "ON"
+			}
+		}
+	} else {
+		// Apply defaults when no overrides specified (e.g. JSON API)
+		for _, opt := range ProfileOptions(profile) {
+			if opt.Default {
+				prof.CMakeFlags[opt.Flag] = "ON"
+			}
+		}
+	}
+
+	// Parse extra cmake flags (e.g. "-DFOO=BAR -DBAZ=ON")
+	if extraCMake != "" {
+		for _, flag := range strings.Fields(extraCMake) {
+			flag = strings.TrimPrefix(flag, "-D")
+			if parts := strings.SplitN(flag, "=", 2); len(parts) == 2 {
+				prof.CMakeFlags[parts[0]] = parts[1]
+			}
+		}
 	}
 
 	if gitRef == "" {

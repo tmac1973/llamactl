@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
+	"sort"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/tmlabonte/llamactl/internal/builder"
@@ -14,6 +17,111 @@ func (s *Server) handleListBackends(w http.ResponseWriter, r *http.Request) {
 	backends := builder.DetectBackends()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(backends)
+}
+
+func (s *Server) handleProfileOptions(w http.ResponseWriter, r *http.Request) {
+	profile := r.URL.Query().Get("profile")
+	options := builder.ProfileOptions(profile)
+
+	// Read current toggle states from query params (sent on re-fetch)
+	overrides := make(map[string]bool)
+	hasOverrides := false
+	for _, opt := range options {
+		key := "opt_" + opt.Flag
+		if r.URL.Query().Has(key) {
+			hasOverrides = true
+			overrides[opt.Flag] = r.URL.Query().Get(key) == "on"
+		}
+	}
+	extraCMake := r.URL.Query().Get("extra_cmake")
+
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if len(options) == 0 {
+			return
+		}
+
+		// Wrap in a div that re-fetches itself on toggle/input changes
+		fmt.Fprintf(w, `<div id="build-options"
+			hx-get="/api/builds/options"
+			hx-target="this"
+			hx-swap="outerHTML"
+			hx-trigger="change delay:300ms"
+			hx-include="#build-profile, #build-options input">`)
+
+		w.Write([]byte(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.25rem 1.5rem;margin-top:0.5rem;align-items:center;">`))
+		for _, opt := range options {
+			checked := ""
+			if hasOverrides {
+				if overrides[opt.Flag] {
+					checked = "checked"
+				}
+			} else if opt.Default {
+				checked = "checked"
+			}
+			fmt.Fprintf(w, `<label title="%s" style="display:flex;align-items:center;gap:0.5rem;margin:0;white-space:nowrap;">
+				<input type="checkbox" name="opt_%s" role="switch" %s style="margin:0;">
+				%s
+			</label>`, html.EscapeString(opt.Description), opt.Flag, checked, html.EscapeString(opt.Label))
+		}
+		w.Write([]byte(`</div>`))
+
+		// Extra cmake flags input
+		fmt.Fprintf(w, `<label title="Additional cmake flags passed directly to the build. Use -DFLAG=VALUE format.">Extra CMake Flags
+			<input type="text" name="extra_cmake" value="%s" placeholder="-DFOO=BAR -DBAZ=ON">
+		</label>`, html.EscapeString(extraCMake))
+
+		// Show effective cmake flags with current toggle states
+		prof, ok := builder.FindProfile(profile)
+		if ok {
+			effectiveOverrides := make(map[string]bool)
+			for _, opt := range options {
+				if hasOverrides {
+					effectiveOverrides[opt.Flag] = overrides[opt.Flag]
+				} else {
+					effectiveOverrides[opt.Flag] = opt.Default
+				}
+			}
+			flags := effectiveCMakeFlags(prof, options, effectiveOverrides)
+			if extraCMake != "" {
+				flags += " " + extraCMake
+			}
+			fmt.Fprintf(w, `<label title="The full set of cmake flags that will be passed to the build.">Effective CMake Flags
+				<input type="text" value="%s" readonly style="opacity:0.7;cursor:default;font-size:0.85rem;">
+			</label>`, html.EscapeString(flags))
+		}
+
+		w.Write([]byte(`</div>`))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(options)
+}
+
+func effectiveCMakeFlags(prof builder.BuildProfile, options []builder.BuildOption, overrides map[string]bool) string {
+	flags := make(map[string]string)
+	for k, v := range prof.CMakeFlags {
+		flags[k] = v
+	}
+	for _, opt := range options {
+		enabled := opt.Default
+		if overrides != nil {
+			if v, ok := overrides[opt.Flag]; ok {
+				enabled = v
+			}
+		}
+		if enabled {
+			flags[opt.Flag] = "ON"
+		}
+	}
+	var parts []string
+	for k, v := range flags {
+		parts = append(parts, fmt.Sprintf("-D%s=%s", k, v))
+	}
+	// Sort for stable display
+	sort.Strings(parts)
+	return strings.Join(parts, " ")
 }
 
 func (s *Server) handleListRefs(w http.ResponseWriter, r *http.Request) {
@@ -86,8 +194,21 @@ func (s *Server) handleTriggerBuild(w http.ResponseWriter, r *http.Request) {
 		req.Force = r.FormValue("force") == "1"
 	}
 
+	// Collect option overrides and extra cmake flags from form
+	var optionOverrides map[string]bool
+	var extraCMake string
+	if r.Header.Get("Content-Type") != "application/json" {
+		options := builder.ProfileOptions(req.Profile)
+		optionOverrides = make(map[string]bool)
+		for _, opt := range options {
+			// Checkboxes only send a value when checked
+			optionOverrides[opt.Flag] = r.FormValue("opt_"+opt.Flag) == "on"
+		}
+		extraCMake = r.FormValue("extra_cmake")
+	}
+
 	// Use background context — the build must outlive the HTTP request.
-	result, err := s.builder.Build(context.Background(), req.Profile, req.GitRef, req.Force)
+	result, err := s.builder.Build(context.Background(), req.Profile, req.GitRef, req.Force, optionOverrides, extraCMake)
 	if err != nil {
 		if dup, ok := err.(*builder.DuplicateBuildError); ok {
 			if r.Header.Get("HX-Request") == "true" {

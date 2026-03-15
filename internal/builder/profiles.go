@@ -7,6 +7,71 @@ type BuildProfile struct {
 	CMakeFlags map[string]string `json:"cmake_flags"`
 }
 
+// BuildOption describes a toggleable cmake flag for a profile.
+type BuildOption struct {
+	Flag        string `json:"flag"`
+	Label       string `json:"label"`
+	Description string `json:"description"`
+	Default     bool   `json:"default"`
+}
+
+// ProfileOptions returns the toggleable build options for a given profile.
+func ProfileOptions(profile string) []BuildOption {
+	common := []BuildOption{
+		{
+			Flag:        "GGML_NATIVE",
+			Label:       "Native CPU Optimizations",
+			Description: "Compile with -march=native for best performance on this machine. Disable if building for a different CPU.",
+			Default:     true,
+		},
+	}
+
+	switch profile {
+	case "cuda":
+		return append(common, []BuildOption{
+			{
+				Flag:        "GGML_CUDA_F16",
+				Label:       "CUDA FP16",
+				Description: "Use FP16 for CUDA operations. Faster on RTX cards with minor accuracy tradeoff.",
+				Default:     false,
+			},
+			{
+				Flag:        "GGML_CUDA_FORCE_MMQ",
+				Label:       "Force Custom Matrix Multiply",
+				Description: "Use llama.cpp's custom matrix multiply kernels instead of cuBLAS. Can be faster on some GPUs.",
+				Default:     false,
+			},
+			{
+				Flag:        "GGML_CUDA_ENABLE_UNIFIED_MEMORY",
+				Label:       "Unified Memory (VRAM Overflow)",
+				Description: "Allow models larger than VRAM to overflow into system RAM. Slower but lets you run bigger models.",
+				Default:     false,
+			},
+		}...)
+	case "rocm":
+		return append(common, []BuildOption{
+			{
+				Flag:        "LLAMA_HIP_UMA",
+				Label:       "HIP Unified Memory Access",
+				Description: "Enable unified memory for ROCm. Beneficial for APUs, may hurt performance on discrete GPUs.",
+				Default:     true,
+			},
+			{
+				Flag:        "GGML_CUDA_ENABLE_UNIFIED_MEMORY",
+				Label:       "Unified Memory (VRAM Overflow)",
+				Description: "Allow models larger than VRAM to overflow into system RAM. Slower but lets you run bigger models.",
+				Default:     true,
+			},
+		}...)
+	case "vulkan":
+		return common
+	case "cpu":
+		return common
+	default:
+		return common
+	}
+}
+
 // DefaultProfiles returns built-in profiles for each backend.
 // The ROCm profile auto-detects GPU targets from rocminfo.
 func DefaultProfiles() []BuildProfile {
