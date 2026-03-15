@@ -13,8 +13,8 @@ services:
     devices:
       - /dev/dri:/dev/dri       # GPU render nodes (Vulkan ICD)
     group_add:
-      - video
-      - render
+      - "${HOST_VIDEO_GID:-video}"
+      - "${HOST_RENDER_GID:-render}"
     restart: unless-stopped
 
 volumes:

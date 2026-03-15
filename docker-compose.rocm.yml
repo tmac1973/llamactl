@@ -14,8 +14,8 @@ services:
       - /dev/kfd:/dev/kfd       # AMD GPU kernel interface
       - /dev/dri:/dev/dri       # DRM render nodes
     group_add:
-      - video                   # GPU access group
-      - render                  # render node access
+      - "${HOST_VIDEO_GID:-video}"
+      - "${HOST_RENDER_GID:-render}"
     security_opt:
       - seccomp=unconfined      # required for ROCm
     environment:

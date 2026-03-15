@@ -14,6 +14,8 @@ readonly CDI_USER_DIR="${HOME}/.config/containers/cdi"
 GPU_VENDOR=""           # cuda, rocm, vulkan, cpu
 GPU_INFO=""             # human-readable GPU description
 AMD_GFX_VERSION=""      # HSA_OVERRIDE_GFX_VERSION value (empty = not needed)
+HOST_VIDEO_GID=""       # host video group GID
+HOST_RENDER_GID=""      # host render group GID
 
 CONTAINER_CMD=""        # docker or podman
 COMPOSE_CMD=""          # "docker compose" or "podman-compose" or "podman compose"
@@ -57,6 +59,23 @@ run_sudo() {
 }
 
 # ─── Detection: GPU ──────────────────────────────────────────────────────────
+
+# Detect host video/render group GIDs for container device access.
+# Container group_add needs the host's actual GIDs, not names,
+# because the container's /etc/group may have different GID mappings.
+detect_host_gpu_gids() {
+    if need_cmd getent; then
+        HOST_VIDEO_GID="$(getent group video 2>/dev/null | cut -d: -f3)" || true
+        HOST_RENDER_GID="$(getent group render 2>/dev/null | cut -d: -f3)" || true
+    fi
+    # Fallback: try parsing /etc/group directly
+    if [[ -z "$HOST_VIDEO_GID" ]]; then
+        HOST_VIDEO_GID="$(grep '^video:' /etc/group 2>/dev/null | cut -d: -f3)" || true
+    fi
+    if [[ -z "$HOST_RENDER_GID" ]]; then
+        HOST_RENDER_GID="$(grep '^render:' /etc/group 2>/dev/null | cut -d: -f3)" || true
+    fi
+}
 
 # Detect the AMD GPU gfx target from sysfs and determine if
 # HSA_OVERRIDE_GFX_VERSION is needed for ROCm compatibility.
@@ -146,6 +165,7 @@ detect_gpu() {
             done
         fi
         detect_amd_gfx_version
+        detect_host_gpu_gids
         return
     fi
 
@@ -155,6 +175,7 @@ detect_gpu() {
             if [[ -f "$vendor_file" && "$(cat "$vendor_file")" == "0x8086" ]]; then
                 GPU_VENDOR="vulkan"
                 GPU_INFO="Intel GPU detected (using Vulkan backend)"
+                detect_host_gpu_gids
                 return
             fi
         done
@@ -465,6 +486,12 @@ write_env_file() {
     if [[ -n "$AMD_GFX_VERSION" ]]; then
         echo "HSA_OVERRIDE_GFX_VERSION=${AMD_GFX_VERSION}" >> "$env_file"
     fi
+    if [[ -n "$HOST_VIDEO_GID" ]]; then
+        echo "HOST_VIDEO_GID=${HOST_VIDEO_GID}" >> "$env_file"
+    fi
+    if [[ -n "$HOST_RENDER_GID" ]]; then
+        echo "HOST_RENDER_GID=${HOST_RENDER_GID}" >> "$env_file"
+    fi
 }
 
 container_up() {
@@ -584,14 +611,14 @@ Volume=/usr/share/vulkan:/usr/share/vulkan:ro"
         gpu_args="AddDevice=/dev/kfd
 AddDevice=/dev/dri
 SecurityLabelDisable=true
-GroupAdd=video
-GroupAdd=render
+GroupAdd=${HOST_VIDEO_GID:-video}
+GroupAdd=${HOST_RENDER_GID:-render}
 ${hsa_env}
 Volume=/usr/share/vulkan:/usr/share/vulkan:ro"
     elif [[ "$GPU_VENDOR" == "vulkan" ]]; then
         gpu_args="AddDevice=/dev/dri
-GroupAdd=video
-GroupAdd=render
+GroupAdd=${HOST_VIDEO_GID:-video}
+GroupAdd=${HOST_RENDER_GID:-render}
 Volume=/usr/share/vulkan:/usr/share/vulkan:ro"
     fi
 
