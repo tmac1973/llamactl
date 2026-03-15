@@ -213,9 +213,13 @@ func (b *Builder) runBuild(ctx context.Context, prof BuildProfile, srcDir string
 	os.RemoveAll(buildDir) // clean stale cmake state from previous builds
 	os.MkdirAll(buildDir, 0o755)
 
-	// cmake
+	// cmake — only build server and required libs, skip tests and examples
 	sendLog("==> Running cmake...")
-	cmakeArgs := []string{"..", "-G", "Ninja"}
+	cmakeArgs := []string{"..", "-G", "Ninja",
+		"-DLLAMA_BUILD_TESTS=OFF",
+		"-DLLAMA_BUILD_EXAMPLES=OFF",
+		"-DLLAMA_BUILD_SERVER=ON",
+	}
 	for k, v := range prof.CMakeFlags {
 		cmakeArgs = append(cmakeArgs, fmt.Sprintf("-D%s=%s", k, v))
 	}
