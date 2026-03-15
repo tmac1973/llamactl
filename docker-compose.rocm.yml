@@ -23,8 +23,9 @@ services:
       memlock:
         soft: -1
         hard: -1
-    environment:
-      - HSA_OVERRIDE_GFX_VERSION=${HSA_OVERRIDE_GFX_VERSION:-}
+    env_file:
+      - path: .env
+        required: false
     restart: unless-stopped
 
 volumes:
