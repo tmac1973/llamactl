@@ -3,21 +3,25 @@ FROM golang:1.25-bookworm AS builder
 
 WORKDIR /app
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o llamactl ./cmd/llamactl
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -o llamactl ./cmd/llamactl
 
 # Stage 2: Runtime — lightweight CPU-only image
 # No GPU SDK needed; llama.cpp will build with CPU backends only
 FROM docker.io/library/debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     ninja-build \
     git \
     curl \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+    build-essential
 
 COPY --from=builder /app/llamactl /usr/local/bin/llamactl
 

@@ -1,55 +1,45 @@
 {{define "service_status"}}
-<article>
-    <header>
-        Service Status:
+<article style="margin-bottom: 0.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+        <div>
+            <strong>Service:</strong>
+            {{if eq .State "running"}}
+                <ins>Running</ins>
+            {{else if eq .State "starting"}}
+                <mark>Starting...</mark>
+            {{else if eq .State "failed"}}
+                <del>Failed</del>
+            {{else}}
+                Stopped
+            {{end}}
+            {{if .Model}}
+                — <strong>{{.Model}}</strong>
+            {{end}}
+            {{if .Uptime}}
+                <small>({{.Uptime}})</small>
+            {{end}}
+            {{if .Error}}
+                <small style="color: var(--pico-del-color)"> {{.Error}}</small>
+            {{end}}
+        </div>
         {{if eq .State "running"}}
-            <ins>Running</ins>
-        {{else if eq .State "starting"}}
-            <mark>Starting...</mark>
-        {{else if eq .State "failed"}}
-            <del>Failed</del>
-        {{else}}
-            Stopped
-        {{end}}
-    </header>
-
-    {{if .Model}}
-    <p>Model: <strong>{{.Model}}</strong></p>
-    {{end}}
-    {{if .BuildID}}
-    <p>Build: <kbd>{{.BuildID}}</kbd></p>
-    {{end}}
-    {{if .Uptime}}
-    <p>Uptime: {{.Uptime}}</p>
-    {{end}}
-    {{if .Error}}
-    <p><small style="color: var(--pico-del-color)">{{.Error}}</small></p>
-    {{end}}
-
-    <div role="group">
-        {{if ne .State "running"}}
-        <button type="button"
-                hx-post="/api/service/start"
-                hx-target="#service-status"
-                hx-swap="innerHTML">
-            Start
-        </button>
-        {{end}}
-        {{if eq .State "running"}}
-        <button type="button"
-                hx-post="/api/service/stop"
-                hx-target="#service-status"
-                hx-swap="innerHTML"
-                class="secondary">
-            Stop
-        </button>
-        <button type="button"
-                hx-post="/api/service/restart"
-                hx-target="#service-status"
-                hx-swap="innerHTML"
-                class="outline">
-            Restart
-        </button>
+        <div role="group" style="margin: 0;">
+            <button type="button" class="secondary"
+                    hx-post="/api/service/stop"
+                    hx-target="#service-status"
+                    hx-swap="innerHTML"
+                    hx-on::after-request="htmx.ajax('GET', '/api/models', '#model-list')"
+                    style="margin: 0; padding: 0.25rem 0.75rem; font-size: 0.85rem;">
+                Stop
+            </button>
+            <button type="button" class="outline"
+                    hx-post="/api/service/restart"
+                    hx-target="#service-status"
+                    hx-swap="innerHTML"
+                    style="margin: 0; padding: 0.25rem 0.75rem; font-size: 0.85rem;">
+                Restart
+            </button>
+        </div>
         {{end}}
     </div>
 </article>

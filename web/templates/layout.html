@@ -42,7 +42,7 @@
             background: var(--pico-primary-background);
             color: var(--pico-primary-inverse);
         }
-        main { flex: 1; padding: 1.5rem; max-width: 1200px; overflow-y: auto; }
+        main { flex: 1; padding: 1.5rem; max-width: 1200px; overflow-y: auto; max-height: 100vh; }
     </style>
 </head>
 <body>
@@ -54,9 +54,8 @@
         <ul>
             <li><a href="/"{{if eq .Nav "home"}} aria-current="page"{{end}}>Dashboard</a></li>
             <li><a href="/builds"{{if eq .Nav "builds"}} aria-current="page"{{end}}>Builds</a></li>
-            <li><a href="/models"{{if eq .Nav "models"}} aria-current="page"{{end}}>Models</a></li>
-            <li><a href="/models/browse"{{if eq .Nav "browse"}} aria-current="page"{{end}}>Browse HF</a></li>
-            <li><a href="/service"{{if eq .Nav "service"}} aria-current="page"{{end}}>Service</a></li>
+            <li><a href="/models"{{if or (eq .Nav "models") (eq .Nav "service")}} aria-current="page"{{end}}>Models</a></li>
+            <li><a href="/models/browse"{{if eq .Nav "browse"}} aria-current="page"{{end}}>Search HF</a></li>
             <li><a href="/settings"{{if eq .Nav "settings"}} aria-current="page"{{end}}>Settings</a></li>
         </ul>
     </nav>

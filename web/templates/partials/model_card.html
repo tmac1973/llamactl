@@ -1,7 +1,7 @@
 {{define "model_card"}}
 <tbody class="model-row-group">
-<tr>
-    <td>{{.ModelID}}</td>
+<tr{{if .IsActive}} style="background: var(--pico-primary-background); color: var(--pico-primary-inverse);"{{end}}>
+    <td>{{.ModelID}}{{if .IsActive}} <ins>active</ins>{{end}}</td>
     <td><kbd>{{.Quant}}</kbd></td>
     <td>{{printf "%.1f" .VRAMEstGB}} GB</td>
     <td>{{printf "%.1f" (divGB .SizeBytes)}} GB</td>
@@ -14,12 +14,27 @@
                     hx-on::before-request="let t=this.closest('tr').nextElementSibling.querySelector('td'); if(t.innerHTML.trim()){t.innerHTML=''; event.preventDefault();}">
                 Configure
             </button>
+            {{if .IsActive}}
+            <button type="button" class="secondary"
+                    hx-post="/api/service/stop"
+                    hx-target="#service-status"
+                    hx-swap="innerHTML"
+                    hx-on::after-request="htmx.ajax('GET', '/api/models', '#model-list')">
+                Stop
+            </button>
+            <button type="button" class="outline"
+                    hx-post="/api/service/restart"
+                    hx-target="#service-status"
+                    hx-swap="innerHTML">
+                Restart
+            </button>
+            {{else}}
             <button type="button"
                     hx-put="/api/models/{{.ID}}/activate"
-                    hx-target="#activate-status"
+                    hx-target="#model-list"
                     hx-swap="innerHTML"
-                    hx-confirm="Activate this model? This will restart the service.">
-                Activate
+                    hx-confirm="Start this model? This will stop the current service.">
+                Start
             </button>
             <button type="button" class="outline secondary"
                     hx-delete="/api/models/{{.ID}}"
@@ -28,6 +43,7 @@
                     hx-swap="outerHTML">
                 Delete
             </button>
+            {{end}}
         </div>
     </td>
 </tr>

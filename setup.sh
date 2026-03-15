@@ -494,8 +494,16 @@ is_autostart_enabled() {
     fi
 }
 
+get_volume_name() {
+    # Get the actual volume name from the running container, or fall back to compose default
+    $CONTAINER_CMD inspect --format '{{range .Mounts}}{{.Name}}{{end}}' llamactl 2>/dev/null \
+        || echo "llamactl_llamactl-data"
+}
+
 generate_quadlet() {
     local image_name="localhost/llamactl_llamactl:latest"
+    local volume_name
+    volume_name="$(get_volume_name)"
     local gpu_args=""
 
     if [[ "$GPU_VENDOR" == "cuda" ]]; then
@@ -523,7 +531,7 @@ Image=${image_name}
 ContainerName=llamactl
 PublishPort=3000:3000
 PublishPort=8080:8080
-Volume=llamactl-data:/data:z
+Volume=${volume_name}:/data:z
 ${gpu_args}
 
 [Service]
@@ -676,8 +684,11 @@ container_uninstall() {
         ((i++))
     done
     echo ""
-    echo -e "  ${YELLOW}Note:${NC} The data volume 'llamactl-data' (models, config) will be kept."
-    echo -e "        To remove it: ${CONTAINER_CMD} volume rm llamactl-data"
+    # Compose prefixes volume names with the project directory name
+    local volume_name
+    volume_name="$($CONTAINER_CMD inspect --format '{{range .Mounts}}{{.Name}}{{end}}' llamactl 2>/dev/null || echo "llamactl-data")"
+    echo -e "  ${YELLOW}Note:${NC} The data volume (models, builds, config) will be kept."
+    echo -e "        To remove it: ${CONTAINER_CMD} volume rm ${volume_name}"
     echo ""
 
     if ! prompt_confirm "Proceed with uninstall?"; then

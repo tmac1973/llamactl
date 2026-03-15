@@ -95,11 +95,12 @@ func (r *Registry) Add(m *Model) error {
 	// Set default config
 	if _, exists := r.data.Configs[m.ID]; !exists {
 		r.data.Configs[m.ID] = &ModelConfig{
-			GPULayers:   999,
-			TensorSplit: "0.5,0.5",
-			ContextSize: 8192,
-			Threads:     8,
-			Jinja:       true,
+			GPULayers:      999,
+			TensorSplit:    "0.5,0.5",
+			ContextSize:    8192,
+			Threads:        8,
+			FlashAttention: true,
+			Jinja:          true,
 		}
 	}
 	r.save()

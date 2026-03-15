@@ -96,7 +96,9 @@ func (s *Server) buildRouter() chi.Router {
 	r.Get("/builds", s.handleBuildsPage)
 	r.Get("/models", s.handleModelsPage)
 	r.Get("/models/browse", s.handleModelsBrowsePage)
-	r.Get("/service", s.handleServicePage)
+	r.Get("/service", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/models", http.StatusMovedPermanently)
+	})
 	r.Get("/settings", s.handleSettingsPage)
 
 	// Dashboard API (outside /api group, htmx-only)
@@ -182,10 +184,7 @@ func (s *Server) handleServicePage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
-	proxyEndpoint := fmt.Sprintf("http://localhost%s/v1", s.cfg.ListenAddr)
-	if s.cfg.ExternalURL != "" {
-		proxyEndpoint = strings.TrimRight(s.cfg.ExternalURL, "/") + "/v1"
-	}
+	proxyEndpoint := strings.TrimRight(s.cfg.ExternalURL, "/") + "/v1"
 	data := struct {
 		pageData
 		ProxyEndpoint string
@@ -220,14 +219,10 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	apiURL := strings.TrimRight(s.cfg.ExternalURL, "/") + "/v1"
 	chatURL := ""
-	apiURL := fmt.Sprintf("http://localhost%s/v1", s.cfg.ListenAddr)
-	if s.cfg.ExternalURL != "" {
-		apiURL = strings.TrimRight(s.cfg.ExternalURL, "/") + "/v1"
-		// Extract scheme+hostname (strip port) and add llama port for chat UI
-		if u, err := url.Parse(s.cfg.ExternalURL); err == nil {
-			chatURL = fmt.Sprintf("%s://%s:%d", u.Scheme, u.Hostname(), s.cfg.LlamaPort)
-		}
+	if u, err := url.Parse(s.cfg.ExternalURL); err == nil {
+		chatURL = fmt.Sprintf("%s://%s:%d", u.Scheme, u.Hostname(), s.cfg.LlamaPort)
 	}
 
 	// State badge
@@ -249,7 +244,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
         <header>Service</header>
         <p>%s</p>
         %s
-        <p><a href="/service">Manage →</a></p>
+        <p><a href="/models">Manage →</a></p>
     </article>
     <article>
         <header>Active Model</header>
@@ -259,7 +254,8 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
     <article>
         <header>Inventory</header>
         <p><strong>%d</strong> builds · <strong>%d</strong> models</p>
-        <p><a href="/builds">Builds →</a> · <a href="/models/browse">Browse →</a></p>
+        <p><a href="/builds">Builds →</a> · <a href="/models">Models →</a></p>
+        <p><a href="/models/browse">Get New Models →</a></p>
     </article>
     <article>
         <header>API Endpoint</header>

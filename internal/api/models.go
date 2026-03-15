@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/tmlabonte/llamactl/internal/models"
 )
 
 func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
@@ -13,12 +14,26 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if len(modelList) == 0 {
-			w.Write([]byte("<p>No models downloaded yet. Browse HuggingFace to download models.</p>"))
+			w.Write([]byte(`<p>No models downloaded yet. <a href="/models/browse">Browse HuggingFace</a> to download models.</p>`))
 			return
 		}
+
+		status := s.process.GetStatus()
+		activeModel := status.Model
+		serviceState := status.State
+
 		w.Write([]byte(`<table role="grid"><thead><tr><th>Model</th><th>Quant</th><th>VRAM Est.</th><th>Size</th><th></th></tr></thead>`))
 		for _, m := range modelList {
-			s.renderPartial(w, "model_card", m)
+			data := struct {
+				models.Model
+				IsActive     bool
+				ServiceState string
+			}{
+				Model:        *m,
+				IsActive:     m.ModelID == activeModel && (serviceState == "running" || serviceState == "starting"),
+				ServiceState: serviceState,
+			}
+			s.renderPartial(w, "model_card", data)
 		}
 		w.Write([]byte(`</table>`))
 		return

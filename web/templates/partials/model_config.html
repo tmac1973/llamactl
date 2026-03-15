@@ -1,9 +1,11 @@
 {{define "model_config"}}
-<form hx-put="/api/models/{{.ModelID}}/config"
+<form id="model-config-form"
+      hx-put="/api/models/{{.ModelID}}/config"
       hx-target="this"
-      hx-swap="outerHTML">
+      hx-swap="outerHTML"
+      hx-trigger="submit, change[!this.classList.contains('ctx-editing')] delay:500ms">
 
-    <label>
+    <label title="Which llama.cpp build to use for this model. 'Auto' picks the first successful build.">
         Build
         <select name="build_id">
             <option value="">Auto (first available)</option>
@@ -16,35 +18,54 @@
     </label>
 
     <div class="grid">
-        <label>
+        <label title="Number of model layers to offload to the GPU. 999 offloads all layers. Lower values keep some layers on CPU, reducing VRAM usage at the cost of speed.">
             GPU Layers
             <input type="number" name="gpu_layers" value="{{.Config.GPULayers}}"
                    min="0" max="999" placeholder="999 = all layers">
         </label>
-        <label>
+        {{$cs := .Config.ContextSize}}
+        {{$isCustom := and (ne $cs 0) (ne $cs 2048) (ne $cs 4096) (ne $cs 8192) (ne $cs 16384) (ne $cs 32768) (ne $cs 65536) (ne $cs 131072) (ne $cs 262144)}}
+        <label title="Maximum token context window. Larger values use more VRAM. 'Model Default' uses the model's trained context size.">
             Context Size
-            <input type="number" name="context_size" value="{{.Config.ContextSize}}"
-                   min="512" step="512" placeholder="8192" list="context-sizes">
-            <datalist id="context-sizes">
-                <option value="2048">2K</option>
-                <option value="4096">4K</option>
-                <option value="8192">8K</option>
-                <option value="16384">16K</option>
-                <option value="32768">32K</option>
-                <option value="65536">64K</option>
-                <option value="131072">128K</option>
-                <option value="262144">256K</option>
-            </datalist>
+            <div class="ctx-size-picker">
+                <select {{if not $isCustom}}name="context_size"{{end}}
+                        {{if $isCustom}}style="display:none;"{{end}}
+                        onchange="if(this.value==='custom'){this.removeAttribute('name');this.style.display='none';var w=this.closest('.ctx-size-picker');w.querySelector('.ctx-custom-row').style.display='flex';w.querySelector('input').name='context_size';w.querySelector('input').focus();this.closest('form').classList.add('ctx-editing');}">
+                    <option value="0" {{if eq $cs 0}}selected{{end}}>Model Default</option>
+                    <option value="2048" {{if eq $cs 2048}}selected{{end}}>2K</option>
+                    <option value="4096" {{if eq $cs 4096}}selected{{end}}>4K</option>
+                    <option value="8192" {{if eq $cs 8192}}selected{{end}}>8K</option>
+                    <option value="16384" {{if eq $cs 16384}}selected{{end}}>16K</option>
+                    <option value="32768" {{if eq $cs 32768}}selected{{end}}>32K</option>
+                    <option value="65536" {{if eq $cs 65536}}selected{{end}}>64K</option>
+                    <option value="131072" {{if eq $cs 131072}}selected{{end}}>128K</option>
+                    <option value="262144" {{if eq $cs 262144}}selected{{end}}>256K</option>
+                    <option value="custom" {{if $isCustom}}selected{{end}}>Custom...</option>
+                </select>
+                <div style="display:flex;gap:0.5rem;align-items:center;{{if not $isCustom}}display:none;{{end}}"
+                     class="ctx-custom-row">
+                    <input type="number" min="512" step="512"
+                           {{if $isCustom}}name="context_size" value="{{$cs}}"{{end}}
+                           style="margin:0;"
+                           placeholder="e.g. 16384"
+                           onchange="this.closest('form').classList.remove('ctx-editing');">
+                    <a href="#" class="ctx-presets-btn"
+                       style="white-space:nowrap;font-size:0.85rem;"
+                       onclick="event.preventDefault();var w=this.closest('.ctx-size-picker');var s=w.querySelector('select');var inp=w.querySelector('input');inp.removeAttribute('name');w.querySelector('.ctx-custom-row').style.display='none';s.name='context_size';s.value='8192';s.style.display='';this.closest('form').classList.remove('ctx-editing');s.dispatchEvent(new Event('change',{bubbles:true}));">
+                        Presets
+                    </a>
+                </div>
+            </div>
         </label>
     </div>
 
     <div class="grid">
-        <label>
+        <label title="Split model across multiple GPUs. Comma-separated ratios (e.g. 0.5,0.5 for equal split across 2 GPUs). Leave default for single GPU.">
             Tensor Split
             <input type="text" name="tensor_split" value="{{.Config.TensorSplit}}"
                    placeholder="0.5,0.5 (for dual GPU)">
         </label>
-        <label>
+        <label title="Number of CPU threads for inference. More threads help with CPU-bound layers. Generally set to your physical core count.">
             Threads
             <input type="number" name="threads" value="{{.Config.Threads}}"
                    min="1" placeholder="8">
@@ -52,17 +73,17 @@
     </div>
 
     <div class="grid">
-        <label>
+        <label title="Use flash attention for faster inference and lower VRAM usage. Recommended for most models. Disable if you experience compatibility issues.">
             Flash Attention
             <input type="checkbox" name="flash_attention" role="switch"
                    {{if .Config.FlashAttention}}checked{{end}}>
         </label>
-        <label>
+        <label title="Enable Jinja2 chat template processing. Required for models that use Jinja-based prompt templates (most modern models).">
             Jinja Templates
             <input type="checkbox" name="jinja" role="switch"
                    {{if .Config.Jinja}}checked{{end}}>
         </label>
-        <label>
+        <label title="Quantize the KV cache to reduce VRAM usage. q8_0 saves ~50% KV memory with minimal quality loss. q4_0 saves ~75% but may affect output quality.">
             KV Cache Quantization
             <select name="kv_cache_quant">
                 <option value="" {{if eq .Config.KVCacheQuant ""}}selected{{end}}>Off (f16)</option>
@@ -72,13 +93,13 @@
         </label>
     </div>
 
-    <label>
+    <label title="Additional command-line flags passed directly to llama-server. See llama.cpp docs for available options.">
         Extra Flags
         <input type="text" name="extra_flags" value="{{.Config.ExtraFlags}}"
                placeholder="--cont-batching --mlock">
     </label>
 
-    <label>
+    <label title="The full set of flags that will be passed to llama-server when this model starts.">
         Effective Flags
         <input type="text" value="{{.EffectiveFlags}}" readonly
                style="opacity: 0.7; cursor: default;">
@@ -88,10 +109,10 @@
         <button type="submit">Save Config</button>
         <button type="button"
                 hx-put="/api/models/{{.ModelID}}/activate"
-                hx-target="#activate-status"
+                hx-target="#model-list"
                 hx-swap="innerHTML"
                 class="outline">
-            Save &amp; Activate
+            Save &amp; Start
         </button>
     </div>
 </form>

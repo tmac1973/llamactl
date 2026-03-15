@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -177,9 +176,8 @@ func (s *Server) handleActivateModel(w http.ResponseWriter, r *http.Request) {
 	status.BuildID = cfg.BuildID
 
 	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<article><p>Model <strong>%s</strong> activated. Service is <strong>%s</strong>. <a href="/service">View Service →</a></p></article>`,
-			model.ModelID, status.State)
+		// Re-render the model list so the active model is highlighted
+		s.handleListModels(w, r)
 		return
 	}
 

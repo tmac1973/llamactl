@@ -1,9 +1,123 @@
 {{define "content"}}
-<h1>Local Models</h1>
+<style>
+    .models-page {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 3rem);
+    }
+    .models-page .models-list {
+        flex: 1;
+        overflow-y: auto;
+        min-height: 100px;
+    }
+    .models-page .resize-handle {
+        flex-shrink: 0;
+        height: 6px;
+        cursor: row-resize;
+        background: var(--pico-muted-border-color);
+        border-radius: 3px;
+        margin: 2px 0;
+        transition: background 0.15s;
+    }
+    .models-page .resize-handle:hover,
+    .models-page .resize-handle.dragging {
+        background: var(--pico-primary);
+    }
+    .models-page .log-section {
+        flex-shrink: 0;
+        min-height: 80px;
+        overflow: hidden;
+    }
+    .models-page .log-section .log-panel {
+        margin: 0;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+    .models-page .log-section .log-panel pre {
+        flex: 1;
+        max-height: none;
+        overflow-y: auto;
+        font-size: 0.85rem;
+        margin: 0;
+    }
+</style>
 
-<div id="activate-status"></div>
+<div class="models-page">
+    <div id="service-status"
+         hx-get="/api/service/status"
+         hx-trigger="load, every 5s"
+         hx-swap="innerHTML">
+        Loading...
+    </div>
 
-<div id="model-list" hx-get="/api/models" hx-trigger="load" hx-swap="innerHTML">
-    Loading...
+    <div class="models-list">
+        <div id="model-list" hx-get="/api/models" hx-trigger="load" hx-swap="innerHTML">
+            Loading...
+        </div>
+    </div>
+
+    <div class="resize-handle" title="Drag to resize"></div>
+
+    <div class="log-section" style="height: 300px;">
+        <article class="log-panel">
+            <header>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>Server Logs</span>
+                    <div style="display: flex; gap: 1rem; align-items: center;">
+                        <label style="margin: 0; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
+                            Live tail
+                            <input type="checkbox" class="log-tail-toggle" role="switch" checked
+                                   style="margin: 0;">
+                        </label>
+                        <button type="button" class="log-copy-btn outline secondary"
+                                style="margin: 0; padding: 0.25rem 0.75rem; font-size: 0.8rem;">
+                            Copy
+                        </button>
+                    </div>
+                </div>
+            </header>
+            <pre id="service-logs"
+                 hx-ext="sse"
+                 sse-connect="/api/service/logs"
+                 sse-swap="message"
+                 hx-swap="beforeend">
+            </pre>
+        </article>
+    </div>
 </div>
+
+<script>
+(function() {
+    const handle = document.querySelector('.models-page .resize-handle');
+    const logSection = document.querySelector('.models-page .log-section');
+    const page = document.querySelector('.models-page');
+    let startY, startH;
+
+    handle.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        startY = e.clientY;
+        startH = logSection.offsetHeight;
+        handle.classList.add('dragging');
+        document.body.style.cursor = 'row-resize';
+        document.body.style.userSelect = 'none';
+        document.addEventListener('mousemove', onDrag);
+        document.addEventListener('mouseup', onRelease);
+    });
+
+    function onDrag(e) {
+        const delta = startY - e.clientY;
+        const newH = Math.max(80, Math.min(startH + delta, page.offsetHeight - 200));
+        logSection.style.height = newH + 'px';
+    }
+
+    function onRelease() {
+        handle.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onDrag);
+        document.removeEventListener('mouseup', onRelease);
+    }
+})();
+</script>
 {{end}}

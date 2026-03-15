@@ -3,9 +3,12 @@ FROM golang:1.25-bookworm AS builder
 
 WORKDIR /app
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o llamactl ./cmd/llamactl
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -o llamactl ./cmd/llamactl
 
 # Stage 2: Runtime — Fedora 43 + ROCm 7.2
 # Using full dev toolchain because llama.cpp builds happen inside
@@ -26,7 +29,8 @@ REPO
 EOF
 
 # Dev tools + ROCm SDK
-RUN dnf -y --nodocs --setopt=install_weak_deps=False \
+RUN --mount=type=cache,target=/var/cache/dnf \
+    dnf -y --nodocs --setopt=install_weak_deps=False \
   --exclude='*sdk*' --exclude='*samples*' --exclude='*-doc*' --exclude='*-docs*' \
   install \
   make gcc cmake lld clang clang-devel compiler-rt ninja-build \
@@ -34,8 +38,7 @@ RUN dnf -y --nodocs --setopt=install_weak_deps=False \
   rocblas rocblas-devel hipblas hipblas-devel rocm-cmake libomp-devel libomp \
   rocminfo \
   git-core curl \
-  vulkan-loader-devel vulkan-tools \
-  && dnf clean all && rm -rf /var/cache/dnf/*
+  vulkan-loader-devel vulkan-tools
 
 # ROCm environment
 ENV ROCM_PATH=/opt/rocm \

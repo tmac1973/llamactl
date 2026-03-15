@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -84,7 +85,9 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte("<p>Settings saved.</p>"))
+		proxyEndpoint := strings.TrimRight(s.cfg.ExternalURL, "/") + "/v1"
+		// Out-of-band swap to update the proxy endpoint display
+		fmt.Fprintf(w, `<p>Settings saved.</p><pre id="proxy-endpoint" hx-swap-oob="true">%s</pre>`, proxyEndpoint)
 		return
 	}
 
