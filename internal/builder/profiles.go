@@ -53,14 +53,14 @@ func ProfileOptions(profile string) []BuildOption {
 			{
 				Flag:        "LLAMA_HIP_UMA",
 				Label:       "HIP Unified Memory Access",
-				Description: "Enable unified memory for ROCm. Beneficial for APUs, may hurt performance on discrete GPUs.",
-				Default:     true,
+				Description: "Enable unified memory for ROCm. Enable for APUs only — hurts performance on discrete GPUs.",
+				Default:     false,
 			},
 			{
 				Flag:        "GGML_CUDA_ENABLE_UNIFIED_MEMORY",
 				Label:       "Unified Memory (VRAM Overflow)",
 				Description: "Allow models larger than VRAM to overflow into system RAM. Slower but lets you run bigger models.",
-				Default:     true,
+				Default:     false,
 			},
 		}...)
 	case "vulkan":
@@ -89,11 +89,9 @@ func DefaultProfiles() []BuildProfile {
 			Name:    "rocm",
 			Backend: "rocm",
 			CMakeFlags: map[string]string{
-				"GGML_HIP":                        "ON",
-				"AMDGPU_TARGETS":                  gpuTargets,
-				"CMAKE_BUILD_TYPE":                "Release",
-				"LLAMA_HIP_UMA":                   "ON",
-				"GGML_CUDA_ENABLE_UNIFIED_MEMORY": "ON",
+				"GGML_HIP":        "ON",
+				"AMDGPU_TARGETS":  gpuTargets,
+				"CMAKE_BUILD_TYPE": "Release",
 			},
 		},
 		{
