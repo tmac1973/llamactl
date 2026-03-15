@@ -38,7 +38,7 @@ RUN --mount=type=cache,target=/var/cache/dnf \
   rocblas rocblas-devel hipblas hipblas-devel rocm-cmake libomp-devel libomp \
   rocminfo \
   git-core curl \
-  vulkan-loader-devel vulkan-tools
+  vulkan-loader-devel vulkan-tools glslang glslc
 
 # ROCm environment
 ENV ROCM_PATH=/opt/rocm \

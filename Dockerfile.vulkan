@@ -10,10 +10,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -o llamactl ./cmd/llamactl
 
-# Stage 2: Runtime — NVIDIA CUDA 12.8
-# Using dev image because llama.cpp builds happen inside
-# the container and need nvcc, cuBLAS, CUDA headers, etc.
-FROM docker.io/nvidia/cuda:12.8.1-devel-ubuntu24.04
+# Stage 2: Runtime — Vulkan GPU compute (Intel, or any GPU with Vulkan drivers)
+# No vendor-specific SDK needed; Vulkan is cross-platform
+FROM docker.io/library/debian:bookworm-slim
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \

@@ -2,7 +2,7 @@ services:
   llamactl:
     build:
       context: .
-      dockerfile: Dockerfile.rocm
+      dockerfile: Dockerfile.vulkan
     container_name: llamactl
     ports:
       - "3000:3000"   # LlamaCtl management UI
@@ -11,15 +11,10 @@ services:
       - llamactl-data:/data:z
       - /usr/share/vulkan:/usr/share/vulkan:ro
     devices:
-      - /dev/kfd:/dev/kfd       # AMD GPU kernel interface
-      - /dev/dri:/dev/dri       # DRM render nodes
+      - /dev/dri:/dev/dri       # GPU render nodes (Vulkan ICD)
     group_add:
-      - video                   # GPU access group
-      - render                  # render node access
-    security_opt:
-      - seccomp=unconfined      # required for ROCm
-    environment:
-      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - video
+      - render
     restart: unless-stopped
 
 volumes:

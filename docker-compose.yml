@@ -7,9 +7,7 @@ services:
       - "8080:8080"   # llama-server inference + chat UI
     volumes:
       - llamactl-data:/data:z
-      # For Vulkan support, uncomment these mounts (requires Vulkan on host):
-      # - /etc/vulkan:/etc/vulkan:ro
-      # - /usr/share/vulkan:/usr/share/vulkan:ro
+      - /usr/share/vulkan:/usr/share/vulkan:ro
     devices:
       - /dev/kfd:/dev/kfd       # AMD GPU kernel interface
       - /dev/dri:/dev/dri       # DRM render nodes

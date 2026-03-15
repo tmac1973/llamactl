@@ -93,12 +93,12 @@ detect_gpu() {
         return
     fi
 
-    # Intel: check for Intel render nodes
+    # Intel: check for Intel render nodes — use Vulkan backend
     if [[ -d /sys/class/drm ]]; then
         for vendor_file in /sys/class/drm/*/device/vendor; do
             if [[ -f "$vendor_file" && "$(cat "$vendor_file")" == "0x8086" ]]; then
-                GPU_VENDOR="cpu"
-                GPU_INFO="Intel GPU detected (using CPU backend — Intel GPU support is experimental)"
+                GPU_VENDOR="vulkan"
+                GPU_INFO="Intel GPU detected (using Vulkan backend)"
                 return
             fi
         done
@@ -507,14 +507,21 @@ generate_quadlet() {
     local gpu_args=""
 
     if [[ "$GPU_VENDOR" == "cuda" ]]; then
-        gpu_args="AddDevice=nvidia.com/gpu=all"
+        gpu_args="AddDevice=nvidia.com/gpu=all
+Volume=/usr/share/vulkan:/usr/share/vulkan:ro"
     elif [[ "$GPU_VENDOR" == "rocm" ]]; then
         gpu_args="AddDevice=/dev/kfd
 AddDevice=/dev/dri
 SecurityLabelDisable=true
 GroupAdd=video
 GroupAdd=render
-Environment=HSA_OVERRIDE_GFX_VERSION=11.0.0"
+Environment=HSA_OVERRIDE_GFX_VERSION=11.0.0
+Volume=/usr/share/vulkan:/usr/share/vulkan:ro"
+    elif [[ "$GPU_VENDOR" == "vulkan" ]]; then
+        gpu_args="AddDevice=/dev/dri
+GroupAdd=video
+GroupAdd=render
+Volume=/usr/share/vulkan:/usr/share/vulkan:ro"
     fi
 
     cat <<EOF
@@ -817,7 +824,7 @@ Info:
   help        Show this help message
 
 Environment variables:
-  GPU=cuda|rocm|cpu       Override GPU auto-detection
+  GPU=cuda|rocm|vulkan|cpu  Override GPU auto-detection
   RUNTIME=docker|podman   Override container runtime auto-detection
 
 Examples:

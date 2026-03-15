@@ -36,6 +36,8 @@ The management UI will be available at `http://localhost:3000`.
 |-----|---------|--------|--------|
 | NVIDIA | CUDA 12.8 | Yes | Yes |
 | AMD | ROCm 7.2 | Yes | Yes |
+| Intel | Vulkan | Yes | Yes |
+| Any | Vulkan | Yes | Yes |
 | None | CPU-only | Yes | Yes |
 
 | Distro Family | Package Manager | Tested |
@@ -120,7 +122,6 @@ To enable Vulkan backend builds, uncomment the host Vulkan mounts in your compos
 
 ```yaml
 volumes:
-  - /etc/vulkan:/etc/vulkan:ro
   - /usr/share/vulkan:/usr/share/vulkan:ro
 ```
 
@@ -152,11 +153,13 @@ The UI uses server-rendered HTML with [htmx](https://htmx.org/) for interactivit
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile.cuda` | NVIDIA CUDA 12.8 runtime |
-| `Dockerfile.rocm` | AMD ROCm 7.2 runtime |
+| `Dockerfile.cuda` | NVIDIA CUDA 12.8 + Vulkan runtime |
+| `Dockerfile.rocm` | AMD ROCm 7.2 + Vulkan runtime |
+| `Dockerfile.vulkan` | Vulkan-only (Intel GPUs, lightweight Debian) |
 | `Dockerfile.cpu` | CPU-only (lightweight Debian) |
 | `docker-compose.cuda.yml` | Compose for NVIDIA (works with Docker and Podman) |
 | `docker-compose.rocm.yml` | Compose for AMD |
+| `docker-compose.vulkan.yml` | Compose for Vulkan/Intel |
 | `docker-compose.cpu.yml` | Compose for CPU-only |
 | `setup.sh` | Auto-detect and setup script |
 
