@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -15,6 +16,7 @@ import (
 	"github.com/tmlabonte/llamactl/internal/config"
 	"github.com/tmlabonte/llamactl/internal/huggingface"
 	"github.com/tmlabonte/llamactl/internal/models"
+	"github.com/tmlabonte/llamactl/internal/monitor"
 	"github.com/tmlabonte/llamactl/internal/process"
 	"github.com/tmlabonte/llamactl/web"
 )
@@ -28,9 +30,13 @@ type Server struct {
 	downloader *huggingface.Downloader
 	registry   *models.Registry
 	process    *process.Manager
+	monitor    *monitor.Monitor
 }
 
 func NewServer(cfg *config.Config) *Server {
+	mon := monitor.New(3 * time.Second)
+	mon.Start()
+
 	s := &Server{
 		cfg:        cfg,
 		builder:    builder.NewBuilder(cfg.DataDir),
@@ -38,6 +44,7 @@ func NewServer(cfg *config.Config) *Server {
 		downloader: huggingface.NewDownloader(cfg.DataDir, cfg.HFToken),
 		registry:   models.NewRegistry(cfg.DataDir),
 		process:    process.NewManager(),
+		monitor:    mon,
 	}
 	s.downloader.SetOnComplete(s.onDownloadComplete)
 	s.pages = s.parseTemplates()
@@ -142,6 +149,10 @@ func (s *Server) buildRouter() chi.Router {
 			r.Get("/", s.handleGetSettings)
 			r.Put("/", s.handleUpdateSettings)
 			r.Post("/test-connection", s.handleTestConnection)
+		})
+		r.Route("/monitor", func(r chi.Router) {
+			r.Get("/", s.handleMonitorStatus)
+			r.Get("/stream", s.handleMonitorStream)
 		})
 	})
 

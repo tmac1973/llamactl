@@ -18,7 +18,7 @@
             border-right: 1px solid var(--pico-muted-border-color);
             display: flex;
             flex-direction: column;
-            justify-content: flex-start;
+            justify-content: space-between;
             align-items: stretch;
         }
         nav.sidebar ul {
@@ -58,6 +58,12 @@
             <li><a href="/models/browse"{{if eq .Nav "browse"}} aria-current="page"{{end}}>Search HF</a></li>
             <li><a href="/settings"{{if eq .Nav "settings"}} aria-current="page"{{end}}>Settings</a></li>
         </ul>
+        <div id="monitor-bar"
+             hx-get="/api/monitor"
+             hx-trigger="load, every 3s"
+             hx-swap="innerHTML"
+             style="font-size:0.75rem;opacity:0.8;border-top:1px solid var(--pico-muted-border-color);padding-top:0.5rem;">
+        </div>
     </nav>
     <main class="container">
         {{template "content" .}}
