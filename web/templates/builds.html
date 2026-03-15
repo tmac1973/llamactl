@@ -19,7 +19,19 @@
             </label>
             <label>
                 Git Ref
-                <input type="text" name="git_ref" value="latest" placeholder="tag, branch, or commit">
+                <div style="display:flex;gap:0.5rem;align-items:center;">
+                    <select name="git_ref" id="git-ref-select" style="margin:0;">
+                        <option value="latest" selected>latest</option>
+                    </select>
+                    <button type="button" class="outline secondary"
+                            style="margin:0;padding:0.25rem 0.75rem;font-size:0.85rem;white-space:nowrap;"
+                            hx-get="/api/builds/refs?refresh=1"
+                            hx-target="#git-ref-select"
+                            hx-swap="innerHTML"
+                            title="Fetch available tags from llama.cpp repo">
+                        Refresh Tags
+                    </button>
+                </div>
             </label>
         </div>
         <button type="submit">Start Build</button>

@@ -39,6 +39,9 @@ type Builder struct {
 	mu     sync.Mutex
 	builds []BuildResult
 	logChs map[string]chan string
+
+	refsMu    sync.Mutex
+	cachedRefs []string
 }
 
 // NewBuilder creates a Builder and loads persisted build state.
@@ -68,9 +71,19 @@ func (b *Builder) LogChannel(buildID string) (<-chan string, bool) {
 	return ch, ok
 }
 
+// DuplicateBuildError is returned when a build with the same ref+profile already exists.
+type DuplicateBuildError struct {
+	ID string
+}
+
+func (e *DuplicateBuildError) Error() string {
+	return fmt.Sprintf("build %s already exists", e.ID)
+}
+
 // Build runs the full build pipeline asynchronously.
 // It returns the initial BuildResult immediately; logs stream via LogChannel.
-func (b *Builder) Build(ctx context.Context, profile string, gitRef string) (*BuildResult, error) {
+// If force is true, an existing build with the same ID will be replaced.
+func (b *Builder) Build(ctx context.Context, profile string, gitRef string, force bool) (*BuildResult, error) {
 	prof, ok := FindProfile(profile)
 	if !ok {
 		return nil, fmt.Errorf("unknown profile: %s", profile)
@@ -96,16 +109,32 @@ func (b *Builder) Build(ctx context.Context, profile string, gitRef string) (*Bu
 		return nil, fmt.Errorf("repo setup: %w", err)
 	}
 
-	sha, err := b.checkoutRef(ctx, srcDir, gitRef, logCh)
+	resolvedRef, sha, err := b.checkoutRef(ctx, srcDir, gitRef, logCh)
 	if err != nil {
 		close(logCh)
 		return nil, fmt.Errorf("checkout: %w", err)
 	}
 
+	result.GitRef = resolvedRef
 	result.GitSHA = sha
-	result.ID = fmt.Sprintf("%s-%s", prof.Name, sha[:7])
+	result.ID = fmt.Sprintf("%s-%s", resolvedRef, prof.Name)
 
+	// Check for duplicate build
 	b.mu.Lock()
+	for i, br := range b.builds {
+		if br.ID == result.ID {
+			if !force {
+				b.mu.Unlock()
+				close(logCh)
+				return nil, &DuplicateBuildError{ID: result.ID}
+			}
+			// Replace existing build
+			buildDir := filepath.Join(b.dataDir, "builds", br.ID)
+			os.RemoveAll(buildDir)
+			b.builds = append(b.builds[:i], b.builds[i+1:]...)
+			break
+		}
+	}
 	b.logChs[result.ID] = logCh
 	b.builds = append(b.builds, *result)
 	b.mu.Unlock()
@@ -267,13 +296,15 @@ func (b *Builder) ensureRepo(ctx context.Context, srcDir string, logCh chan stri
 	return b.runCmd(ctx, filepath.Dir(srcDir), logCh, "git", "clone", llamaCppRepo, filepath.Base(srcDir))
 }
 
-func (b *Builder) checkoutRef(ctx context.Context, srcDir string, ref string, logCh chan string) (string, error) {
+// checkoutRef checks out the given ref and returns (resolvedRef, sha, error).
+// If ref is "latest", it resolves to the latest b* release tag.
+func (b *Builder) checkoutRef(ctx context.Context, srcDir string, ref string, logCh chan string) (string, string, error) {
 	if ref == "latest" {
 		// Find latest b* release tag (current llama.cpp release format).
 		// Use --sort=-v:refname for proper version ordering.
 		out, err := exec.CommandContext(ctx, "git", "-C", srcDir, "tag", "--sort=-v:refname", "-l", "b*").Output()
 		if err != nil {
-			return "", fmt.Errorf("listing tags: %w", err)
+			return "", "", fmt.Errorf("listing tags: %w", err)
 		}
 		tags := strings.Split(strings.TrimSpace(string(out)), "\n")
 		if len(tags) == 0 || tags[0] == "" {
@@ -286,14 +317,64 @@ func (b *Builder) checkoutRef(ctx context.Context, srcDir string, ref string, lo
 
 	sendLog(logCh, fmt.Sprintf("==> Checking out %s...", ref))
 	if err := b.runCmd(ctx, srcDir, logCh, "git", "checkout", ref); err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	out, err := exec.CommandContext(ctx, "git", "-C", srcDir, "rev-parse", "HEAD").Output()
 	if err != nil {
-		return "", fmt.Errorf("rev-parse: %w", err)
+		return "", "", fmt.Errorf("rev-parse: %w", err)
 	}
-	return strings.TrimSpace(string(out)), nil
+	return ref, strings.TrimSpace(string(out)), nil
+}
+
+// FetchRefs fetches available tags from the llama.cpp repo (requires repo to be cloned).
+// Results are cached; call this to refresh.
+func (b *Builder) FetchRefs() ([]string, error) {
+	srcDir := filepath.Join(b.dataDir, "llama.cpp")
+	if _, err := os.Stat(filepath.Join(srcDir, ".git")); err != nil {
+		return nil, fmt.Errorf("llama.cpp repo not cloned yet — run a build first")
+	}
+
+	out, err := exec.Command("git", "-C", srcDir, "tag", "--sort=-v:refname", "-l", "b*").Output()
+	if err != nil {
+		return nil, fmt.Errorf("listing tags: %w", err)
+	}
+
+	tags := strings.Split(strings.TrimSpace(string(out)), "\n")
+	var refs []string
+	for _, t := range tags {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			refs = append(refs, t)
+		}
+	}
+
+	b.refsMu.Lock()
+	b.cachedRefs = refs
+	b.refsMu.Unlock()
+
+	return refs, nil
+}
+
+// CachedRefs returns the last fetched refs without hitting git.
+func (b *Builder) CachedRefs() []string {
+	b.refsMu.Lock()
+	defer b.refsMu.Unlock()
+	out := make([]string, len(b.cachedRefs))
+	copy(out, b.cachedRefs)
+	return out
+}
+
+// HasBuild checks if a build with the given ID already exists.
+func (b *Builder) HasBuild(id string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, br := range b.builds {
+		if br.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // runCmd runs a command, streaming stdout+stderr line-by-line to the log channel.

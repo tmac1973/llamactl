@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -15,6 +16,34 @@ func (s *Server) handleListBackends(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(backends)
 }
 
+func (s *Server) handleListRefs(w http.ResponseWriter, r *http.Request) {
+	refresh := r.URL.Query().Get("refresh") == "1"
+
+	var refs []string
+	var err error
+	if refresh {
+		refs, err = s.builder.FetchRefs()
+		if err != nil {
+			// Return cached if fetch fails
+			refs = s.builder.CachedRefs()
+		}
+	} else {
+		refs = s.builder.CachedRefs()
+	}
+
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(`<option value="latest">latest</option>`))
+		for _, ref := range refs {
+			w.Write([]byte(`<option value="` + ref + `">` + ref + `</option>`))
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(refs)
+}
+
 func (s *Server) handleListBuilds(w http.ResponseWriter, r *http.Request) {
 	builds := s.builder.List()
 
@@ -25,7 +54,7 @@ func (s *Server) handleListBuilds(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(`<table role="grid"><thead><tr><th>ID</th><th>Profile</th><th>SHA</th><th>Ref</th><th>Status</th><th>Date</th><th></th></tr></thead><tbody>`))
+		w.Write([]byte(`<table role="grid"><thead><tr><th>Build</th><th>SHA</th><th>Status</th><th>Date</th><th></th></tr></thead><tbody>`))
 		for _, b := range builds {
 			s.renderPartial(w, "build_card", b)
 		}
@@ -41,6 +70,7 @@ func (s *Server) handleTriggerBuild(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Profile string `json:"profile"`
 		GitRef  string `json:"git_ref"`
+		Force   bool   `json:"force"`
 	}
 
 	// Support both JSON and form-encoded
@@ -53,11 +83,33 @@ func (s *Server) handleTriggerBuild(w http.ResponseWriter, r *http.Request) {
 		r.ParseForm()
 		req.Profile = r.FormValue("profile")
 		req.GitRef = r.FormValue("git_ref")
+		req.Force = r.FormValue("force") == "1"
 	}
 
 	// Use background context — the build must outlive the HTTP request.
-	result, err := s.builder.Build(context.Background(), req.Profile, req.GitRef)
+	result, err := s.builder.Build(context.Background(), req.Profile, req.GitRef, req.Force)
 	if err != nil {
+		if dup, ok := err.(*builder.DuplicateBuildError); ok {
+			if r.Header.Get("HX-Request") == "true" {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				fmt.Fprintf(w, `<article>
+					<p>Build <strong>%s</strong> already exists. Rebuild it?</p>
+					<form hx-post="/api/builds" hx-target="#build-output" hx-swap="innerHTML">
+						<input type="hidden" name="profile" value="%s">
+						<input type="hidden" name="git_ref" value="%s">
+						<input type="hidden" name="force" value="1">
+						<div role="group">
+							<button type="submit">Rebuild</button>
+							<button type="button" class="secondary"
+								onclick="this.closest('article').remove()">Cancel</button>
+						</div>
+					</form>
+				</article>`, dup.ID, req.Profile, req.GitRef)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
