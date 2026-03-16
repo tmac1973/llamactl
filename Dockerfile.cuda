@@ -22,22 +22,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ninja-build \
     git \
     curl \
-    build-essential \
-    vulkan-tools \
-    libvulkan-dev \
-    glslang-tools \
-    libxext6 \
-    mesa-vulkan-drivers
-
-# glslc (Vulkan shader compiler) — not packaged in Ubuntu 24.04,
-# extract single binary from LunarG Vulkan SDK
-RUN curl -fsSL "https://sdk.lunarg.com/sdk/download/latest/linux/vulkan-sdk.tar.xz" \
-    -o /tmp/vksdk.tar.xz \
-    && mkdir /tmp/vksdk \
-    && tar -xJf /tmp/vksdk.tar.xz -C /tmp/vksdk \
-    && find /tmp/vksdk -name glslc -type f | head -1 | xargs -I{} cp {} /usr/local/bin/glslc \
-    && chmod +x /usr/local/bin/glslc \
-    && rm -rf /tmp/vksdk /tmp/vksdk.tar.xz
+    build-essential
 
 COPY --from=builder /app/llamactl /usr/local/bin/llamactl
 

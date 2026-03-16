@@ -3,7 +3,7 @@ package builder
 // BuildProfile defines cmake flags for a build configuration.
 type BuildProfile struct {
 	Name       string            `json:"name"`
-	Backend    string            `json:"backend"` // "rocm", "vulkan", "cpu"
+	Backend    string            `json:"backend"` // "rocm", "cuda", "cpu"
 	CMakeFlags map[string]string `json:"cmake_flags"`
 }
 
@@ -63,8 +63,6 @@ func ProfileOptions(profile string) []BuildOption {
 				Default:     false,
 			},
 		}...)
-	case "vulkan":
-		return common
 	case "cpu":
 		return common
 	default:
@@ -99,14 +97,6 @@ func DefaultProfiles() []BuildProfile {
 			Backend: "cuda",
 			CMakeFlags: map[string]string{
 				"GGML_CUDA":        "ON",
-				"CMAKE_BUILD_TYPE": "Release",
-			},
-		},
-		{
-			Name:    "vulkan",
-			Backend: "vulkan",
-			CMakeFlags: map[string]string{
-				"GGML_VULKAN":      "ON",
 				"CMAKE_BUILD_TYPE": "Release",
 			},
 		},

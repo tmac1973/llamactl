@@ -37,9 +37,7 @@ RUN --mount=type=cache,target=/var/cache/dnf \
   rocm-llvm rocm-device-libs hip-runtime-amd hip-devel \
   rocblas rocblas-devel hipblas hipblas-devel rocm-cmake libomp-devel libomp \
   rocminfo \
-  git-core curl \
-  vulkan-loader-devel vulkan-tools glslang glslc \
-  mesa-vulkan-drivers
+  git-core curl
 
 # ROCm environment
 ENV ROCM_PATH=/opt/rocm \

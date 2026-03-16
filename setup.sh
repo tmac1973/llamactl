@@ -11,7 +11,7 @@ readonly CDI_USER_DIR="${HOME}/.config/containers/cdi"
 
 # ─── Global state (populated by detect_* functions) ──────────────────────────
 
-GPU_VENDOR=""           # cuda, rocm, vulkan, cpu
+GPU_VENDOR=""           # cuda, rocm, cpu
 GPU_INFO=""             # human-readable GPU description
 AMD_GFX_VERSION=""      # HSA_OVERRIDE_GFX_VERSION value (empty = not needed)
 HOST_VIDEO_GID=""       # host video group GID
@@ -167,18 +167,6 @@ detect_gpu() {
         detect_amd_gfx_version
         detect_host_gpu_gids
         return
-    fi
-
-    # Intel: check for Intel render nodes — use Vulkan backend
-    if [[ -d /sys/class/drm ]]; then
-        for vendor_file in /sys/class/drm/*/device/vendor; do
-            if [[ -f "$vendor_file" && "$(cat "$vendor_file")" == "0x8086" ]]; then
-                GPU_VENDOR="vulkan"
-                GPU_INFO="Intel GPU detected (using Vulkan backend)"
-                detect_host_gpu_gids
-                return
-            fi
-        done
     fi
 
     GPU_VENDOR="cpu"
@@ -601,8 +589,7 @@ generate_quadlet() {
     local gpu_args=""
 
     if [[ "$GPU_VENDOR" == "cuda" ]]; then
-        gpu_args="AddDevice=nvidia.com/gpu=all
-Volume=/usr/share/vulkan:/usr/share/vulkan:ro"
+        gpu_args="AddDevice=nvidia.com/gpu=all"
     elif [[ "$GPU_VENDOR" == "rocm" ]]; then
         local hsa_env=""
         if [[ -n "$AMD_GFX_VERSION" ]]; then
@@ -614,13 +601,7 @@ SecurityLabelDisable=true
 PodmanArgs=--ipc=host
 GroupAdd=${HOST_VIDEO_GID:-video}
 GroupAdd=${HOST_RENDER_GID:-render}
-${hsa_env}
-Volume=/usr/share/vulkan:/usr/share/vulkan:ro"
-    elif [[ "$GPU_VENDOR" == "vulkan" ]]; then
-        gpu_args="AddDevice=/dev/dri
-GroupAdd=${HOST_VIDEO_GID:-video}
-GroupAdd=${HOST_RENDER_GID:-render}
-Volume=/usr/share/vulkan:/usr/share/vulkan:ro"
+${hsa_env}"
     fi
 
     cat <<EOF
@@ -926,7 +907,7 @@ Info:
   help        Show this help message
 
 Environment variables:
-  GPU=cuda|rocm|vulkan|cpu  Override GPU auto-detection
+  GPU=cuda|rocm|cpu        Override GPU auto-detection
   RUNTIME=docker|podman   Override container runtime auto-detection
 
 Examples:

@@ -2,11 +2,11 @@
 
 A web-based management interface for [llama.cpp](https://github.com/ggerganov/llama.cpp) inference servers. Build llama.cpp from source, download models from HuggingFace, configure and run inference, and expose an OpenAI-compatible API — all from a single containerized application.
 
-**Linux only.** Supports NVIDIA CUDA, AMD ROCm, Intel/Vulkan, and CPU backends. Works with Docker and Podman on all major Linux distributions. GPU passthrough to containers is not available on macOS or Windows.
+**Linux only.** Supports NVIDIA CUDA, AMD ROCm, and CPU backends. Works with Docker and Podman on all major Linux distributions. GPU passthrough to containers is not available on macOS or Windows.
 
 ## Features
 
-- **Build Management** — Clone and compile llama.cpp inside the container with CUDA, ROCm, Vulkan, or CPU backends. View real-time build logs via SSE streaming.
+- **Build Management** — Clone and compile llama.cpp inside the container with CUDA, ROCm, or CPU backends. View real-time build logs via SSE streaming.
 - **Model Management** — Download GGUF models directly from HuggingFace. Search repos, browse available quantizations, and track download progress. Configure per-model inference parameters (GPU layers, context size, threads, tensor split).
 - **Service Control** — Start, stop, and restart the llama-server process. Live health monitoring and streaming server logs.
 - **OpenAI-Compatible Proxy** — Reverse proxy at `/v1` forwards to llama-server's OpenAI API. Works with any client that supports the OpenAI chat completions format (Goose, Continue, Open WebUI, etc.). Optional Bearer token authentication.
@@ -34,9 +34,8 @@ The management UI will be available at `http://localhost:3000`.
 
 | GPU | Backend | Build Profiles | Notes |
 |-----|---------|---------------|-------|
-| NVIDIA (Maxwell+) | CUDA 12.8 | cuda, vulkan, cpu | GTX 900 series and newer. Requires driver >= 570. |
-| AMD | ROCm 7.2 | rocm, vulkan, cpu | RDNA and newer. |
-| Intel | Vulkan | vulkan, cpu | Any Intel GPU with Vulkan drivers. |
+| NVIDIA (Maxwell+) | CUDA 12.8 | cuda, cpu | GTX 900 series and newer. Requires driver >= 570. |
+| AMD | ROCm 7.2 | rocm, cpu | RDNA and newer. |
 | None | CPU-only | cpu | No GPU required. |
 
 **NVIDIA generation support (CUDA 12.8):**
@@ -51,7 +50,7 @@ The management UI will be available at `http://localhost:3000`.
 | Maxwell (900) | GTX 970–980 | Yes (driver >= 570) |
 | Kepler and older | GTX 700 and below | No (dropped in CUDA 12) |
 
-**Backend performance:** CUDA and ROCm provide native GPU compute and are significantly faster than Vulkan. Use Vulkan as a fallback for GPUs without native SDK support (e.g., Intel) or for cross-platform portability. Each container image supports multiple build profiles — an NVIDIA user can build with CUDA, Vulkan, or CPU from the same container.
+**Backend performance:** CUDA and ROCm provide native GPU compute for best performance. Each container image supports multiple build profiles — an NVIDIA user can build with CUDA or CPU from the same container.
 
 ### Supported Distros
 
@@ -135,17 +134,6 @@ When `api_key` is set, all requests to `/v1/*` require a `Authorization: Bearer 
 
 ## GPU Backend Notes
 
-### Vulkan
-
-Vulkan support is included in all GPU container images (CUDA, ROCm, and the dedicated Vulkan image). The setup script automatically mounts the host's Vulkan ICD configuration (`/usr/share/vulkan`) into the container so that `vulkaninfo` and Vulkan-compiled llama.cpp builds can access the GPU.
-
-The Vulkan backend is significantly slower than native CUDA or ROCm but works on any GPU with Vulkan drivers, making it useful for:
-- Intel GPUs (auto-detected by `setup.sh`)
-- Older AMD GPUs without ROCm support
-- Cross-platform testing
-
-For Intel-only machines, `setup.sh` auto-detects the Intel GPU and selects the `vulkan` container image.
-
 ### ROCm
 
 The setup script auto-detects the AMD GPU architecture and sets `HSA_OVERRIDE_GFX_VERSION` in a `.env` file when needed. This override is only required for older GPUs not natively supported by ROCm 7.2 (e.g., RDNA 1 maps to `10.1.0`, Vega maps to `9.0.0`). Natively supported architectures (RDNA 2, RDNA 3, RDNA 4) don't need the override.
@@ -178,13 +166,11 @@ The UI uses server-rendered HTML with [htmx](https://htmx.org/) for interactivit
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile.cuda` | NVIDIA CUDA 12.8 + Vulkan runtime |
-| `Dockerfile.rocm` | AMD ROCm 7.2 + Vulkan runtime |
-| `Dockerfile.vulkan` | Vulkan-only (Intel GPUs, lightweight Debian) |
+| `Dockerfile.cuda` | NVIDIA CUDA 12.8 runtime |
+| `Dockerfile.rocm` | AMD ROCm 7.2 runtime |
 | `Dockerfile.cpu` | CPU-only (lightweight Debian) |
 | `docker-compose.cuda.yml` | Compose for NVIDIA (works with Docker and Podman) |
 | `docker-compose.rocm.yml` | Compose for AMD |
-| `docker-compose.vulkan.yml` | Compose for Vulkan/Intel |
 | `docker-compose.cpu.yml` | Compose for CPU-only |
 | `setup.sh` | Auto-detect and setup script |
 
