@@ -45,7 +45,7 @@
         main { flex: 1; padding: 1.5rem; max-width: 1200px; overflow-y: auto; max-height: 100vh; }
 
         /* ── Theme: Terminal Green ── */
-        [data-theme="terminal-green"] {
+        [data-custom-theme="terminal-green"] {
             --pico-background-color: #0a0a0a;
             --pico-color: #33ff33;
             --pico-h1-color: #33ff33;
@@ -83,15 +83,15 @@
             --pico-contrast-hover: #66ff66;
             color-scheme: dark;
         }
-        [data-theme="terminal-green"] * {
+        [data-custom-theme="terminal-green"] * {
             font-family: "Courier New", "Lucida Console", monospace !important;
             text-shadow: 0 0 3px rgba(51, 255, 51, 0.3);
         }
-        [data-theme="terminal-green"] progress::-webkit-progress-value { background-color: #33ff33; }
-        [data-theme="terminal-green"] progress::-moz-progress-bar { background-color: #33ff33; }
+        [data-custom-theme="terminal-green"] progress::-webkit-progress-value { background-color: #33ff33; }
+        [data-custom-theme="terminal-green"] progress::-moz-progress-bar { background-color: #33ff33; }
 
         /* ── Theme: Terminal Amber ── */
-        [data-theme="terminal-amber"] {
+        [data-custom-theme="terminal-amber"] {
             --pico-background-color: #0a0800;
             --pico-color: #ffb000;
             --pico-h1-color: #ffb000;
@@ -129,15 +129,15 @@
             --pico-contrast-hover: #ffc633;
             color-scheme: dark;
         }
-        [data-theme="terminal-amber"] * {
+        [data-custom-theme="terminal-amber"] * {
             font-family: "Courier New", "Lucida Console", monospace !important;
             text-shadow: 0 0 3px rgba(255, 176, 0, 0.3);
         }
-        [data-theme="terminal-amber"] progress::-webkit-progress-value { background-color: #ffb000; }
-        [data-theme="terminal-amber"] progress::-moz-progress-bar { background-color: #ffb000; }
+        [data-custom-theme="terminal-amber"] progress::-webkit-progress-value { background-color: #ffb000; }
+        [data-custom-theme="terminal-amber"] progress::-moz-progress-bar { background-color: #ffb000; }
 
         /* ── Theme: Cyberpunk ── */
-        [data-theme="cyberpunk"] {
+        [data-custom-theme="cyberpunk"] {
             --pico-background-color: #0a0014;
             --pico-color: #e0d0ff;
             --pico-h1-color: #ff00ff;
@@ -175,8 +175,8 @@
             --pico-contrast-hover: #66ffff;
             color-scheme: dark;
         }
-        [data-theme="cyberpunk"] progress::-webkit-progress-value { background-color: #ff00ff; }
-        [data-theme="cyberpunk"] progress::-moz-progress-bar { background-color: #ff00ff; }
+        [data-custom-theme="cyberpunk"] progress::-webkit-progress-value { background-color: #ff00ff; }
+        [data-custom-theme="cyberpunk"] progress::-moz-progress-bar { background-color: #ff00ff; }
     </style>
 </head>
 <body>
@@ -205,10 +205,17 @@
 <script>
 (function() {
     var saved = localStorage.getItem('llamactl-theme');
-    if (saved) document.getElementById('html-root').setAttribute('data-theme', saved);
+    if (saved) setTheme(saved);
 })();
 function setTheme(theme) {
-    document.getElementById('html-root').setAttribute('data-theme', theme);
+    var el = document.getElementById('html-root');
+    if (theme === 'dark' || theme === 'light') {
+        el.setAttribute('data-theme', theme);
+        el.removeAttribute('data-custom-theme');
+    } else {
+        el.setAttribute('data-theme', 'dark');
+        el.setAttribute('data-custom-theme', theme);
+    }
     localStorage.setItem('llamactl-theme', theme);
 }
 </script>
