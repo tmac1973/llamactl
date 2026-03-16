@@ -531,9 +531,9 @@ load_env_ports() {
     if [[ -f "$env_file" ]]; then
         local val
         val="$(grep '^LLAMACTL_PORT=' "$env_file" 2>/dev/null | cut -d= -f2)" || true
-        [[ -n "$val" ]] && LLAMACTL_PORT="$val"
+        [[ -n "$val" ]] && LLAMACTL_PORT="$val" || true
         val="$(grep '^LLAMACTL_INFERENCE_PORT=' "$env_file" 2>/dev/null | cut -d= -f2)" || true
-        [[ -n "$val" ]] && LLAMACTL_INFERENCE_PORT="$val"
+        [[ -n "$val" ]] && LLAMACTL_INFERENCE_PORT="$val" || true
     fi
 }
 
