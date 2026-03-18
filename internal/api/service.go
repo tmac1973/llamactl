@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
+	"html"
 	"net/http"
 	"strconv"
 	"strings"
@@ -38,28 +40,36 @@ func parseOptionalInt(s string) *int {
 }
 
 func (s *Server) handleServiceStatus(w http.ResponseWriter, r *http.Request) {
-	status := s.process.GetStatus()
+	active := s.process.ListActive()
 
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// For htmx, render the first active instance status (backward compat)
+		// or a stopped status if nothing is running.
+		var status process.Status
+		if len(active) > 0 {
+			status = active[0]
+		} else {
+			status = process.Status{State: "stopped"}
+		}
 		s.renderPartial(w, "service_status", status)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	json.NewEncoder(w).Encode(active)
 }
 
 func (s *Server) handleServiceStart(w http.ResponseWriter, r *http.Request) {
-	status := s.process.GetStatus()
-	if status.State == "running" || status.State == "starting" {
+	active := s.process.ListActive()
+	if len(active) > 0 {
 		if r.Header.Get("HX-Request") == "true" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			s.renderPartial(w, "service_status", status)
+			s.renderPartial(w, "service_status", active[0])
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(status)
+		json.NewEncoder(w).Encode(active)
 		return
 	}
 
@@ -67,13 +77,12 @@ func (s *Server) handleServiceStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleServiceStop(w http.ResponseWriter, r *http.Request) {
-	if err := s.process.Stop(); err != nil {
+	if err := s.process.StopAll(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	s.activeModelID = ""
 
-	status := s.process.GetStatus()
+	status := process.Status{State: "stopped"}
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		s.renderPartial(w, "service_status", status)
@@ -85,31 +94,66 @@ func (s *Server) handleServiceStop(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleServiceRestart(w http.ResponseWriter, r *http.Request) {
-	if err := s.process.Restart(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	// Restart all active instances
+	active := s.process.ListActive()
+	if len(active) == 0 {
+		http.Error(w, "no active instances to restart", http.StatusBadRequest)
 		return
 	}
 
-	status := s.process.GetStatus()
+	var lastErr error
+	for _, st := range active {
+		if err := s.process.Restart(st.ID); err != nil {
+			lastErr = err
+		}
+	}
+	if lastErr != nil {
+		http.Error(w, lastErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	updated := s.process.ListActive()
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		var status process.Status
+		if len(updated) > 0 {
+			status = updated[0]
+		} else {
+			status = process.Status{State: "stopped"}
+		}
 		s.renderPartial(w, "service_status", status)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	json.NewEncoder(w).Encode(updated)
 }
 
 func (s *Server) handleServiceLogs(w http.ResponseWriter, r *http.Request) {
+	// Accept optional ?model= query param to select instance.
+	// If not provided, use the first active instance.
+	modelID := r.URL.Query().Get("model")
+	if modelID == "" {
+		active := s.process.ListActive()
+		if len(active) == 0 {
+			http.Error(w, "no active instances", http.StatusBadRequest)
+			return
+		}
+		modelID = active[0].ID
+	}
+
 	sse, err := NewSSEWriter(w)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	ch := s.process.Subscribe()
-	defer s.process.Unsubscribe(ch)
+	ch, err := s.process.Subscribe(modelID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	defer s.process.Unsubscribe(modelID, ch)
 
 	for {
 		select {
@@ -125,13 +169,36 @@ func (s *Server) handleServiceLogs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleServiceLogTabs(w http.ResponseWriter, r *http.Request) {
+	active := s.process.ListActive()
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	for _, st := range active {
+		// Use the model registry ID as the tab label, truncated for display
+		label := st.ID
+		if len(label) > 30 {
+			label = label[:30] + "..."
+		}
+		escaped := html.EscapeString(st.ID)
+		fmt.Fprintf(w, `<li><a href="#" data-model="%s" onclick="event.preventDefault();switchLogTab('%s')">%s</a></li>`,
+			escaped, escaped, html.EscapeString(label))
+	}
+}
+
 func (s *Server) handleServiceHealth(w http.ResponseWriter, r *http.Request) {
-	healthy := s.process.CheckHealth()
+	// Check if any instance is healthy
+	active := s.process.ListActive()
+	healthy := false
+	for _, st := range active {
+		if st.HealthOK {
+			healthy = true
+			break
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"healthy": healthy})
 }
 
-// handleActivateModel stops the current service, applies model config, and starts.
+// handleActivateModel starts a model instance (without stopping others).
 func (s *Server) handleActivateModel(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -146,9 +213,6 @@ func (s *Server) handleActivateModel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-
-	// Stop current process if running
-	s.process.Stop()
 
 	// Find the build binary
 	binaryPath := ""
@@ -189,29 +253,43 @@ func (s *Server) handleActivateModel(w http.ResponseWriter, r *http.Request) {
 		FlashAttention: cfg.FlashAttention,
 		Jinja:          cfg.Jinja,
 		KVCacheQuant:   cfg.KVCacheQuant,
-		Port:           s.cfg.LlamaPort,
 		ExtraFlags:     extraFlags,
+		VisibleDevices: cfg.GPUDevices,
 	}
 
-	if err := s.process.Start(launchCfg); err != nil {
+	if err := s.process.Start(id, launchCfg); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	s.activeModelID = id
-
-	status := s.process.GetStatus()
+	status := s.process.GetStatus(id)
 	status.Model = model.ModelID
 	status.BuildID = cfg.BuildID
 
 	if r.Header.Get("HX-Request") == "true" {
-		// Re-render the model list so the active model is highlighted
 		s.handleListModels(w, r)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
+}
+
+// handleDeactivateModel stops a specific model instance.
+func (s *Server) handleDeactivateModel(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	if err := s.process.Stop(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if r.Header.Get("HX-Request") == "true" {
+		s.handleListModels(w, r)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleGetModelConfig returns the launch config for a model.
@@ -267,6 +345,7 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 		cfg.KVCacheQuant = r.FormValue("kv_cache_quant")
 		cfg.ExtraFlags = r.FormValue("extra_flags")
 		cfg.BuildID = r.FormValue("build_id")
+		cfg.GPUDevices = r.FormValue("gpu_devices")
 
 		// Sampling parameters — empty string means "default" (nil pointer).
 		cfg.Temperature = parseOptionalFloat(r.FormValue("temperature"))

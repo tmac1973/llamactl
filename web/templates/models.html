@@ -41,16 +41,49 @@
         font-size: 0.85rem;
         margin: 0;
     }
+    ul.log-tabs {
+        display: flex;
+        gap: 0;
+        margin: 0;
+        padding: 0;
+        padding-left: 0;
+        list-style: none;
+        list-style-type: none;
+    }
+    ul.log-tabs li {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        list-style-type: none;
+    }
+    ul.log-tabs li::marker {
+        content: none;
+    }
+    .log-tabs li a {
+        display: block;
+        padding: 0.25rem 0.75rem;
+        font-size: 0.8rem;
+        text-decoration: none;
+        border-bottom: 2px solid transparent;
+        color: var(--pico-muted-color);
+        cursor: pointer;
+    }
+    .log-tabs li a:hover {
+        color: var(--pico-color);
+    }
+    .log-tabs li a.active {
+        color: var(--pico-primary);
+        border-bottom-color: var(--pico-primary);
+    }
+    .log-empty-msg {
+        color: var(--pico-muted-color);
+        font-style: italic;
+        padding: 1rem;
+        font-size: 0.85rem;
+    }
 </style>
 
 <div class="models-page">
-    <div id="service-status"
-         hx-get="/api/service/status"
-         hx-trigger="load, every 5s"
-         hx-swap="innerHTML">
-        Loading...
-    </div>
-
     <div class="models-list">
         <div id="model-list" hx-get="/api/models" hx-trigger="load" hx-swap="innerHTML">
             Loading...
@@ -63,7 +96,15 @@
         <article class="log-panel">
             <header>
                 <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <span>Server Logs</span>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <span>Server Logs</span>
+                        <ul class="log-tabs" id="log-tabs"
+                            hx-get="/api/service/log-tabs"
+                            hx-trigger="load, every 5s"
+                            hx-swap="innerHTML"
+                            hx-on::before-swap="if(event.detail.xhr.responseText===this.innerHTML){event.detail.shouldSwap=false;}">
+                        </ul>
+                    </div>
                     <div style="display: flex; gap: 1rem; align-items: center;">
                         <label style="margin: 0; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
                             Live tail
@@ -77,11 +118,8 @@
                     </div>
                 </div>
             </header>
-            <pre id="service-logs"
-                 hx-ext="sse"
-                 sse-connect="/api/service/logs"
-                 sse-swap="message"
-                 hx-swap="beforeend">
+            <pre id="service-logs">
+                <span class="log-empty-msg">No active models. Start a model to see logs.</span>
             </pre>
         </article>
     </div>
@@ -89,6 +127,7 @@
 
 <script>
 (function() {
+    // --- Resize handle ---
     const handle = document.querySelector('.models-page .resize-handle');
     const logSection = document.querySelector('.models-page .log-section');
     const page = document.querySelector('.models-page');
@@ -118,6 +157,85 @@
         document.removeEventListener('mousemove', onDrag);
         document.removeEventListener('mouseup', onRelease);
     }
+
+    // --- Log tab switching ---
+    var currentSSE = null;
+    var currentModelID = null;
+
+    window.switchLogTab = function(modelID) {
+        // Update tab active state
+        document.querySelectorAll('#log-tabs a').forEach(function(a) {
+            a.classList.toggle('active', a.dataset.model === modelID);
+        });
+
+        // Don't reconnect if already on this tab
+        if (modelID === currentModelID) return;
+        currentModelID = modelID;
+
+        // Close existing SSE connection
+        if (currentSSE) {
+            currentSSE.close();
+            currentSSE = null;
+        }
+
+        var pre = document.getElementById('service-logs');
+        pre.innerHTML = '';
+
+        if (!modelID) return;
+
+        // Open new SSE connection
+        currentSSE = new EventSource('/api/service/logs?model=' + encodeURIComponent(modelID));
+        currentSSE.onmessage = function(e) {
+            pre.textContent += e.data;
+            // Auto-scroll if live tail is on
+            var toggle = document.querySelector('.log-tail-toggle');
+            if (toggle && toggle.checked) {
+                pre.scrollTop = pre.scrollHeight;
+            }
+        };
+        currentSSE.addEventListener('done', function() {
+            currentSSE.close();
+            currentSSE = null;
+        });
+        currentSSE.onerror = function() {
+            // EventSource auto-reconnects, but if the instance is gone, stop
+            if (currentSSE) {
+                currentSSE.close();
+                currentSSE = null;
+            }
+        };
+    };
+
+    // When log-tabs are refreshed via htmx, auto-select the current tab
+    // or the first tab if the current one disappeared.
+    document.getElementById('log-tabs').addEventListener('htmx:afterSwap', function() {
+        var tabs = document.querySelectorAll('#log-tabs a');
+        if (tabs.length === 0) {
+            // No active models
+            if (currentSSE) { currentSSE.close(); currentSSE = null; }
+            currentModelID = null;
+            document.getElementById('service-logs').innerHTML =
+                '<span class="log-empty-msg">No active models. Start a model to see logs.</span>';
+            return;
+        }
+
+        // Check if current tab still exists
+        var stillExists = false;
+        tabs.forEach(function(a) {
+            if (a.dataset.model === currentModelID) stillExists = true;
+        });
+
+        if (!stillExists) {
+            // Switch to first available tab
+            currentModelID = null; // force reconnect
+            switchLogTab(tabs[0].dataset.model);
+        } else {
+            // Re-mark the active tab (htmx replaced the HTML)
+            tabs.forEach(function(a) {
+                a.classList.toggle('active', a.dataset.model === currentModelID);
+            });
+        }
+    });
 })();
 </script>
 {{end}}

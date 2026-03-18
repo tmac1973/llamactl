@@ -31,7 +31,6 @@ type Server struct {
 	registry       *models.Registry
 	process        *process.Manager
 	monitor        *monitor.Monitor
-	activeModelID  string
 }
 
 func NewServer(cfg *config.Config) *Server {
@@ -128,6 +127,7 @@ func (s *Server) buildRouter() chi.Router {
 			r.Get("/{id}", s.handleGetModel)
 			r.Delete("/{id}", s.handleDeleteModel)
 			r.Put("/{id}/activate", s.handleActivateModel)
+			r.Delete("/{id}/activate", s.handleDeactivateModel)
 			r.Get("/{id}/config", s.handleGetModelConfig)
 			r.Put("/{id}/config", s.handleUpdateModelConfig)
 		})
@@ -144,6 +144,7 @@ func (s *Server) buildRouter() chi.Router {
 			r.Post("/stop", s.handleServiceStop)
 			r.Post("/restart", s.handleServiceRestart)
 			r.Get("/logs", s.handleServiceLogs)
+			r.Get("/log-tabs", s.handleServiceLogTabs)
 			r.Get("/health", s.handleServiceHealth)
 		})
 		r.Route("/settings", func(r chi.Router) {
@@ -222,7 +223,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	status := s.process.GetStatus()
+	active := s.process.ListActive()
 	builds := s.builder.List()
 	models := s.registry.List()
 
@@ -239,14 +240,32 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		chatURL = fmt.Sprintf("%s://%s:%d", u.Scheme, u.Hostname(), s.cfg.LlamaPort)
 	}
 
-	// State badge
+	// Aggregate state badge from all instances
 	var stateBadge string
-	switch status.State {
-	case "running":
-		stateBadge = `<ins>Running</ins>`
-	case "starting":
+	activeCount := len(active)
+	hasRunning := false
+	hasStarting := false
+	hasFailed := false
+	for _, st := range active {
+		switch st.State {
+		case "running":
+			hasRunning = true
+		case "starting":
+			hasStarting = true
+		case "failed":
+			hasFailed = true
+		}
+	}
+	switch {
+	case hasRunning:
+		label := "Running"
+		if activeCount > 1 {
+			label = fmt.Sprintf("Running (%d models)", activeCount)
+		}
+		stateBadge = `<ins>` + label + `</ins>`
+	case hasStarting:
 		stateBadge = `<mark>Starting</mark>`
-	case "failed":
+	case hasFailed:
 		stateBadge = `<del>Failed</del>`
 	default:
 		stateBadge = `Stopped`
@@ -261,7 +280,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
         <p><a href="/models">Manage →</a></p>
     </article>
     <article>
-        <header>Active Model</header>
+        <header>Active Models</header>
         <p>%s</p>
         <p><a href="/models">Models →</a></p>
     </article>
@@ -279,16 +298,20 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 </div>`,
 		stateBadge,
 		func() string {
-			if chatURL != "" && status.State == "running" {
+			if chatURL != "" && hasRunning {
 				return fmt.Sprintf(`<p><a href="%s" target="_blank">Open Chat UI →</a></p>`, chatURL)
 			}
 			return ""
 		}(),
 		func() string {
-			if status.Model != "" {
-				return `<strong>` + status.Model + `</strong>`
+			if len(active) == 0 {
+				return "None"
 			}
-			return "None"
+			var parts []string
+			for _, st := range active {
+				parts = append(parts, `<strong>`+st.ID+`</strong>`)
+			}
+			return strings.Join(parts, "<br>")
 		}(),
 		successBuilds,
 		len(models),

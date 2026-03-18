@@ -18,20 +18,23 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		status := s.process.GetStatus()
-		activeModel := status.Model
-		serviceState := status.State
+		// Build set of active model IDs
+		activeSet := make(map[string]string) // model registry ID → state
+		for _, st := range s.process.ListActive() {
+			activeSet[st.ID] = st.State
+		}
 
 		w.Write([]byte(`<table role="grid"><thead><tr><th>Model</th><th>Quant</th><th>VRAM Est.</th><th>Size</th><th></th></tr></thead>`))
 		for _, m := range modelList {
+			state := activeSet[m.ID]
 			data := struct {
 				models.Model
 				IsActive     bool
 				ServiceState string
 			}{
 				Model:        *m,
-				IsActive:     m.ModelID == activeModel && (serviceState == "running" || serviceState == "starting"),
-				ServiceState: serviceState,
+				IsActive:     state == "running" || state == "starting",
+				ServiceState: state,
 			}
 			s.renderPartial(w, "model_card", data)
 		}

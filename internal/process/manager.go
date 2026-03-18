@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -15,10 +16,12 @@ import (
 	"time"
 )
 
-// Status represents the current state of the llama-server process.
+// Status represents the current state of a llama-server instance.
 type Status struct {
-	State     string    `json:"state"`              // "stopped", "starting", "running", "failed"
+	ID        string    `json:"id"`
+	State     string    `json:"state"` // "stopped", "starting", "running", "failed"
 	PID       int       `json:"pid,omitempty"`
+	Port      int       `json:"port,omitempty"`
 	Model     string    `json:"model,omitempty"`
 	BuildID   string    `json:"build_id,omitempty"`
 	Uptime    string    `json:"uptime,omitempty"`
@@ -27,7 +30,7 @@ type Status struct {
 	HealthOK  bool      `json:"health_ok"`
 }
 
-// LaunchConfig defines how to start llama-server.
+// LaunchConfig defines how to start a llama-server instance.
 type LaunchConfig struct {
 	BinaryPath     string
 	ModelPath      string
@@ -39,55 +42,105 @@ type LaunchConfig struct {
 	Jinja          bool
 	KVCacheQuant   string // "", "q8_0", "q4_0"
 	Host           string
-	Port           int
+	Port           int      // assigned by Manager if 0
 	ExtraFlags     []string
+	VisibleDevices string // GPU pinning: "0", "1", "0,1" — maps to ROCR_VISIBLE_DEVICES
 }
 
 const logHistorySize = 200
 
-// Manager manages the llama-server subprocess lifecycle.
-type Manager struct {
-	mu        sync.Mutex
+// instance holds the state for a single llama-server process.
+type instance struct {
+	id        string
 	cmd       *exec.Cmd
 	cancel    context.CancelFunc
-	status    Status
 	config    *LaunchConfig
+	status    Status
 	healthURL string
-	done      chan struct{} // closed when monitorProcess exits
+	done      chan struct{}
 
-	// Fan-out log broadcasting
+	// Per-instance log broadcasting
 	logMu       sync.Mutex
 	subscribers map[chan string]struct{}
-	logHistory  []string // ring buffer of recent log lines
+	logHistory  []string
 }
 
-// NewManager creates a new process manager.
-func NewManager() *Manager {
-	return &Manager{
-		status:      Status{State: "stopped"},
-		subscribers: make(map[chan string]struct{}),
+func (inst *instance) broadcast(line string) {
+	inst.logMu.Lock()
+	defer inst.logMu.Unlock()
+
+	if len(inst.logHistory) >= logHistorySize {
+		inst.logHistory = inst.logHistory[1:]
+	}
+	inst.logHistory = append(inst.logHistory, line)
+
+	for ch := range inst.subscribers {
+		select {
+		case ch <- line:
+		default:
+		}
 	}
 }
 
-// Start spawns llama-server with the given config.
-func (m *Manager) Start(cfg LaunchConfig) error {
+// Manager manages multiple concurrent llama-server instances.
+type Manager struct {
+	mu        sync.Mutex
+	instances map[string]*instance // keyed by model registry ID
+	portMin   int
+	portMax   int
+	usedPorts map[int]string // port → instance ID
+}
+
+// NewManager creates a new multi-instance process manager.
+// Instances are assigned ports from the range [portMin, portMax].
+func NewManager() *Manager {
+	return &Manager{
+		instances: make(map[string]*instance),
+		portMin:   8080,
+		portMax:   8099,
+		usedPorts: make(map[int]string),
+	}
+}
+
+// allocatePort finds the next available port in the range.
+// Must be called with mu held.
+func (m *Manager) allocatePort() (int, error) {
+	for p := m.portMin; p <= m.portMax; p++ {
+		if _, used := m.usedPorts[p]; !used {
+			return p, nil
+		}
+	}
+	return 0, fmt.Errorf("no available ports in range %d-%d", m.portMin, m.portMax)
+}
+
+// Start spawns a llama-server instance for the given model ID.
+func (m *Manager) Start(id string, cfg LaunchConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.status.State == "running" || m.status.State == "starting" {
-		return fmt.Errorf("process already %s", m.status.State)
+	// Check if this model is already running
+	if inst, exists := m.instances[id]; exists {
+		if inst.status.State == "running" || inst.status.State == "starting" {
+			return fmt.Errorf("model %s already %s", id, inst.status.State)
+		}
+		// Clean up stale instance
+		delete(m.instances, id)
+		if inst.config != nil {
+			delete(m.usedPorts, inst.config.Port)
+		}
 	}
-
-	// Clear log history from previous run
-	m.logMu.Lock()
-	m.logHistory = nil
-	m.logMu.Unlock()
 
 	if cfg.Host == "" {
 		cfg.Host = "0.0.0.0"
 	}
+
+	// Assign port if not explicitly set
 	if cfg.Port == 0 {
-		cfg.Port = 8080
+		port, err := m.allocatePort()
+		if err != nil {
+			return err
+		}
+		cfg.Port = port
 	}
 
 	// Build command args
@@ -118,14 +171,21 @@ func (m *Manager) Start(cfg LaunchConfig) error {
 
 	// Set LD_LIBRARY_PATH so the binary finds its co-located shared libs
 	binDir := filepath.Dir(cfg.BinaryPath)
-	cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+binDir)
+	env := append(os.Environ(), "LD_LIBRARY_PATH="+binDir)
+
+	// GPU pinning
+	if cfg.VisibleDevices != "" {
+		env = append(env, "ROCR_VISIBLE_DEVICES="+cfg.VisibleDevices)
+		env = append(env, "CUDA_VISIBLE_DEVICES="+cfg.VisibleDevices)
+	}
+	cmd.Env = env
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
 		return fmt.Errorf("stdout pipe: %w", err)
 	}
-	cmd.Stderr = cmd.Stdout // merge stderr into stdout
+	cmd.Stderr = cmd.Stdout
 
 	if err := cmd.Start(); err != nil {
 		cancel()
@@ -133,58 +193,64 @@ func (m *Manager) Start(cfg LaunchConfig) error {
 	}
 
 	done := make(chan struct{})
-	m.cmd = cmd
-	m.cancel = cancel
-	m.config = &cfg
-	m.done = done
-	m.healthURL = fmt.Sprintf("http://localhost:%d/health", cfg.Port)
-	m.status = Status{
-		State:     "starting",
-		PID:       cmd.Process.Pid,
-		Model:     cfg.ModelPath,
-		StartedAt: time.Now(),
+	inst := &instance{
+		id:          id,
+		cmd:         cmd,
+		cancel:      cancel,
+		config:      &cfg,
+		done:        done,
+		healthURL:   fmt.Sprintf("http://localhost:%d/health", cfg.Port),
+		subscribers: make(map[chan string]struct{}),
+		status: Status{
+			ID:        id,
+			State:     "starting",
+			PID:       cmd.Process.Pid,
+			Port:      cfg.Port,
+			Model:     cfg.ModelPath,
+			StartedAt: time.Now(),
+		},
 	}
 
-	// Stream stdout/stderr to subscribers
+	m.instances[id] = inst
+	m.usedPorts[cfg.Port] = id
+
+	// Stream stdout/stderr
 	go func() {
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
-			line := scanner.Text()
-			m.broadcast(line)
+			inst.broadcast(scanner.Text())
 		}
 	}()
 
-	// Monitor process exit — only this goroutine calls cmd.Wait()
-	go m.monitorProcess(cmd, done)
+	go m.monitorProcess(inst, cmd, done)
+	go m.pollHealth(inst)
 
-	// Health check polling
-	go m.pollHealth()
-
-	slog.Info("llama-server started", "pid", cmd.Process.Pid, "model", cfg.ModelPath)
+	slog.Info("llama-server started", "id", id, "pid", cmd.Process.Pid, "port", cfg.Port, "model", cfg.ModelPath)
 	return nil
 }
 
-// Stop sends SIGTERM, waits up to 10s, then SIGKILL.
-func (m *Manager) Stop() error {
+// Stop sends SIGTERM to a specific instance, waits up to 10s, then SIGKILL.
+func (m *Manager) Stop(id string) error {
 	m.mu.Lock()
-	if m.cmd == nil || m.cmd.Process == nil {
+	inst, exists := m.instances[id]
+	if !exists {
 		m.mu.Unlock()
-		return fmt.Errorf("process not running")
+		return fmt.Errorf("instance not found: %s", id)
 	}
-	cmd := m.cmd
-	cancel := m.cancel
-	done := m.done
+	if inst.cmd == nil || inst.cmd.Process == nil {
+		m.mu.Unlock()
+		return fmt.Errorf("instance not running: %s", id)
+	}
+	cmd := inst.cmd
+	cancel := inst.cancel
+	done := inst.done
 	m.mu.Unlock()
 
-	// Send SIGTERM
 	cmd.Process.Signal(syscall.SIGTERM)
 
-	// Wait for monitorProcess to detect exit
 	select {
 	case <-done:
-		// Process exited
 	case <-time.After(10 * time.Second):
-		// Force kill
 		cmd.Process.Signal(syscall.SIGKILL)
 		<-done
 	}
@@ -192,160 +258,168 @@ func (m *Manager) Stop() error {
 	cancel()
 
 	m.mu.Lock()
-	m.status = Status{State: "stopped"}
-	m.cmd = nil
-	m.cancel = nil
-	m.config = nil
+	if inst.config != nil {
+		delete(m.usedPorts, inst.config.Port)
+	}
+	delete(m.instances, id)
 	m.mu.Unlock()
 
-	m.broadcast("==> Process stopped")
-	slog.Info("llama-server stopped")
+	inst.broadcast("==> Process stopped")
+	slog.Info("llama-server stopped", "id", id)
 	return nil
 }
 
-// Restart stops then starts with the current config.
-func (m *Manager) Restart() error {
+// StopAll stops every running instance.
+func (m *Manager) StopAll() error {
 	m.mu.Lock()
-	cfg := m.config
+	ids := make([]string, 0, len(m.instances))
+	for id := range m.instances {
+		ids = append(ids, id)
+	}
 	m.mu.Unlock()
 
-	if cfg == nil {
-		return fmt.Errorf("no config to restart with")
+	var lastErr error
+	for _, id := range ids {
+		if err := m.Stop(id); err != nil {
+			slog.Debug("stop during StopAll", "id", id, "error", err)
+			lastErr = err
+		}
 	}
-	cfgCopy := *cfg
-
-	if err := m.Stop(); err != nil {
-		// Ignore stop errors if process wasn't running
-		slog.Debug("stop during restart", "error", err)
-	}
-
-	time.Sleep(500 * time.Millisecond) // brief pause between stop and start
-	return m.Start(cfgCopy)
+	return lastErr
 }
 
-// GetStatus returns current process status.
-func (m *Manager) GetStatus() Status {
+// Restart stops then starts a specific instance with its current config.
+func (m *Manager) Restart(id string) error {
+	m.mu.Lock()
+	inst, exists := m.instances[id]
+	if !exists {
+		m.mu.Unlock()
+		return fmt.Errorf("instance not found: %s", id)
+	}
+	cfg := inst.config
+	if cfg == nil {
+		m.mu.Unlock()
+		return fmt.Errorf("no config to restart with: %s", id)
+	}
+	cfgCopy := *cfg
+	cfgCopy.Port = 0 // let manager reassign
+	m.mu.Unlock()
+
+	if err := m.Stop(id); err != nil {
+		slog.Debug("stop during restart", "id", id, "error", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+	return m.Start(id, cfgCopy)
+}
+
+// GetStatus returns the status of a specific instance.
+// Returns a stopped status if the instance doesn't exist.
+func (m *Manager) GetStatus(id string) Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	s := m.status
+	inst, exists := m.instances[id]
+	if !exists {
+		return Status{ID: id, State: "stopped"}
+	}
+
+	s := inst.status
 	if s.State == "running" && !s.StartedAt.IsZero() {
 		s.Uptime = time.Since(s.StartedAt).Truncate(time.Second).String()
 	}
 	return s
 }
 
-// Subscribe returns a new channel that receives log lines.
-// Replays recent history so reconnecting clients see past output.
-// Call Unsubscribe when done to prevent leaks.
-func (m *Manager) Subscribe() chan string {
-	ch := make(chan string, 256)
-	m.logMu.Lock()
-	// Replay history
-	for _, line := range m.logHistory {
-		select {
-		case ch <- line:
-		default:
-		}
-	}
-	m.subscribers[ch] = struct{}{}
-	m.logMu.Unlock()
-	return ch
-}
-
-// Unsubscribe removes a subscriber channel.
-func (m *Manager) Unsubscribe(ch chan string) {
-	m.logMu.Lock()
-	delete(m.subscribers, ch)
-	m.logMu.Unlock()
-}
-
-func (m *Manager) broadcast(line string) {
-	m.logMu.Lock()
-	defer m.logMu.Unlock()
-
-	// Append to history ring buffer
-	if len(m.logHistory) >= logHistorySize {
-		m.logHistory = m.logHistory[1:]
-	}
-	m.logHistory = append(m.logHistory, line)
-
-	for ch := range m.subscribers {
-		select {
-		case ch <- line:
-		default:
-			// drop if subscriber is slow
-		}
-	}
-}
-
-// monitorProcess is the sole goroutine that calls cmd.Wait().
-func (m *Manager) monitorProcess(cmd *exec.Cmd, done chan struct{}) {
-	err := cmd.Wait()
-	close(done)
-
+// ListActive returns the status of all running/starting instances,
+// sorted by ID for stable ordering.
+func (m *Manager) ListActive() []Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Only update if this is still the active command
-	if m.cmd != cmd {
+	out := make([]Status, 0, len(m.instances))
+	for _, inst := range m.instances {
+		s := inst.status
+		if s.State == "running" && !s.StartedAt.IsZero() {
+			s.Uptime = time.Since(s.StartedAt).Truncate(time.Second).String()
+		}
+		out = append(out, s)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+// IsActive returns true if the given model ID has a running or starting instance.
+func (m *Manager) IsActive(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	inst, exists := m.instances[id]
+	if !exists {
+		return false
+	}
+	return inst.status.State == "running" || inst.status.State == "starting"
+}
+
+// GetPort returns the port for a running instance, or 0 if not active.
+func (m *Manager) GetPort(id string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	inst, exists := m.instances[id]
+	if !exists {
+		return 0
+	}
+	return inst.status.Port
+}
+
+// Subscribe returns a channel that receives log lines for a specific instance.
+func (m *Manager) Subscribe(id string) (chan string, error) {
+	m.mu.Lock()
+	inst, exists := m.instances[id]
+	m.mu.Unlock()
+
+	if !exists {
+		return nil, fmt.Errorf("instance not found: %s", id)
+	}
+
+	ch := make(chan string, 256)
+	inst.logMu.Lock()
+	for _, line := range inst.logHistory {
+		select {
+		case ch <- line:
+		default:
+		}
+	}
+	inst.subscribers[ch] = struct{}{}
+	inst.logMu.Unlock()
+	return ch, nil
+}
+
+// Unsubscribe removes a subscriber from a specific instance.
+func (m *Manager) Unsubscribe(id string, ch chan string) {
+	m.mu.Lock()
+	inst, exists := m.instances[id]
+	m.mu.Unlock()
+
+	if !exists {
 		return
 	}
 
-	if err != nil {
-		m.status.State = "failed"
-		m.status.Error = err.Error()
-		m.broadcast(fmt.Sprintf("==> Process exited with error: %v", err))
-	} else {
-		m.status.State = "stopped"
-		m.broadcast("==> Process exited normally")
-	}
-	m.status.HealthOK = false
+	inst.logMu.Lock()
+	delete(inst.subscribers, ch)
+	inst.logMu.Unlock()
 }
 
-func (m *Manager) pollHealth() {
-	client := &http.Client{Timeout: 2 * time.Second}
-	deadline := time.Now().Add(120 * time.Second)
-
-	for time.Now().Before(deadline) {
-		time.Sleep(2 * time.Second)
-
-		m.mu.Lock()
-		if m.status.State != "starting" && m.status.State != "running" {
-			m.mu.Unlock()
-			return
-		}
-		url := m.healthURL
+// CheckHealth pings the health endpoint of a specific instance.
+func (m *Manager) CheckHealth(id string) bool {
+	m.mu.Lock()
+	inst, exists := m.instances[id]
+	if !exists {
 		m.mu.Unlock()
-
-		resp, err := client.Get(url)
-		if err != nil {
-			continue
-		}
-		resp.Body.Close()
-
-		if resp.StatusCode == http.StatusOK {
-			m.mu.Lock()
-			m.status.State = "running"
-			m.status.HealthOK = true
-			m.mu.Unlock()
-			m.broadcast("==> Health check passed — server is ready")
-			return
-		}
+		return false
 	}
-
-	m.mu.Lock()
-	if m.status.State == "starting" {
-		m.status.State = "failed"
-		m.status.Error = "health check timeout"
-	}
-	m.mu.Unlock()
-}
-
-// CheckHealth pings the llama-server /health endpoint.
-func (m *Manager) CheckHealth() bool {
-	m.mu.Lock()
-	url := m.healthURL
+	url := inst.healthURL
 	m.mu.Unlock()
 
 	if url == "" {
@@ -362,8 +436,77 @@ func (m *Manager) CheckHealth() bool {
 	healthy := resp.StatusCode == http.StatusOK
 
 	m.mu.Lock()
-	m.status.HealthOK = healthy
+	if inst2, ok := m.instances[id]; ok {
+		inst2.status.HealthOK = healthy
+	}
 	m.mu.Unlock()
 
 	return healthy
+}
+
+// monitorProcess waits for a process to exit and updates instance state.
+func (m *Manager) monitorProcess(inst *instance, cmd *exec.Cmd, done chan struct{}) {
+	err := cmd.Wait()
+	close(done)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Only update if this instance is still tracked and has the same cmd
+	tracked, exists := m.instances[inst.id]
+	if !exists || tracked.cmd != cmd {
+		return
+	}
+
+	if err != nil {
+		tracked.status.State = "failed"
+		tracked.status.Error = err.Error()
+		inst.broadcast(fmt.Sprintf("==> Process exited with error: %v", err))
+	} else {
+		tracked.status.State = "stopped"
+		inst.broadcast("==> Process exited normally")
+	}
+	tracked.status.HealthOK = false
+}
+
+func (m *Manager) pollHealth(inst *instance) {
+	client := &http.Client{Timeout: 2 * time.Second}
+	deadline := time.Now().Add(120 * time.Second)
+
+	for time.Now().Before(deadline) {
+		time.Sleep(2 * time.Second)
+
+		m.mu.Lock()
+		tracked, exists := m.instances[inst.id]
+		if !exists || (tracked.status.State != "starting" && tracked.status.State != "running") {
+			m.mu.Unlock()
+			return
+		}
+		url := tracked.healthURL
+		m.mu.Unlock()
+
+		resp, err := client.Get(url)
+		if err != nil {
+			continue
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			m.mu.Lock()
+			if tracked, ok := m.instances[inst.id]; ok {
+				tracked.status.State = "running"
+				tracked.status.HealthOK = true
+			}
+			m.mu.Unlock()
+			inst.broadcast("==> Health check passed — server is ready")
+			return
+		}
+	}
+
+	m.mu.Lock()
+	if tracked, ok := m.instances[inst.id]; ok && tracked.status.State == "starting" {
+		tracked.status.State = "failed"
+		tracked.status.Error = "health check timeout"
+	}
+	m.mu.Unlock()
 }

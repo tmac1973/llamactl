@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sort"
 	"sync"
 	"time"
 )
@@ -35,6 +36,7 @@ type ModelConfig struct {
 	KVCacheQuant   string `json:"kv_cache_quant"` // "", "q8_0", "q4_0"
 	ExtraFlags     string `json:"extra_flags"`
 	BuildID        string `json:"build_id"`
+	GPUDevices     string `json:"gpu_devices"` // "", "0", "1", "0,1" — empty = all GPUs
 
 	// Sampling parameters — nil means use llama.cpp server default.
 	Temperature     *float64 `json:"temperature,omitempty"`
@@ -140,7 +142,7 @@ func (r *Registry) Add(m *Model) error {
 	return nil
 }
 
-// List returns all models.
+// List returns all models, sorted alphabetically by ModelID.
 func (r *Registry) List() []*Model {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -148,6 +150,9 @@ func (r *Registry) List() []*Model {
 	for _, m := range r.data.Models {
 		out = append(out, m)
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ModelID < out[j].ModelID
+	})
 	return out
 }
 

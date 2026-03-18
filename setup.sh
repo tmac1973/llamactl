@@ -157,7 +157,11 @@ detect_gpu() {
         GPU_INFO="AMD GPU"
         if need_cmd rocminfo; then
             local name
-            name="$(rocminfo 2>/dev/null | grep -m1 'Marketing Name' | sed 's/.*: *//')" || true
+            # rocminfo lists CPU agents before GPU agents. Match GPU marketing
+            # names (Radeon, Instinct, FirePro) rather than excluding CPU names,
+            # so we don't break if AMD introduces new CPU branding.
+            name="$(rocminfo 2>/dev/null | grep 'Marketing Name' | sed 's/.*: *//' \
+                | grep -iE 'Radeon|Instinct|FirePro' | head -1)" || true
             [[ -n "$name" ]] && GPU_INFO="$name"
         elif [[ -d /sys/class/drm ]]; then
             for card_dir in /sys/class/drm/card[0-9]*/device; do

@@ -73,6 +73,19 @@
     </div>
 
     <div class="grid">
+        <label title="Restrict this model to specific GPU(s). Uses ROCR_VISIBLE_DEVICES (AMD) or CUDA_VISIBLE_DEVICES (NVIDIA). Empty = all GPUs.">
+            GPU Devices
+            <select name="gpu_devices">
+                <option value="" {{if eq .Config.GPUDevices ""}}selected{{end}}>All GPUs</option>
+                <option value="0" {{if eq .Config.GPUDevices "0"}}selected{{end}}>GPU 0 only</option>
+                <option value="1" {{if eq .Config.GPUDevices "1"}}selected{{end}}>GPU 1 only</option>
+                <option value="0,1" {{if eq .Config.GPUDevices "0,1"}}selected{{end}}>GPU 0 + GPU 1</option>
+            </select>
+        </label>
+        <div></div>
+    </div>
+
+    <div class="grid">
         <label title="Use flash attention for faster inference and lower VRAM usage. Recommended for most models. Disable if you experience compatibility issues.">
             Flash Attention
             <input type="checkbox" name="flash_attention" role="switch"
