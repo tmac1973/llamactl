@@ -61,9 +61,6 @@ func (s *Server) parseTemplates() map[string]*template.Template {
 			return float64(bytes) / (1024 * 1024 * 1024)
 		},
 		"vramFit": models.VRAMFitCategory,
-		"fmtVRAM": func(gb float64) string {
-			return fmt.Sprintf("%.1f", gb)
-		},
 	}
 
 	base := template.Must(template.New("").Funcs(funcMap).ParseFS(web.Templates,

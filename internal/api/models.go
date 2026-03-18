@@ -27,14 +27,23 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<table role="grid"><thead><tr><th>Model</th><th>Quant</th><th>VRAM Est.</th><th>Size</th><th></th></tr></thead>`))
 		for _, m := range modelList {
 			state := activeSet[m.ID]
+
+			// Compute config-aware VRAM estimate
+			vramGB := m.VRAMEstGB // fallback
+			if cfg, err := s.registry.GetConfig(m.ID); err == nil {
+				vramGB = models.VRAMEstimateForConfig(m, cfg)
+			}
+
 			data := struct {
 				models.Model
 				IsActive     bool
 				ServiceState string
+				VRAMEstGB    float64
 			}{
 				Model:        *m,
 				IsActive:     state == "running" || state == "starting",
 				ServiceState: state,
+				VRAMEstGB:    vramGB,
 			}
 			s.renderPartial(w, "model_card", data)
 		}

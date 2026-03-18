@@ -5,20 +5,6 @@
       hx-swap="outerHTML"
       hx-trigger="submit, change[!this.classList.contains('ctx-editing')] delay:500ms">
 
-    {{if .HasGGUFMeta}}
-    <div id="vram-estimate" style="margin-bottom: 1rem; padding: 0.5rem 0.75rem; border-radius: 0.25rem; background: var(--pico-card-background-color);"
-         title="Estimated total VRAM usage based on model weights, KV cache at configured context size, and overhead.">
-        <small>Estimated VRAM:</small>
-        <span id="vram-estimate-value"
-              hx-get="/api/models/{{.ModelID}}/vram-estimate"
-              hx-trigger="load"
-              hx-include="[name=context_size],[name=kv_cache_quant]"
-              hx-swap="innerHTML">
-            <strong>{{fmtVRAM .VRAMEstimateGB}} GB</strong>
-        </span>
-    </div>
-    {{end}}
-
     <label title="Which llama.cpp build to use for this model. 'Auto' picks the first successful build.">
         Build
         <select name="build_id">
@@ -44,7 +30,7 @@
             <div class="ctx-size-picker">
                 <select {{if not $isCustom}}name="context_size"{{end}}
                         {{if $isCustom}}style="display:none;"{{end}}
-                        onchange="if(this.value==='custom'){this.removeAttribute('name');this.style.display='none';var w=this.closest('.ctx-size-picker');w.querySelector('.ctx-custom-row').style.display='flex';w.querySelector('input').name='context_size';w.querySelector('input').focus();this.closest('form').classList.add('ctx-editing');}else{htmx.ajax('GET','/api/models/{{.ModelID}}/vram-estimate?context_size='+this.value+'&kv_cache_quant='+this.closest('form').querySelector('[name=kv_cache_quant]').value,'#vram-estimate-value');}">
+                        onchange="if(this.value==='custom'){this.removeAttribute('name');this.style.display='none';var w=this.closest('.ctx-size-picker');w.querySelector('.ctx-custom-row').style.display='flex';w.querySelector('input').name='context_size';w.querySelector('input').focus();this.closest('form').classList.add('ctx-editing');}">
                     <option value="0" {{if eq $cs 0}}selected{{end}}>Model Default</option>
                     <option value="2048" {{if eq $cs 2048}}selected{{end}}>2K</option>
                     <option value="4096" {{if eq $cs 4096}}selected{{end}}>4K</option>
@@ -62,7 +48,7 @@
                            {{if $isCustom}}name="context_size" value="{{$cs}}"{{end}}
                            style="margin:0;"
                            placeholder="e.g. 16384"
-                           onchange="this.closest('form').classList.remove('ctx-editing');htmx.ajax('GET','/api/models/{{.ModelID}}/vram-estimate?context_size='+this.value+'&kv_cache_quant='+this.closest('form').querySelector('[name=kv_cache_quant]').value,'#vram-estimate-value');">
+                           onchange="this.closest('form').classList.remove('ctx-editing');">
                     <a href="#" class="ctx-presets-btn"
                        style="white-space:nowrap;font-size:0.85rem;"
                        onclick="event.preventDefault();var w=this.closest('.ctx-size-picker');var s=w.querySelector('select');var inp=w.querySelector('input');inp.removeAttribute('name');w.querySelector('.ctx-custom-row').style.display='none';s.name='context_size';s.value='8192';s.style.display='';this.closest('form').classList.remove('ctx-editing');s.dispatchEvent(new Event('change',{bubbles:true}));">
@@ -113,7 +99,7 @@
         <label title="Quantize the KV cache to reduce VRAM usage. q8_0 saves ~50% KV memory with minimal quality loss. q4_0 saves ~75% but may affect output quality.">
             KV Cache Quantization
             <select name="kv_cache_quant"
-                    onchange="htmx.ajax('GET','/api/models/{{.ModelID}}/vram-estimate?kv_cache_quant='+this.value+'&context_size='+(this.closest('form').querySelector('[name=context_size]')||{}).value,'#vram-estimate-value');">
+>
                 <option value="" {{if eq .Config.KVCacheQuant ""}}selected{{end}}>Off (f16)</option>
                 <option value="q8_0" {{if eq .Config.KVCacheQuant "q8_0"}}selected{{end}}>q8_0</option>
                 <option value="q4_0" {{if eq .Config.KVCacheQuant "q4_0"}}selected{{end}}>q4_0</option>

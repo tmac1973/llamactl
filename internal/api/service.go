@@ -342,30 +342,18 @@ func (s *Server) handleGetModelConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	model, _ := s.registry.Get(id)
-
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-		var vramEstimate float64
-		if model != nil {
-			vramEstimate = models.VRAMEstimateForConfig(model, cfg)
-		}
-
 		data := struct {
 			ModelID         string
 			Config          *models.ModelConfig
 			AvailableBuilds interface{}
 			EffectiveFlags  string
-			VRAMEstimateGB  float64
-			HasGGUFMeta     bool
 		}{
 			ModelID:         id,
 			Config:          cfg,
 			AvailableBuilds: s.builder.List(),
 			EffectiveFlags:  cfg.EffectiveFlags(),
-			VRAMEstimateGB:  vramEstimate,
-			HasGGUFMeta:     model != nil && model.NLayers > 0,
 		}
 		s.renderPartial(w, "model_config", data)
 		return
