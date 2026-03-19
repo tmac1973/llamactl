@@ -627,6 +627,7 @@ write_env_file() {
     # Model storage — bind-mount a host directory so models survive volume removal
     if [[ -n "$LLAMACTL_MODELS_DIR" ]]; then
         echo "LLAMACTL_MODELS_DIR=${LLAMACTL_MODELS_DIR}" >> "$env_file"
+        export LLAMACTL_MODELS_DIR
     fi
 
     # GPU-specific settings
