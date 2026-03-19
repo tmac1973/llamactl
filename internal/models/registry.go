@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sort"
@@ -356,47 +357,34 @@ func (r *Registry) ScanModels() int {
 	return len(found)
 }
 
+// shardRe matches shard filenames like "model-00002-of-00005.gguf"
+var shardRe = regexp.MustCompile(`-(\d{5})-of-(\d{5})\.gguf$`)
+
 // isNonFirstShard returns true if filename is a shard part other than 00001.
 func isNonFirstShard(filename string) bool {
-	// Match pattern like "model-00002-of-00005.gguf"
-	lower := strings.ToLower(filename)
-	if !strings.HasSuffix(lower, ".gguf") {
+	m := shardRe.FindStringSubmatch(filename)
+	if m == nil {
 		return false
 	}
-	name := strings.TrimSuffix(filename, filepath.Ext(filename))
-	// Look for -NNNNN-of-NNNNN at the end
-	if len(name) < 16 {
-		return false
-	}
-	tail := name[len(name)-14:] // "-00002-of-00005"
-	if len(tail) == 14 && tail[0] == '-' && tail[6:9] == "-of" {
-		part := tail[1:6]
-		return part != "00001"
-	}
-	return false
+	return m[1] != "00001"
 }
 
 // findShards returns all shard file paths if filename is part of a multi-part set.
 // Returns a single-element slice for non-sharded files.
 func findShards(dir, filename string) []string {
-	name := strings.TrimSuffix(filename, ".gguf")
-	name = strings.TrimSuffix(name, ".GGUF")
-
-	// Check if this looks like a shard: base-00001-of-NNNNN.gguf
-	if len(name) < 14 {
-		return []string{filepath.Join(dir, filename)}
-	}
-	tail := name[len(name)-14:]
-	if !(tail[0] == '-' && tail[6:9] == "-of") {
+	m := shardRe.FindStringSubmatch(filename)
+	if m == nil {
 		return []string{filepath.Join(dir, filename)}
 	}
 
-	base := name[:len(name)-14]
-	totalStr := tail[10:]
-	total, err := strconv.Atoi(totalStr)
+	total, err := strconv.Atoi(m[2])
 	if err != nil || total < 2 {
 		return []string{filepath.Join(dir, filename)}
 	}
+
+	// Extract the base name (everything before -NNNNN-of-NNNNN.gguf)
+	loc := shardRe.FindStringIndex(filename)
+	base := filename[:loc[0]]
 
 	var shards []string
 	for i := 1; i <= total; i++ {

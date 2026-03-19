@@ -602,7 +602,7 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 	// client-side JS can update the VRAM cell without refreshing the model list.
 	if r.Header.Get("HX-Request") == "true" {
 		if model, err := s.registry.Get(id); err == nil {
-			baseVRAM := models.EstimateVRAM(model.SizeBytes)
+			baseVRAM := float64(model.SizeBytes)/(1024*1024*1024) + 0.2
 			peakVRAM := models.VRAMEstimateForConfig(model, &cfg)
 			w.Header().Set("HX-Trigger", fmt.Sprintf(
 				`{"vramUpdated":{"id":%q,"vram":"%.1f - %.1f GB"}}`,

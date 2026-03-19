@@ -29,11 +29,12 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			state := activeSet[m.ID]
 
 			// Compute VRAM range: base (weights + overhead) and peak (+ full KV cache)
-			baseVRAM := models.EstimateVRAM(m.SizeBytes) // weights + overhead
-			peakVRAM := baseVRAM                          // fallback if no GGUF metadata
+			weightsGB := float64(m.SizeBytes)/(1024*1024*1024) + 0.2
+			peakVRAM := weightsGB // fallback if no config
 			if cfg, err := s.registry.GetConfig(m.ID); err == nil {
 				peakVRAM = models.VRAMEstimateForConfig(m, cfg)
 			}
+			baseVRAM := weightsGB
 
 			data := struct {
 				models.Model
