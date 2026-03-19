@@ -605,7 +605,7 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 			baseVRAM := models.EstimateVRAM(model.SizeBytes)
 			peakVRAM := models.VRAMEstimateForConfig(model, &cfg)
 			w.Header().Set("HX-Trigger", fmt.Sprintf(
-				`{"vramUpdated":{"id":%q,"vram":"%.1f – %.1f GB"}}`,
+				`{"vramUpdated":{"id":%q,"vram":"%.1f - %.1f GB"}}`,
 				id, baseVRAM, peakVRAM))
 		}
 	}

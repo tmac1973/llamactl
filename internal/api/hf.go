@@ -97,11 +97,12 @@ func (s *Server) handleHFDownload(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHFDownloadProgress(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	ch, ok := s.downloader.ProgressChannel(id)
+	ch, ok := s.downloader.Subscribe(id)
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
+	defer s.downloader.Unsubscribe(id, ch)
 
 	sse, err := NewSSEWriter(w)
 	if err != nil {
@@ -111,11 +112,7 @@ func (s *Server) handleHFDownloadProgress(w http.ResponseWriter, r *http.Request
 
 	for {
 		select {
-		case status, ok := <-ch:
-			if !ok {
-				sse.SendEvent("done", "Download complete")
-				return
-			}
+		case status := <-ch:
 			data, _ := json.Marshal(status)
 			// Send HTML progress update
 			pct := float64(0)
@@ -142,10 +139,43 @@ func (s *Server) handleHFDownloadProgress(w http.ResponseWriter, r *http.Request
 				html = string(data)
 			}
 			sse.SendEvent("progress", html)
+			// Terminal states — stop streaming
+			if status.Status == "complete" || status.Status == "failed" || status.Status == "cancelled" {
+				return
+			}
 		case <-r.Context().Done():
 			return
 		}
 	}
+}
+
+func (s *Server) handleHFActiveDownloads(w http.ResponseWriter, r *http.Request) {
+	active := s.downloader.ListActive()
+
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if len(active) == 0 {
+			return // empty response — nothing to show
+		}
+		for _, dl := range active {
+			pct := float64(0)
+			if dl.TotalBytes > 0 {
+				pct = float64(dl.BytesDownloaded) / float64(dl.TotalBytes) * 100
+			}
+			speedMB := float64(dl.SpeedBPS) / (1024 * 1024)
+			downloadedGB := float64(dl.BytesDownloaded) / (1024 * 1024 * 1024)
+			totalGB := float64(dl.TotalBytes) / (1024 * 1024 * 1024)
+			fmt.Fprintf(w, `<div style="padding: 0.25rem 0.5rem; font-size: 0.85rem;">
+				<strong>%s</strong> — <small>%s</small>
+				<progress value="%.0f" max="100" style="margin: 0.25rem 0;"></progress>
+				<small>%.1f / %.1f GB (%.1f MB/s) — %.0f%%</small>
+			</div>`, dl.ModelID, dl.Filename, pct, downloadedGB, totalGB, speedMB, pct)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(active)
 }
 
 func (s *Server) handleHFDownloadCancel(w http.ResponseWriter, r *http.Request) {

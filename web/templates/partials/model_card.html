@@ -3,7 +3,7 @@
 <tr{{if .IsActive}} style="background: var(--pico-primary-background); color: var(--pico-primary-inverse);"{{end}}>
     <td>{{.ModelID}}{{if .IsActive}} <ins>active</ins>{{end}}</td>
     <td><kbd>{{.Quant}}</kbd></td>
-    <td id="vram-{{.ID}}" title="Base (weights + overhead) – Peak (full KV cache)">{{printf "%.1f" .BaseVRAMGB}} – {{printf "%.1f" .PeakVRAMGB}} GB</td>
+    <td id="vram-{{.ID}}" title="Base (weights + overhead) - Peak (full KV cache)">{{printf "%.1f" .BaseVRAMGB}} - {{printf "%.1f" .PeakVRAMGB}} GB</td>
     <td>{{printf "%.1f" (divGB .SizeBytes)}} GB</td>
     <td>
         <div role="group">

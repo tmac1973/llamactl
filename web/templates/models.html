@@ -95,6 +95,12 @@
                 Scan for Models
             </button>
         </div>
+        <div id="active-downloads"
+             hx-get="/api/hf/downloads"
+             hx-trigger="load, every 3s"
+             hx-swap="innerHTML"
+             hx-on::before-swap="if(event.detail.xhr.responseText===this.innerHTML){event.detail.shouldSwap=false;}">
+        </div>
         <div id="model-list" hx-get="/api/models" hx-trigger="load" hx-swap="innerHTML">
             Loading...
         </div>

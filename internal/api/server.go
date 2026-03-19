@@ -151,6 +151,7 @@ func (s *Server) buildRouter() chi.Router {
 			r.Get("/search", s.handleHFSearch)
 			r.Get("/model", s.handleHFModel)
 			r.Post("/download", s.handleHFDownload)
+			r.Get("/downloads", s.handleHFActiveDownloads)
 			r.Get("/download/{id}/progress", s.handleHFDownloadProgress)
 			r.Delete("/download/{id}", s.handleHFDownloadCancel)
 		})

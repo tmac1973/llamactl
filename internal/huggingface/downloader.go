@@ -27,7 +27,45 @@ type DownloadStatus struct {
 }
 
 type download struct {
-	cancel context.CancelFunc
+	cancel     context.CancelFunc
+	lastStatus DownloadStatus
+
+	// Fan-out to multiple subscribers
+	subMu sync.Mutex
+	subs  map[chan DownloadStatus]struct{}
+}
+
+func (dl *download) broadcast(status DownloadStatus) {
+	dl.subMu.Lock()
+	dl.lastStatus = status
+	for ch := range dl.subs {
+		select {
+		case ch <- status:
+		default:
+		}
+	}
+	dl.subMu.Unlock()
+}
+
+func (dl *download) subscribe() chan DownloadStatus {
+	ch := make(chan DownloadStatus, 16)
+	dl.subMu.Lock()
+	dl.subs[ch] = struct{}{}
+	// Send current state immediately so subscriber sees where we are
+	if dl.lastStatus.Status != "" {
+		select {
+		case ch <- dl.lastStatus:
+		default:
+		}
+	}
+	dl.subMu.Unlock()
+	return ch
+}
+
+func (dl *download) unsubscribe(ch chan DownloadStatus) {
+	dl.subMu.Lock()
+	delete(dl.subs, ch)
+	dl.subMu.Unlock()
 }
 
 // CompletionFunc is called when a download finishes successfully.
@@ -39,17 +77,15 @@ type Downloader struct {
 	token      string
 	onComplete CompletionFunc
 
-	mu         sync.Mutex
-	active     map[string]*download
-	progressCh map[string]chan DownloadStatus
+	mu     sync.Mutex
+	active map[string]*download
 }
 
 func NewDownloader(dataDir, token string) *Downloader {
 	return &Downloader{
-		dataDir:    dataDir,
-		token:      token,
-		active:     make(map[string]*download),
-		progressCh: make(map[string]chan DownloadStatus),
+		dataDir: dataDir,
+		token:   token,
+		active:  make(map[string]*download),
 	}
 }
 
@@ -72,22 +108,53 @@ func (d *Downloader) Start(ctx context.Context, modelID, filename string) (strin
 	}
 
 	dlCtx, cancel := context.WithCancel(context.Background())
-	progressCh := make(chan DownloadStatus, 64)
-	d.active[downloadID] = &download{cancel: cancel}
-	d.progressCh[downloadID] = progressCh
+	dl := &download{
+		cancel: cancel,
+		subs:   make(map[chan DownloadStatus]struct{}),
+	}
+	d.active[downloadID] = dl
 	d.mu.Unlock()
 
-	go d.run(dlCtx, downloadID, modelID, filename, progressCh)
+	go d.run(dlCtx, downloadID, modelID, filename, dl)
 
 	return downloadID, nil
 }
 
-// ProgressChannel returns the channel for streaming download progress.
-func (d *Downloader) ProgressChannel(downloadID string) (<-chan DownloadStatus, bool) {
+// Subscribe returns a channel that receives progress updates for a download.
+// The current status is sent immediately. Call Unsubscribe when done.
+func (d *Downloader) Subscribe(downloadID string) (chan DownloadStatus, bool) {
+	d.mu.Lock()
+	dl, ok := d.active[downloadID]
+	d.mu.Unlock()
+	if !ok {
+		return nil, false
+	}
+	return dl.subscribe(), true
+}
+
+// Unsubscribe removes a progress subscriber.
+func (d *Downloader) Unsubscribe(downloadID string, ch chan DownloadStatus) {
+	d.mu.Lock()
+	dl, ok := d.active[downloadID]
+	d.mu.Unlock()
+	if ok {
+		dl.unsubscribe(ch)
+	}
+}
+
+// ListActive returns the latest status of all in-progress downloads.
+func (d *Downloader) ListActive() []DownloadStatus {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	ch, ok := d.progressCh[downloadID]
-	return ch, ok
+	var out []DownloadStatus
+	for _, dl := range d.active {
+		dl.subMu.Lock()
+		if dl.lastStatus.Status == "downloading" {
+			out = append(out, dl.lastStatus)
+		}
+		dl.subMu.Unlock()
+	}
+	return out
 }
 
 // Cancel stops an active download.
@@ -104,27 +171,19 @@ func (d *Downloader) Cancel(downloadID string) error {
 	return nil
 }
 
-func (d *Downloader) run(ctx context.Context, downloadID, modelID, filename string, progressCh chan DownloadStatus) {
+func (d *Downloader) run(ctx context.Context, downloadID, modelID, filename string, dl *download) {
 	defer func() {
-		close(progressCh)
-		d.mu.Lock()
-		delete(d.active, downloadID)
-		d.mu.Unlock()
-
-		// Keep channel in map briefly so late SSE connections can still find it
+		// Keep in active map briefly so late subscribers can see final status
 		go func() {
 			time.Sleep(30 * time.Second)
 			d.mu.Lock()
-			delete(d.progressCh, downloadID)
+			delete(d.active, downloadID)
 			d.mu.Unlock()
 		}()
 	}()
 
 	sendProgress := func(status DownloadStatus) {
-		select {
-		case progressCh <- status:
-		default:
-		}
+		dl.broadcast(status)
 	}
 
 	// Expand sharded files: "model-00001-of-00005.gguf" → all 5 parts
@@ -156,7 +215,7 @@ func (d *Downloader) run(ctx context.Context, downloadID, modelID, filename stri
 			label = fmt.Sprintf("%s [%d/%d]", fn, i+1, len(filenames))
 		}
 
-		downloaded, err := d.downloadFile(ctx, downloadID, modelID, fn, label, modelDir, totalDownloaded, combinedTotal, progressCh)
+		downloaded, err := d.downloadFile(ctx, downloadID, modelID, fn, label, modelDir, totalDownloaded, combinedTotal, dl)
 		if err != nil {
 			sendProgress(DownloadStatus{ID: downloadID, ModelID: modelID, Filename: label, Status: "failed", Error: err.Error()})
 			return
@@ -222,13 +281,10 @@ func (d *Downloader) fetchCombinedSize(ctx context.Context, modelID string, file
 // downloadFile downloads a single file, reporting progress with a base offset for multi-shard tracking.
 // Returns the number of bytes downloaded for this file.
 func (d *Downloader) downloadFile(ctx context.Context, downloadID, modelID, filename, label, modelDir string,
-	baseDownloaded, combinedTotal int64, progressCh chan DownloadStatus) (int64, error) {
+	baseDownloaded, combinedTotal int64, dl *download) (int64, error) {
 
 	sendProgress := func(status DownloadStatus) {
-		select {
-		case progressCh <- status:
-		default:
-		}
+		dl.broadcast(status)
 	}
 
 	partPath := filepath.Join(modelDir, filename+".part")
