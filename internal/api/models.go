@@ -94,7 +94,14 @@ func (s *Server) handleGetModel(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if err := s.registry.Delete(id); err != nil {
+
+	var err error
+	if r.URL.Query().Get("keep_files") == "true" {
+		err = s.registry.Remove(id)
+	} else {
+		err = s.registry.Delete(id)
+	}
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}

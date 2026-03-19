@@ -176,7 +176,22 @@ func (r *Registry) Get(id string) (*Model, error) {
 	return m, nil
 }
 
-// Delete removes a model and its files.
+// Remove removes a model entry from the registry without deleting files.
+func (r *Registry) Remove(id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.data.Models[id]; !ok {
+		return fmt.Errorf("model not found: %s", id)
+	}
+
+	delete(r.data.Models, id)
+	delete(r.data.Configs, id)
+	r.save()
+	return nil
+}
+
+// Delete removes a model entry and deletes its files from disk.
 func (r *Registry) Delete(id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -186,14 +201,37 @@ func (r *Registry) Delete(id string) error {
 		return fmt.Errorf("model not found: %s", id)
 	}
 
-	// Remove model directory
-	modelDir := filepath.Dir(m.FilePath)
-	os.RemoveAll(modelDir)
+	// Delete the GGUF file(s) — for sharded models, delete all parts
+	shards := findShards(filepath.Dir(m.FilePath), filepath.Base(m.FilePath))
+	for _, shard := range shards {
+		os.Remove(shard)
+		os.Remove(shard + ".part") // clean up any partial downloads too
+	}
+
+	// Remove empty directories left behind
+	dir := filepath.Dir(m.FilePath)
+	removeEmptyDirs(dir)
 
 	delete(r.data.Models, id)
 	delete(r.data.Configs, id)
 	r.save()
 	return nil
+}
+
+// removeEmptyDirs removes dir and its parent if they're empty, stopping at the models dir.
+func removeEmptyDirs(dir string) {
+	for {
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) > 0 {
+			break
+		}
+		parent := filepath.Dir(dir)
+		os.Remove(dir) // only succeeds if empty
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
 }
 
 // GetConfig returns the launch config for a model.
@@ -248,6 +286,43 @@ func (r *Registry) BackfillGGUFMeta() {
 	if changed {
 		r.save()
 	}
+}
+
+// DeduplicateModels removes duplicate registry entries that point to the same file.
+// Keeps the first entry found (by ID sort order) and removes the rest.
+func (r *Registry) DeduplicateModels() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	seen := make(map[string]string) // file path → first model ID
+	var dupes []string
+
+	// Sort IDs for deterministic behavior
+	ids := make([]string, 0, len(r.data.Models))
+	for id := range r.data.Models {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	for _, id := range ids {
+		m := r.data.Models[id]
+		if existing, ok := seen[m.FilePath]; ok {
+			slog.Info("removing duplicate model entry", "id", id, "kept", existing, "path", m.FilePath)
+			dupes = append(dupes, id)
+		} else {
+			seen[m.FilePath] = id
+		}
+	}
+
+	for _, id := range dupes {
+		delete(r.data.Models, id)
+		delete(r.data.Configs, id)
+	}
+
+	if len(dupes) > 0 {
+		r.save()
+	}
+	return len(dupes)
 }
 
 // FindOrphans returns registry entries whose model files no longer exist on disk.

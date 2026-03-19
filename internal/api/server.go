@@ -48,6 +48,9 @@ func NewServer(cfg *config.Config) *Server {
 	}
 	s.downloader.SetOnComplete(s.onDownloadComplete)
 	s.registry.BackfillGGUFMeta()
+	if n := s.registry.DeduplicateModels(); n > 0 {
+		slog.Info("removed duplicate model entries", "count", n)
+	}
 	if n := s.registry.ScanModels(); n > 0 {
 		slog.Info("discovered models on disk", "count", n)
 	}
