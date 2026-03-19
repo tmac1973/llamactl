@@ -124,6 +124,17 @@ api_key: ""                 # Bearer token for /v1 proxy authentication
 log_level: "info"
 ```
 
+### Model Storage
+
+By default, models are stored in the Docker volume (`llamactl-data`). To persist models on the host filesystem (so they survive volume removal):
+
+```bash
+# Add to .env (or set before running setup.sh)
+LLAMACTL_MODELS_DIR=/path/to/your/models
+```
+
+The host directory is bind-mounted to `/data/models` inside the container. Existing models in the volume will not be visible when a host directory is mounted — move them first if needed.
+
 ### External URL
 
 Set `external_url` when accessing LlamaCtl from a remote machine. This configures the displayed API endpoint URL and Chat UI link on the dashboard. Can be set from the Settings page.

@@ -19,6 +19,7 @@ HOST_RENDER_GID=""      # host render group GID
 
 LLAMACTL_PORT="3000"            # host port for management UI
 LLAMACTL_INFERENCE_PORT="8080"  # host port for inference API
+LLAMACTL_MODELS_DIR=""          # host path for model storage (empty = use docker volume)
 
 CONTAINER_CMD=""        # docker or podman
 COMPOSE_CMD=""          # "docker compose" or "podman-compose" or "podman compose"
@@ -538,6 +539,8 @@ load_env_ports() {
         [[ -n "$val" ]] && LLAMACTL_PORT="$val" || true
         val="$(grep '^LLAMACTL_INFERENCE_PORT=' "$env_file" 2>/dev/null | cut -d= -f2)" || true
         [[ -n "$val" ]] && LLAMACTL_INFERENCE_PORT="$val" || true
+        val="$(grep '^LLAMACTL_MODELS_DIR=' "$env_file" 2>/dev/null | cut -d= -f2)" || true
+        [[ -n "$val" ]] && LLAMACTL_MODELS_DIR="$val" || true
     fi
 }
 
@@ -545,6 +548,16 @@ load_env_ports() {
 
 compose_file() {
     echo "docker-compose.${GPU_VENDOR}.yml"
+}
+
+# compose_cmd builds the full compose command with all required -f flags.
+compose_cmd() {
+    local cmd="$COMPOSE_CMD -f $(compose_file)"
+    # Add models volume override if a host directory is configured
+    if [[ -n "${LLAMACTL_MODELS_DIR:-}" ]]; then
+        cmd+=" -f docker-compose.models.yml"
+    fi
+    echo "$cmd"
 }
 
 dockerfile() {
@@ -565,6 +578,11 @@ write_env_file() {
     echo "LLAMACTL_PORT=${LLAMACTL_PORT}" >> "$env_file"
     echo "LLAMACTL_INFERENCE_PORT=${LLAMACTL_INFERENCE_PORT}" >> "$env_file"
 
+    # Model storage — bind-mount a host directory so models survive volume removal
+    if [[ -n "$LLAMACTL_MODELS_DIR" ]]; then
+        echo "LLAMACTL_MODELS_DIR=${LLAMACTL_MODELS_DIR}" >> "$env_file"
+    fi
+
     # GPU-specific settings
     if [[ -n "$AMD_GFX_VERSION" ]]; then
         echo "HSA_OVERRIDE_GFX_VERSION=${AMD_GFX_VERSION}" >> "$env_file"
@@ -582,7 +600,7 @@ container_up() {
         log "Starting llamactl via systemd (Quadlet)..."
         systemctl_cmd start "${PODMAN_SERVICE_NAME}.service"
     else
-        $COMPOSE_CMD -f "$(compose_file)" up -d
+        $(compose_cmd) up -d
     fi
 }
 
@@ -591,13 +609,13 @@ container_down() {
         log "Stopping llamactl via systemd (Quadlet)..."
         systemctl_cmd stop "${PODMAN_SERVICE_NAME}.service"
     else
-        $COMPOSE_CMD -f "$(compose_file)" down
+        $(compose_cmd) down
     fi
 }
 
 container_install() {
     write_env_file
-    $COMPOSE_CMD -f "$(compose_file)" up -d --build
+    $(compose_cmd) up -d --build
 }
 
 container_rebuild() {
@@ -607,13 +625,13 @@ container_rebuild() {
     container_down
     $CONTAINER_CMD rm llamactl 2>/dev/null || true
     write_env_file
-    $COMPOSE_CMD -f "$(compose_file)" build --no-cache
+    $(compose_cmd) build --no-cache
 
     if [[ "$quadlet_active" == true ]]; then
         log "Starting via systemd (Quadlet)..."
         systemctl_cmd start "${PODMAN_SERVICE_NAME}.service"
     else
-        $COMPOSE_CMD -f "$(compose_file)" up -d
+        $(compose_cmd) up -d
     fi
 }
 
@@ -621,7 +639,7 @@ container_logs() {
     if has_quadlet; then
         journalctl --user -u "${PODMAN_SERVICE_NAME}.service" -n 100 -f
     else
-        $COMPOSE_CMD -f "$(compose_file)" logs -f
+        $(compose_cmd) logs -f
     fi
 }
 
@@ -922,6 +940,9 @@ print_summary() {
     echo -e "  ${CYAN}Compose file${NC}  ${cf}"
     echo -e "  ${CYAN}UI port${NC}       ${LLAMACTL_PORT}"
     echo -e "  ${CYAN}Inference port${NC} ${LLAMACTL_INFERENCE_PORT}"
+    if [[ -n "$LLAMACTL_MODELS_DIR" ]]; then
+        echo -e "  ${CYAN}Models dir${NC}    ${LLAMACTL_MODELS_DIR}"
+    fi
     if [[ -n "$AMD_GFX_VERSION" ]]; then
         echo -e "  ${CYAN}HSA Override${NC}  ${AMD_GFX_VERSION}"
     fi

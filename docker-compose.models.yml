@@ -1,0 +1,12 @@
+# Optional override: mount a host directory for model storage.
+# Used automatically by setup.sh when LLAMACTL_MODELS_DIR is set in .env.
+#
+# Manual usage:
+#   docker compose -f docker-compose.rocm.yml -f docker-compose.models.yml up -d
+#
+# The host directory is bind-mounted to /data/models inside the container,
+# so models persist independently of the Docker volume.
+services:
+  llamactl:
+    volumes:
+      - ${LLAMACTL_MODELS_DIR}:/data/models:z
