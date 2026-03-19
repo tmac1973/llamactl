@@ -471,7 +471,8 @@ func (m *Manager) monitorProcess(inst *instance, cmd *exec.Cmd, done chan struct
 
 func (m *Manager) pollHealth(inst *instance) {
 	client := &http.Client{Timeout: 2 * time.Second}
-	deadline := time.Now().Add(120 * time.Second)
+	// Allow longer startup for large models — 5 minutes base + extra for large context
+	deadline := time.Now().Add(5 * time.Minute)
 
 	for time.Now().Before(deadline) {
 		time.Sleep(2 * time.Second)
