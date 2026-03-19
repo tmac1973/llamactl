@@ -77,6 +77,7 @@ Both Docker and Podman (including rootless) are supported on all distros.
 Lifecycle:
   install     Detect environment, install prerequisites, build & start
   uninstall   Stop container, disable auto-start, remove container + image
+  quick       Fast rebuild (recompile Go code only, reuse cached base)
   rebuild     Full rebuild with no cache, then start
 
 Runtime:

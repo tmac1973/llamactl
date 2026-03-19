@@ -683,6 +683,13 @@ container_rebuild() {
     fi
 }
 
+# Quick rebuild: only rebuild layers that changed (Go code), reuse cached base layers.
+container_quick_rebuild() {
+    container_down
+    write_env_file
+    $(compose_cmd) up -d --build
+}
+
 container_logs() {
     if has_quadlet; then
         journalctl --user -u "${PODMAN_SERVICE_NAME}.service" -n 100 -f
@@ -1049,6 +1056,7 @@ Lifecycle:
   install     Detect GPU/runtime/distro, install prerequisites, build image,
               and start the llamactl container
   uninstall   Stop container, disable auto-start, and remove container + image
+  quick       Fast rebuild — only recompile Go code, reuse cached base layers
   rebuild     Full rebuild with no cache, then start
 
 Runtime:
@@ -1085,7 +1093,8 @@ Examples:
   ./setup.sh enable               # start llamactl on boot
   ./setup.sh disable              # stop starting on boot
   ./setup.sh uninstall            # remove everything
-  ./setup.sh rebuild              # full clean rebuild
+  ./setup.sh quick                # fast rebuild (code changes only)
+  ./setup.sh rebuild              # full clean rebuild (no cache)
   GPU=cpu ./setup.sh install      # force CPU-only backend
   RUNTIME=podman ./setup.sh install  # force Podman runtime
 USAGE
@@ -1098,7 +1107,7 @@ main() {
 
     # ── Parse args ──
     case "$command" in
-        install|uninstall|up|down|rebuild|logs|detect|status|enable|disable) ;;
+        install|uninstall|up|down|rebuild|quick|logs|detect|status|enable|disable) ;;
         -h|--help|help)
             usage
             exit 0
@@ -1155,6 +1164,15 @@ main() {
             ;;
         uninstall)
             container_uninstall
+            exit 0
+            ;;
+        quick)
+            log "Quick rebuild (cached)..."
+            container_quick_rebuild
+            ok "llamactl is running"
+            echo ""
+            echo "  Web UI:     http://localhost:${LLAMACTL_PORT}"
+            echo ""
             exit 0
             ;;
     esac
