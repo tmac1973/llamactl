@@ -234,6 +234,9 @@ func (d *Downloader) downloadFile(ctx context.Context, downloadID, modelID, file
 	partPath := filepath.Join(modelDir, filename+".part")
 	finalPath := filepath.Join(modelDir, filename)
 
+	// Ensure subdirectories exist (for files like "Q8_0/model.gguf")
+	os.MkdirAll(filepath.Dir(finalPath), 0o755)
+
 	// Skip if already downloaded
 	if info, err := os.Stat(finalPath); err == nil {
 		return info.Size(), nil
