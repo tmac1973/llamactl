@@ -249,6 +249,197 @@ func (r *Registry) BackfillGGUFMeta() {
 	}
 }
 
+// ScanModels walks the models directory for GGUF files not already in the
+// registry and adds them. Returns the number of new models found.
+func (r *Registry) ScanModels() int {
+	modelsDir := filepath.Join(r.dataDir, "models")
+	if _, err := os.Stat(modelsDir); err != nil {
+		return 0
+	}
+
+	// Build set of known file paths for fast lookup
+	r.mu.RLock()
+	knownPaths := make(map[string]bool, len(r.data.Models))
+	for _, m := range r.data.Models {
+		knownPaths[m.FilePath] = true
+	}
+	r.mu.RUnlock()
+
+	// Walk looking for .gguf files
+	var found []*Model
+	filepath.Walk(modelsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(strings.ToLower(info.Name()), ".gguf") {
+			return nil
+		}
+		// Skip .part files (incomplete downloads)
+		if strings.HasSuffix(path, ".part") {
+			return nil
+		}
+		// Skip if already registered
+		if knownPaths[path] {
+			return nil
+		}
+		// Skip shard parts beyond the first (we'll register the first shard as the model)
+		if isNonFirstShard(info.Name()) {
+			return nil
+		}
+
+		// Derive model info from directory structure and filename
+		// Expected: /data/models/{org--repo}/{filename}.gguf
+		// or:       /data/models/{org--repo}/{subdir}/{filename}.gguf
+		rel, _ := filepath.Rel(modelsDir, path)
+		parts := strings.SplitN(rel, string(filepath.Separator), 2)
+
+		dirName := parts[0]                              // e.g., "unsloth--Qwen3.5-27B-GGUF"
+		filename := info.Name()                          // e.g., "Qwen3.5-27B-Q4_K_M.gguf"
+		modelID := strings.ReplaceAll(dirName, "--", "/") // e.g., "unsloth/Qwen3.5-27B-GGUF"
+
+		safeName := dirName
+		safeFilename := strings.ReplaceAll(strings.TrimSuffix(rel, ".gguf"), string(filepath.Separator), "--")
+		id := fmt.Sprintf("%s--%s", safeName, strings.TrimSuffix(filename, ".gguf"))
+		if len(parts) > 1 {
+			// Has subdirectory — use the full relative path for the ID
+			id = safeFilename
+			// Prefix with org--repo if not already
+			if !strings.HasPrefix(id, safeName) {
+				id = safeName + "--" + id
+			}
+		}
+
+		// Calculate total size (sum shards if multi-part)
+		totalSize := info.Size()
+		shardFiles := findShards(filepath.Dir(path), filename)
+		if len(shardFiles) > 1 {
+			totalSize = 0
+			for _, sf := range shardFiles {
+				if si, err := os.Stat(sf); err == nil {
+					totalSize += si.Size()
+				}
+			}
+		}
+
+		m := &Model{
+			ID:           id,
+			ModelID:      modelID,
+			Filename:     filename,
+			Quant:        parseQuant(filename),
+			SizeBytes:    totalSize,
+			FilePath:     path,
+			VRAMEstGB:    EstimateVRAM(totalSize),
+			DownloadedAt: info.ModTime(),
+		}
+
+		// Parse GGUF metadata
+		if meta, err := ParseGGUFMeta(path); err == nil {
+			m.Arch = meta.Architecture
+			m.NLayers = meta.NLayers
+			m.NEmbd = meta.NEmbd
+			m.NHead = meta.NHead
+			m.NKVHead = meta.NKVHead
+			m.ContextLength = meta.ContextLength
+		}
+
+		found = append(found, m)
+		return nil
+	})
+
+	for _, m := range found {
+		r.Add(m)
+		slog.Info("scanned model", "id", m.ID, "file", m.FilePath,
+			"size_gb", fmt.Sprintf("%.1f", float64(m.SizeBytes)/(1024*1024*1024)),
+			"arch", m.Arch)
+	}
+
+	return len(found)
+}
+
+// isNonFirstShard returns true if filename is a shard part other than 00001.
+func isNonFirstShard(filename string) bool {
+	// Match pattern like "model-00002-of-00005.gguf"
+	lower := strings.ToLower(filename)
+	if !strings.HasSuffix(lower, ".gguf") {
+		return false
+	}
+	name := strings.TrimSuffix(filename, filepath.Ext(filename))
+	// Look for -NNNNN-of-NNNNN at the end
+	if len(name) < 16 {
+		return false
+	}
+	tail := name[len(name)-14:] // "-00002-of-00005"
+	if len(tail) == 14 && tail[0] == '-' && tail[6:9] == "-of" {
+		part := tail[1:6]
+		return part != "00001"
+	}
+	return false
+}
+
+// findShards returns all shard file paths if filename is part of a multi-part set.
+// Returns a single-element slice for non-sharded files.
+func findShards(dir, filename string) []string {
+	name := strings.TrimSuffix(filename, ".gguf")
+	name = strings.TrimSuffix(name, ".GGUF")
+
+	// Check if this looks like a shard: base-00001-of-NNNNN.gguf
+	if len(name) < 14 {
+		return []string{filepath.Join(dir, filename)}
+	}
+	tail := name[len(name)-14:]
+	if !(tail[0] == '-' && tail[6:9] == "-of") {
+		return []string{filepath.Join(dir, filename)}
+	}
+
+	base := name[:len(name)-14]
+	totalStr := tail[10:]
+	total, err := strconv.Atoi(totalStr)
+	if err != nil || total < 2 {
+		return []string{filepath.Join(dir, filename)}
+	}
+
+	var shards []string
+	for i := 1; i <= total; i++ {
+		shard := filepath.Join(dir, fmt.Sprintf("%s-%05d-of-%05d.gguf", base, i, total))
+		shards = append(shards, shard)
+	}
+	return shards
+}
+
+// parseQuant extracts quantization type from a GGUF filename.
+func parseQuant(filename string) string {
+	name := strings.TrimSuffix(filepath.Base(filename), ".gguf")
+	name = strings.TrimSuffix(name, ".GGUF")
+
+	// Remove shard suffix if present
+	if idx := strings.LastIndex(name, "-00001-of-"); idx > 0 {
+		name = name[:idx]
+	}
+
+	quants := []string{
+		"IQ1_S", "IQ1_M", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ2_M",
+		"IQ3_XXS", "IQ3_XS", "IQ3_S", "IQ3_M", "IQ4_XS", "IQ4_NL",
+		"Q2_K", "Q2_K_S",
+		"Q3_K_S", "Q3_K_M", "Q3_K_L", "Q3_K",
+		"Q4_K_S", "Q4_K_M", "Q4_K_L", "Q4_K", "Q4_0", "Q4_1",
+		"Q5_K_S", "Q5_K_M", "Q5_K_L", "Q5_K", "Q5_0", "Q5_1",
+		"Q6_K", "Q6_K_L", "Q6_K_XL",
+		"Q8_0", "Q8_1", "Q8_K_XL",
+		"UD_Q8_K_XL", "UD_Q6_K_XL", "UD_Q4_K_XL",
+		"F16", "F32", "BF16",
+	}
+
+	upper := strings.ToUpper(name)
+	// Check longer quant names first to avoid partial matches
+	sort.Slice(quants, func(i, j int) bool { return len(quants[i]) > len(quants[j]) })
+	for _, q := range quants {
+		if strings.Contains(upper, q) {
+			return q
+		}
+	}
+	return "unknown"
+}
+
 func (r *Registry) registryPath() string {
 	return filepath.Join(r.dataDir, "config", "models.json")
 }

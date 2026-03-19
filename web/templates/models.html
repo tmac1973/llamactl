@@ -85,6 +85,16 @@
 
 <div class="models-page">
     <div class="models-list">
+        <div style="display: flex; justify-content: flex-end; padding: 0 0.25rem 0.25rem 0;">
+            <button type="button" class="outline secondary"
+                    style="margin: 0; padding: 0.2rem 0.6rem; font-size: 0.8rem;"
+                    hx-post="/api/models/scan"
+                    hx-target="#model-list"
+                    hx-swap="innerHTML"
+                    title="Scan the models directory for GGUF files not yet in the registry">
+                Scan for Models
+            </button>
+        </div>
         <div id="model-list" hx-get="/api/models" hx-trigger="load" hx-swap="innerHTML">
             Loading...
         </div>

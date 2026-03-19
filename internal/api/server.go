@@ -48,6 +48,9 @@ func NewServer(cfg *config.Config) *Server {
 	}
 	s.downloader.SetOnComplete(s.onDownloadComplete)
 	s.registry.BackfillGGUFMeta()
+	if n := s.registry.ScanModels(); n > 0 {
+		slog.Info("discovered models on disk", "count", n)
+	}
 	s.pages = s.parseTemplates()
 	s.router = s.buildRouter()
 	return s
@@ -135,6 +138,7 @@ func (s *Server) buildRouter() chi.Router {
 		})
 		r.Route("/models", func(r chi.Router) {
 			r.Get("/", s.handleListModels)
+			r.Post("/scan", s.handleScanModels)
 			r.Get("/{id}", s.handleGetModel)
 			r.Delete("/{id}", s.handleDeleteModel)
 			r.Put("/{id}/activate", s.handleActivateModel)

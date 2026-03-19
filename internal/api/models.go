@@ -58,6 +58,19 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(modelList)
 }
 
+func (s *Server) handleScanModels(w http.ResponseWriter, r *http.Request) {
+	found := s.registry.ScanModels()
+
+	if r.Header.Get("HX-Request") == "true" {
+		// Re-render the model list with any newly discovered models
+		s.handleListModels(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{"new_models": found})
+}
+
 func (s *Server) handleGetModel(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	m, err := s.registry.Get(id)
