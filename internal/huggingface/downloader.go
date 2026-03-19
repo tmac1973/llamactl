@@ -60,9 +60,10 @@ func (d *Downloader) SetOnComplete(fn CompletionFunc) {
 
 // Start begins a download in the background. Returns the download ID.
 func (d *Downloader) Start(ctx context.Context, modelID, filename string) (string, error) {
-	// Create a stable download ID
+	// Create a stable download ID — replace all slashes to keep it URL-safe
 	safeName := strings.ReplaceAll(modelID, "/", "--")
-	downloadID := fmt.Sprintf("%s--%s", safeName, strings.TrimSuffix(filename, ".gguf"))
+	safeFilename := strings.ReplaceAll(strings.TrimSuffix(filename, ".gguf"), "/", "--")
+	downloadID := fmt.Sprintf("%s--%s", safeName, safeFilename)
 
 	d.mu.Lock()
 	if _, exists := d.active[downloadID]; exists {

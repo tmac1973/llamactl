@@ -162,8 +162,9 @@ func (s *Server) onDownloadComplete(downloadID, modelID, filename string, sizeBy
 	safeName := strings.ReplaceAll(modelID, "/", "--")
 	filePath := fmt.Sprintf("%s/models/%s/%s", s.cfg.DataDir, safeName, filename)
 
+	safeFilename := strings.ReplaceAll(strings.TrimSuffix(filename, ".gguf"), "/", "--")
 	m := &models.Model{
-		ID:           fmt.Sprintf("%s--%s", safeName, strings.TrimSuffix(filename, ".gguf")),
+		ID:           fmt.Sprintf("%s--%s", safeName, safeFilename),
 		ModelID:      modelID,
 		Filename:     filename,
 		Quant:        parseQuantFromFilename(filename),

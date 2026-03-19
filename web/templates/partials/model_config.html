@@ -79,9 +79,9 @@
             GPU Devices
             <select name="gpu_devices">
                 <option value="" {{if eq .Config.GPUDevices ""}}selected{{end}}>All GPUs</option>
-                <option value="0" {{if eq .Config.GPUDevices "0"}}selected{{end}}>GPU 0 only</option>
-                <option value="1" {{if eq .Config.GPUDevices "1"}}selected{{end}}>GPU 1 only</option>
-                <option value="0,1" {{if eq .Config.GPUDevices "0,1"}}selected{{end}}>GPU 0 + GPU 1</option>
+                {{range .GPUOptions}}
+                <option value="{{.Value}}" {{if eq .Value $.Config.GPUDevices}}selected{{end}}>{{.Label}}</option>
+                {{end}}
             </select>
         </label>
         <div></div>

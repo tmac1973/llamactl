@@ -92,16 +92,19 @@ func VRAMEstimateForConfig(m *Model, cfg *ModelConfig) float64 {
 	)
 }
 
-// VRAMFitCategory returns a fit category based on estimated VRAM.
-// "single" = fits on one 32GB GPU, "dual" = fits across two (64GB), "too_large"
+// VRAMFitCategory returns the minimum number of 32GB GPUs needed as a label.
 func VRAMFitCategory(estimatedGB float64) string {
+	const gpuSize = 32.0
+	gpus := int(math.Ceil(estimatedGB / gpuSize))
 	switch {
-	case estimatedGB <= 32:
+	case gpus <= 0:
 		return "single"
-	case estimatedGB <= 64:
+	case gpus == 1:
+		return "single"
+	case gpus == 2:
 		return "dual"
 	default:
-		return "too_large"
+		return fmt.Sprintf("%d_gpu", gpus)
 	}
 }
 

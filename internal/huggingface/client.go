@@ -135,7 +135,7 @@ func (c *Client) GetModel(ctx context.Context, modelID string) (*ModelDetail, er
 
 // populateFileSizes fetches file sizes from the HF tree API.
 func (c *Client) populateFileSizes(ctx context.Context, modelID string, detail *ModelDetail) {
-	u := fmt.Sprintf("%s/models/%s/tree/main", baseURL, modelID)
+	u := fmt.Sprintf("%s/models/%s/tree/main?recursive=true", baseURL, modelID)
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return

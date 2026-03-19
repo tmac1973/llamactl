@@ -398,6 +398,68 @@ func gpuOverlap(a, b []int) bool {
 	return false
 }
 
+type gpuOption struct {
+	Value string
+	Label string
+}
+
+// buildGPUOptions returns GPU device options based on detected hardware.
+func (s *Server) buildGPUOptions() []gpuOption {
+	metrics := s.monitor.Current()
+	numGPUs := len(metrics.GPU)
+	if numGPUs == 0 {
+		numGPUs = 1 // fallback: assume at least 1 GPU
+	}
+
+	var opts []gpuOption
+
+	// Individual GPU options
+	for i := 0; i < numGPUs; i++ {
+		label := fmt.Sprintf("GPU %d only", i)
+		if i < len(metrics.GPU) && metrics.GPU[i].Name != "" {
+			label = fmt.Sprintf("GPU %d (%s)", i, metrics.GPU[i].Name)
+		}
+		opts = append(opts, gpuOption{
+			Value: strconv.Itoa(i),
+			Label: label,
+		})
+	}
+
+	// Multi-GPU combination options (only if >1 GPU)
+	if numGPUs >= 2 {
+		// Pairs
+		for i := 0; i < numGPUs-1; i++ {
+			for j := i + 1; j < numGPUs; j++ {
+				opts = append(opts, gpuOption{
+					Value: fmt.Sprintf("%d,%d", i, j),
+					Label: fmt.Sprintf("GPU %d + %d", i, j),
+				})
+			}
+		}
+	}
+
+	// All-but-one combinations for 3+ GPUs
+	if numGPUs >= 3 {
+		for skip := 0; skip < numGPUs; skip++ {
+			var indices []string
+			var labels []string
+			for i := 0; i < numGPUs; i++ {
+				if i == skip {
+					continue
+				}
+				indices = append(indices, strconv.Itoa(i))
+				labels = append(labels, strconv.Itoa(i))
+			}
+			opts = append(opts, gpuOption{
+				Value: strings.Join(indices, ","),
+				Label: fmt.Sprintf("GPU %s", strings.Join(labels, " + ")),
+			})
+		}
+	}
+
+	return opts
+}
+
 // handleDeactivateModel stops a specific model instance.
 func (s *Server) handleDeactivateModel(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
@@ -481,12 +543,14 @@ func (s *Server) handleGetModelConfig(w http.ResponseWriter, r *http.Request) {
 			AvailableBuilds interface{}
 			EffectiveFlags  string
 			MaxContext      int
+			GPUOptions      []gpuOption
 		}{
 			ModelID:         id,
 			Config:          cfg,
 			AvailableBuilds: s.builder.List(),
 			EffectiveFlags:  cfg.EffectiveFlags(),
 			MaxContext:      maxContext,
+			GPUOptions:      s.buildGPUOptions(),
 		}
 		s.renderPartial(w, "model_config", data)
 		return
