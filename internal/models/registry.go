@@ -140,7 +140,7 @@ func (r *Registry) Add(m *Model) error {
 	if _, exists := r.data.Configs[m.ID]; !exists {
 		r.data.Configs[m.ID] = &ModelConfig{
 			GPULayers:      999,
-			TensorSplit:    "0.5,0.5",
+			TensorSplit:    "",
 			ContextSize:    8192,
 			Threads:        8,
 			FlashAttention: true,

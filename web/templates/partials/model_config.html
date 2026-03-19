@@ -62,10 +62,10 @@
     </div>
 
     <div class="grid">
-        <label title="Split model across multiple GPUs. Comma-separated ratios (e.g. 0.5,0.5 for equal split across 2 GPUs). Leave default for single GPU.">
+        <label title="Split model across multiple GPUs. Comma-separated ratios that must match the number of selected GPUs. Leave empty for auto (equal split across all selected GPUs).">
             Tensor Split
             <input type="text" name="tensor_split" value="{{.Config.TensorSplit}}"
-                   placeholder="0.5,0.5 (for dual GPU)">
+                   placeholder="Auto (equal split)">
         </label>
         <label title="Number of CPU threads for inference. More threads help with CPU-bound layers. Generally set to your physical core count.">
             Threads
