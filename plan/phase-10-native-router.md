@@ -274,17 +274,39 @@ Should `--models-max` be:
 - Equal to the number of GPUs — practical default
 - Configurable in Settings page
 
-### Preset Regeneration Timing
-When should we regenerate `preset.ini`?
-- On every model config save (current auto-save on change)
-- On model download complete
-- On model delete/remove
-- On startup (always)
+### Dynamic Model Loading vs Preset INI
+The router supports loading models dynamically without a restart:
 
-After regeneration, the router needs to be notified. Options:
-- `/models/unload` + `/models/load` for the changed model
-- Full router restart (heavy — reloads all models)
-- Signal the router to re-read the preset file (if supported)
+1. **Auto-load on first request** — if `--models-dir` points to the models directory and a request comes in with a matching `model` field, the router auto-discovers and loads the GGUF file. No preset entry needed.
+2. **Explicit load** — `POST /models/load {"model": "name"}` loads a model immediately.
+
+This means **starting a new model does not require an INI change or router restart** — the router finds the file in `--models-dir` and loads it with default/global settings.
+
+The preset INI is for **persistent per-model configuration overrides** (custom context size, KV quant, tensor split, etc.). The question is: **does the router re-read the INI file when `/models/load` is called, or only at startup?**
+
+From source analysis: `load_from_ini` is called in the constructor of `server_models`, which runs once at startup. The model mapping is populated then. When `/models/load` is called, it looks up the model in the existing mapping. **This suggests the INI is only read at startup.**
+
+If confirmed, the implications are:
+- **Starting a model with default settings** → just `POST /models/load`, no restart needed
+- **Starting a model with custom settings for the first time** → need router restart to pick up the new INI section, OR use `POST /models/load` with the model path and accept global-only settings
+- **Changing a running model's settings** → regenerate INI, unload, restart router, load
+
+This needs **empirical testing** to confirm. If the router does NOT re-read the INI:
+- We could work around it by using the router's global settings for common params and only using the INI for models that need specific overrides
+- Or we could look into whether the `/models/load` endpoint accepts per-model parameters in the request body (needs investigation)
+- Worst case: router restart is needed when adding new preset sections, but NOT when loading models that are already in `--models-dir` with acceptable defaults
+
+### Preset Regeneration Timing
+When we need to regenerate `preset.ini`:
+- On model config save (if the model has custom settings that differ from global defaults)
+- On model download complete (if we want the model to have a preset entry)
+- On model delete/remove
+- On startup (always, to sync registry with INI)
+
+After regeneration, the router may need to be notified:
+- If the router re-reads INI on `/models/load` → just load/reload the model
+- If the router only reads INI at startup → restart required for new preset sections
+- `/models/unload` + router restart + `/models/load` for changed settings
 
 ### Migration of Existing Configs
 Existing `ModelConfig` entries have `BuildID`. We need to:
