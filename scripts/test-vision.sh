@@ -1,30 +1,16 @@
 #!/usr/bin/env bash
 # Test multimodal vision support by sending an image to the chat completions API.
-# Usage: ./scripts/test-vision.sh <model-name> [image-url-or-path]
-#
-# Requires a vision-capable model with an mmproj file configured.
-# The model must be loaded (available) in the router.
-#
-# If llama.cpp was built with LLAMA_OPENSSL=ON, remote URLs are fetched
-# server-side. Otherwise, local files are sent as base64 data URIs.
+# Usage: ./scripts/test-vision.sh [model-name] [image-url-or-path]
 
 set -euo pipefail
+source "$(dirname "$0")/lib-test.sh"
 
-HOST="${LLAMACTL_HOST:-localhost}"
-PORT="${LLAMACTL_PORT:-3000}"
-BASE_URL="http://${HOST}:${PORT}/v1"
-
-MODEL="${1:-}"
-IMAGE_SRC="${2:-https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg}"
-
-if [[ -z "$MODEL" ]]; then
-    echo "No model specified. Listing available models..."
-    curl -s "${BASE_URL}/models" | python3 -m json.tool 2>/dev/null || curl -s "${BASE_URL}/models"
-    echo ""
-    echo "Usage: $0 <model-name> [image-url-or-path]"
-    echo "Pick a vision-capable model from the list above."
-    exit 1
+if [[ -n "${1:-}" ]]; then
+    MODEL="$1"
+else
+    pick_model chat
 fi
+IMAGE_SRC="${2:-https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg}"
 
 # Resolve image source to a URL the server can use
 if [[ -f "$IMAGE_SRC" ]]; then
@@ -35,8 +21,6 @@ else
     echo "==> Image URL: ${IMAGE_SRC}"
     IMAGE_URL="$IMAGE_SRC"
 fi
-
-echo "==> Model: ${MODEL}"
 echo ""
 
 # Build request body as a temp file (base64 images can exceed argv limits)
@@ -66,7 +50,6 @@ RESPONSE=$(curl -s "${BASE_URL}/chat/completions" \
 echo "==> Response:"
 echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE"
 
-# Extract just the content if possible
 CONTENT=$(echo "$RESPONSE" | python3 -c "
 import sys, json
 r = json.load(sys.stdin)
