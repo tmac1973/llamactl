@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/tmlabonte/llamactl/internal/models"
 )
 
 const baseURL = "https://huggingface.co/api"
@@ -116,7 +118,7 @@ func (c *Client) GetModel(ctx context.Context, modelID string) (*ModelDetail, er
 		if !strings.HasSuffix(strings.ToLower(s.Filename), ".gguf") {
 			continue
 		}
-		quant := parseQuant(s.Filename)
+		quant := models.ParseQuant(s.Filename)
 		// We don't have file sizes from the siblings list; fetch separately
 		detail.Files = append(detail.Files, ModelFile{
 			Filename: s.Filename,
@@ -255,35 +257,3 @@ func ExpandShards(filename string) []string {
 	return shards
 }
 
-// parseQuant extracts quantization type from a GGUF filename.
-func parseQuant(filename string) string {
-	// Remove extension
-	name := strings.TrimSuffix(filename, ".gguf")
-	name = strings.TrimSuffix(name, ".GGUF")
-
-	// Common quant patterns
-	quants := []string{
-		// Ternary / ultra-low bit
-		"TQ1_0", "TQ2_0",
-		// Importance-weighted quants
-		"IQ1_S", "IQ1_M", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ2_M",
-		"IQ3_XXS", "IQ3_XS", "IQ3_S", "IQ3_M", "IQ4_XS", "IQ4_NL",
-		// K-quants (longest suffixes first to match _XL before _K)
-		"Q2_K_S", "Q2_K",
-		"Q3_K_S", "Q3_K_M", "Q3_K_L", "Q3_K_XL", "Q3_K",
-		"Q4_K_S", "Q4_K_M", "Q4_K_L", "Q4_K_XL", "Q4_K", "Q4_0", "Q4_1",
-		"Q5_K_S", "Q5_K_M", "Q5_K_L", "Q5_K_XL", "Q5_K", "Q5_0", "Q5_1",
-		"Q6_K_L", "Q6_K",
-		"Q8_K_XL", "Q8_K_L", "Q8_K", "Q8_0", "Q8_1",
-		// Full precision
-		"F16", "F32", "BF16",
-	}
-
-	upper := strings.ToUpper(name)
-	for _, q := range quants {
-		if strings.Contains(upper, q) {
-			return q
-		}
-	}
-	return "unknown"
-}

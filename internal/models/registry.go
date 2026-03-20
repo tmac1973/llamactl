@@ -417,7 +417,7 @@ func (r *Registry) ScanModels() int {
 			ID:           id,
 			ModelID:      modelID,
 			Filename:     filename,
-			Quant:        parseQuant(filename),
+			Quant:        ParseQuant(filename),
 			SizeBytes:    totalSize,
 			FilePath:     path,
 			VRAMEstGB:    EstimateVRAM(totalSize),
@@ -485,8 +485,9 @@ func findShards(dir, filename string) []string {
 	return shards
 }
 
-// parseQuant extracts quantization type from a GGUF filename.
-func parseQuant(filename string) string {
+// ParseQuant extracts quantization type from a GGUF filename.
+// Exported so it can be shared across packages.
+func ParseQuant(filename string) string {
 	name := strings.TrimSuffix(filepath.Base(filename), ".gguf")
 	name = strings.TrimSuffix(name, ".GGUF")
 
@@ -495,22 +496,29 @@ func parseQuant(filename string) string {
 		name = name[:idx]
 	}
 
+	// Normalize dashes to underscores so "UD-Q8_K_XL" matches "UD_Q8_K_XL"
+	upper := strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+
+	// Longest match first to avoid partial matches (e.g., Q8_K_XL before Q8_K)
 	quants := []string{
+		// Ultra-dynamic
+		"UD_Q8_K_XL", "UD_Q6_K_XL", "UD_Q4_K_XL",
+		// Ternary / ultra-low bit
+		"TQ1_0", "TQ2_0",
+		// Importance-weighted quants
 		"IQ1_S", "IQ1_M", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ2_M",
 		"IQ3_XXS", "IQ3_XS", "IQ3_S", "IQ3_M", "IQ4_XS", "IQ4_NL",
-		"Q2_K", "Q2_K_S",
-		"Q3_K_S", "Q3_K_M", "Q3_K_L", "Q3_K",
-		"Q4_K_S", "Q4_K_M", "Q4_K_L", "Q4_K", "Q4_0", "Q4_1",
-		"Q5_K_S", "Q5_K_M", "Q5_K_L", "Q5_K", "Q5_0", "Q5_1",
-		"Q6_K", "Q6_K_L", "Q6_K_XL",
-		"Q8_0", "Q8_1", "Q8_K_XL",
-		"UD_Q8_K_XL", "UD_Q6_K_XL", "UD_Q4_K_XL",
+		// K-quants (longest suffixes first)
+		"Q2_K_S", "Q2_K",
+		"Q3_K_S", "Q3_K_M", "Q3_K_L", "Q3_K_XL", "Q3_K",
+		"Q4_K_S", "Q4_K_M", "Q4_K_L", "Q4_K_XL", "Q4_K", "Q4_0", "Q4_1",
+		"Q5_K_S", "Q5_K_M", "Q5_K_L", "Q5_K_XL", "Q5_K", "Q5_0", "Q5_1",
+		"Q6_K_L", "Q6_K_XL", "Q6_K",
+		"Q8_K_XL", "Q8_K_L", "Q8_K", "Q8_0", "Q8_1",
+		// Full precision
 		"F16", "F32", "BF16",
 	}
 
-	upper := strings.ToUpper(name)
-	// Check longer quant names first to avoid partial matches
-	sort.Slice(quants, func(i, j int) bool { return len(quants[i]) > len(quants[j]) })
 	for _, q := range quants {
 		if strings.Contains(upper, q) {
 			return q

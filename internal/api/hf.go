@@ -197,7 +197,7 @@ func (s *Server) onDownloadComplete(downloadID, modelID, filename string, sizeBy
 		ID:           fmt.Sprintf("%s--%s", safeName, safeFilename),
 		ModelID:      modelID,
 		Filename:     filename,
-		Quant:        parseQuantFromFilename(filename),
+		Quant:        models.ParseQuant(filename),
 		SizeBytes:    sizeBytes,
 		FilePath:     filePath,
 		VRAMEstGB:    models.EstimateVRAM(sizeBytes),
@@ -217,27 +217,3 @@ func (s *Server) onDownloadComplete(downloadID, modelID, filename string, sizeBy
 	s.registry.Add(m)
 }
 
-func parseQuantFromFilename(filename string) string {
-	name := strings.TrimSuffix(filename, ".gguf")
-	name = strings.TrimSuffix(name, ".GGUF")
-
-	quants := []string{
-		"IQ1_S", "IQ1_M", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ2_M",
-		"IQ3_XXS", "IQ3_XS", "IQ3_S", "IQ3_M", "IQ4_XS", "IQ4_NL",
-		"Q2_K", "Q2_K_S",
-		"Q3_K_S", "Q3_K_M", "Q3_K_L", "Q3_K",
-		"Q4_K_S", "Q4_K_M", "Q4_K_L", "Q4_K", "Q4_0", "Q4_1",
-		"Q5_K_S", "Q5_K_M", "Q5_K_L", "Q5_K", "Q5_0", "Q5_1",
-		"Q6_K", "Q6_K_L",
-		"Q8_0", "Q8_1",
-		"F16", "F32", "BF16",
-	}
-
-	upper := strings.ToUpper(name)
-	for _, q := range quants {
-		if strings.Contains(upper, q) {
-			return q
-		}
-	}
-	return "unknown"
-}
