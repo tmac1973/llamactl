@@ -57,34 +57,30 @@
                     </div>
                 </header>
 
-                <div class="grid">
-                    <label>
-                        Build
-                        <select name="active_build" id="build-select"
-                                hx-put="/api/settings"
-                                hx-target="#build-save-status"
-                                hx-swap="innerHTML"
-                                hx-vals='js:{"active_build": document.getElementById("build-select").value}'
-                                hx-trigger="change">
-                            <option value="" {{if eq .ActiveBuild ""}}selected{{end}}>Auto (first available)</option>
-                            {{range .AvailableBuilds}}
-                            <option value="{{.ID}}" {{if eq .ID $.ActiveBuild}}selected{{end}}>
-                                {{.ID}} ({{.Profile}})
-                            </option>
-                            {{end}}
-                        </select>
-                    </label>
-                    <label>
-                        Max Loaded Models
-                        <input type="number" id="models-max-input" value="{{.ModelsMax}}" min="0"
-                               placeholder="0 = unlimited"
-                               hx-put="/api/settings"
-                               hx-target="#build-save-status"
-                               hx-swap="innerHTML"
-                               hx-vals='js:{"models_max": document.getElementById("models-max-input").value}'
-                               hx-trigger="change delay:500ms">
-                    </label>
-                </div>
+                <form id="server-settings-form"
+                      hx-put="/api/settings"
+                      hx-target="#build-save-status"
+                      hx-swap="innerHTML"
+                      hx-trigger="change delay:500ms">
+                    <div class="grid">
+                        <label>
+                            Build
+                            <select name="active_build">
+                                <option value="" {{if eq .ActiveBuild ""}}selected{{end}}>Auto (first available)</option>
+                                {{range .AvailableBuilds}}
+                                <option value="{{.ID}}" {{if eq .ID $.ActiveBuild}}selected{{end}}>
+                                    {{.ID}} ({{.Profile}})
+                                </option>
+                                {{end}}
+                            </select>
+                        </label>
+                        <label>
+                            Max Loaded Models
+                            <input type="number" name="models_max" value="{{.ModelsMax}}" min="0"
+                                   placeholder="0 = unlimited">
+                        </label>
+                    </div>
+                </form>
                 <div id="build-save-status"></div>
 
                 <div role="group">
@@ -101,9 +97,7 @@
                         Stop
                     </button>
                     <button type="button" class="outline"
-                            hx-post="/api/service/restart"
-                            hx-target="#server-status"
-                            hx-swap="innerHTML">
+                            onclick="htmx.ajax('PUT','/api/settings',{source:document.getElementById('server-settings-form')}).then(function(){htmx.ajax('POST','/api/service/restart',{target:'#server-status',swap:'innerHTML'});});">
                         Restart
                     </button>
                 </div>
