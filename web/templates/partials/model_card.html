@@ -3,13 +3,16 @@
 <tr{{if .IsOrphan}} style="opacity: 0.6;"{{end}}>
     <td style="width: 3rem; text-align: center;">
         {{if not .IsOrphan}}
-        <input type="checkbox" role="switch" style="margin: 0;"
-               {{if .IsEnabled}}checked{{end}}
-               title="Enable this model for the inference server"
-               hx-put="/api/models/{{.ID}}/enable"
-               hx-target="#model-list"
-               hx-swap="innerHTML"
-               hx-vals='js:{"enabled": event.target.checked ? "true" : "false"}'>
+        <span style="display: inline-flex; align-items: center; gap: 0.25rem;">
+            <input type="checkbox" role="switch" style="margin: 0;"
+                   {{if .IsEnabled}}checked{{end}}
+                   title="Enable this model for the inference server"
+                   hx-put="/api/models/{{.ID}}/enable"
+                   hx-target="#model-list"
+                   hx-swap="innerHTML"
+                   hx-vals='js:{"enabled": event.target.checked ? "true" : "false"}'>
+            {{if .NeedsRestart}}<span title="Server restart required to load this model" style="cursor: help; color: var(--pico-del-color);">&#x21bb;</span>{{end}}
+        </span>
         {{end}}
     </td>
     <td>

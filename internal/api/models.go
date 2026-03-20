@@ -18,14 +18,13 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Build set of active model IDs from the router
-		activeSet := make(map[string]string) // model ID → status value
-		if loaded, err := s.process.ListModels(); err == nil {
-			for _, m := range loaded {
-				activeSet[m.ID] = m.Status.Value
-				// Also map by model field (may differ from ID)
+		// Build set of models the router knows about (any status)
+		routerKnown := make(map[string]string) // model ID → status value
+		if models, err := s.process.ListModels(); err == nil {
+			for _, m := range models {
+				routerKnown[m.ID] = m.Status.Value
 				if m.Model != "" && m.Model != m.ID {
-					activeSet[m.Model] = m.Status.Value
+					routerKnown[m.Model] = m.Status.Value
 				}
 			}
 		}
@@ -38,7 +37,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 
 		w.Write([]byte(`<table role="grid"><thead><tr><th title="Enable model for the inference server">On</th><th>Model</th><th>Quant</th><th title="Base (weights) - Peak (full KV cache)">VRAM Est.</th><th>Size</th><th></th></tr></thead>`))
 		for _, m := range modelList {
-			state := activeSet[m.ID]
+			state := routerKnown[m.ID]
 
 			// Compute VRAM range: base (weights + overhead) and peak (+ full KV cache)
 			weightsGB := float64(m.SizeBytes)/(1024*1024*1024) + 0.2
@@ -50,10 +49,14 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			}
 			baseVRAM := weightsGB
 
+			// Model needs restart if it's enabled but the router doesn't know about it
+			needsRestart := enabled && state == "" && s.process.IsRunning()
+
 			data := struct {
 				models.Model
 				IsActive     bool
 				IsEnabled    bool
+				NeedsRestart bool
 				ServiceState string
 				BaseVRAMGB   float64
 				PeakVRAMGB   float64
@@ -62,6 +65,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 				Model:        *m,
 				IsActive:     state == "loaded" || state == "loading",
 				IsEnabled:    enabled,
+				NeedsRestart: needsRestart,
 				ServiceState: state,
 				BaseVRAMGB:   baseVRAM,
 				PeakVRAMGB:   peakVRAM,
