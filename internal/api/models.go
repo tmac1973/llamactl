@@ -36,7 +36,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			orphanSet[m.ID] = true
 		}
 
-		w.Write([]byte(`<table role="grid"><thead><tr><th>Model</th><th>Quant</th><th title="Base (weights) - Peak (full KV cache)">VRAM Est.</th><th>Size</th><th></th></tr></thead>`))
+		w.Write([]byte(`<table role="grid"><thead><tr><th title="Enable model for the inference server">On</th><th>Model</th><th>Quant</th><th title="Base (weights) - Peak (full KV cache)">VRAM Est.</th><th>Size</th><th></th></tr></thead>`))
 		for _, m := range modelList {
 			state := activeSet[m.ID]
 

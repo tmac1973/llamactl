@@ -45,7 +45,21 @@ func (s *Server) handleServiceStatus(w http.ResponseWriter, r *http.Request) {
 
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		s.renderPartial(w, "service_status", status)
+		var badge string
+		switch status.State {
+		case "running":
+			badge = `<ins>Running</ins>`
+		case "starting":
+			badge = `<mark>Starting...</mark>`
+		case "failed":
+			badge = fmt.Sprintf(`<del>Failed</del> <small style="color:var(--pico-del-color)">%s</small>`, status.Error)
+		default:
+			badge = `Stopped`
+		}
+		if status.Uptime != "" {
+			badge += fmt.Sprintf(` <small>(%s)</small>`, status.Uptime)
+		}
+		fmt.Fprint(w, badge)
 		return
 	}
 
@@ -237,11 +251,8 @@ func (s *Server) startRouter() error {
 		slog.Warn("failed to write preset INI", "error", err)
 	}
 
-	modelsDir := s.cfg.DataDir + "/models"
-
 	return s.process.Start(process.RouterConfig{
 		BinaryPath: binaryPath,
-		ModelsDir:  modelsDir,
 		PresetPath: presetPath,
 		ModelsMax:  s.cfg.ModelsMax,
 		Port:       s.cfg.LlamaPort,

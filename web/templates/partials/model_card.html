@@ -1,6 +1,17 @@
 {{define "model_card"}}
 <tbody class="model-row-group">
 <tr{{if .IsOrphan}} style="opacity: 0.6;"{{end}}>
+    <td style="width: 3rem; text-align: center;">
+        {{if not .IsOrphan}}
+        <input type="checkbox" role="switch" style="margin: 0;"
+               {{if .IsEnabled}}checked{{end}}
+               title="Enable this model for the inference server"
+               hx-put="/api/models/{{.ID}}/enable"
+               hx-target="#model-list"
+               hx-swap="innerHTML"
+               hx-vals='js:{"enabled": event.target.checked ? "true" : "false"}'>
+        {{end}}
+    </td>
     <td>
         {{.ModelID}}
         {{if .IsOrphan}} <del>missing</del>{{end}}
@@ -21,15 +32,6 @@
         </div>
         {{else}}
         <div role="group">
-            <label style="margin: 0; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;"
-                   title="Enable this model for the inference server. Disabled models cannot be loaded.">
-                <input type="checkbox" role="switch" style="margin: 0;"
-                       {{if .IsEnabled}}checked{{end}}
-                       hx-put="/api/models/{{.ID}}/enable"
-                       hx-target="#model-list"
-                       hx-swap="innerHTML"
-                       hx-vals='js:{"enabled": event.target.checked ? "true" : "false"}'>
-            </label>
             <button type="button" class="outline"
                     hx-get="/api/models/{{.ID}}/config"
                     hx-target="next .config-cell"
@@ -73,6 +75,6 @@
         {{end}}
     </td>
 </tr>
-<tr><td colspan="5" class="config-cell"></td></tr>
+<tr><td colspan="6" class="config-cell"></td></tr>
 </tbody>
 {{end}}
