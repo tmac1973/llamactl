@@ -37,7 +37,7 @@ RUN --mount=type=cache,target=/var/cache/dnf \
   rocm-llvm rocm-device-libs hip-runtime-amd hip-devel \
   rocblas rocblas-devel hipblas hipblas-devel rocm-cmake libomp-devel libomp \
   rocminfo \
-  git-core curl
+  git-core curl openssl-devel
 
 # ROCm environment
 ENV ROCM_PATH=/opt/rocm \

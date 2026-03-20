@@ -40,6 +40,7 @@ type ModelFile struct {
 	Quant     string   `json:"quant"`
 	VRAMEstGB float64  `json:"vram_est_gb"`
 	Shards    []string `json:"shards,omitempty"` // all shard filenames if split; nil for single files
+	IsMMProj  bool     `json:"is_mmproj,omitempty"` // true for vision projector files
 }
 
 // ModelDetail holds model info with filtered GGUF files.
@@ -119,10 +120,12 @@ func (c *Client) GetModel(ctx context.Context, modelID string) (*ModelDetail, er
 			continue
 		}
 		quant := models.ParseQuant(s.Filename)
+		isMMProj := models.IsMMProjFile(s.Filename)
 		// We don't have file sizes from the siblings list; fetch separately
 		detail.Files = append(detail.Files, ModelFile{
 			Filename: s.Filename,
 			Quant:    quant,
+			IsMMProj: isMMProj,
 		})
 	}
 

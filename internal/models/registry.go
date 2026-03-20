@@ -44,7 +44,8 @@ type ModelConfig struct {
 	FlashAttention bool   `json:"flash_attention"`
 	Jinja          bool   `json:"jinja"`
 	KVCacheQuant   string `json:"kv_cache_quant"` // "", "q8_0", "q4_0"
-	DirectIO       bool   `json:"direct_io"` // bypass page cache, load straight to VRAM
+	DirectIO       bool   `json:"direct_io"`       // bypass page cache, load straight to VRAM
+	MmprojPath     string `json:"mmproj_path,omitempty"` // path to mmproj GGUF for vision models
 	ExtraFlags     string `json:"extra_flags"`
 
 	// Sampling parameters — nil means use llama.cpp server default.
@@ -102,6 +103,9 @@ func (c *ModelConfig) EffectiveFlags() string {
 	}
 	if c.DirectIO {
 		parts = append(parts, "--direct-io")
+	}
+	if c.MmprojPath != "" {
+		parts = append(parts, "--mmproj", c.MmprojPath)
 	}
 	if c.ExtraFlags != "" {
 		parts = append(parts, strings.Fields(c.ExtraFlags)...)
@@ -380,6 +384,10 @@ func (r *Registry) ScanModels() int {
 		if isNonFirstShard(info.Name()) {
 			return nil
 		}
+		// Skip mmproj files — they're vision projectors, not models
+		if IsMMProjFile(info.Name()) {
+			return nil
+		}
 
 		// Derive model info from directory structure and filename
 		// Expected: /data/models/{org--repo}/{filename}.gguf
@@ -448,6 +456,55 @@ func (r *Registry) ScanModels() int {
 	}
 
 	return len(found)
+}
+
+// IsMMProjFile returns true if the filename looks like a multimodal projector.
+func IsMMProjFile(filename string) bool {
+	return strings.Contains(strings.ToLower(filename), "mmproj")
+}
+
+// FindMMProj looks for mmproj GGUF files in the same directory as the model.
+// Returns the path to the first one found, or empty string.
+func FindMMProj(modelFilePath string) string {
+	dir := filepath.Dir(modelFilePath)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasSuffix(strings.ToLower(name), ".gguf") && IsMMProjFile(name) {
+			return filepath.Join(dir, name)
+		}
+	}
+	return ""
+}
+
+// AutoDetectMMProj scans all registered models and sets MmprojPath on
+// configs where an mmproj file exists in the model directory but isn't
+// configured yet.
+func (r *Registry) AutoDetectMMProj() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	found := 0
+	for id, m := range r.data.Models {
+		cfg := r.data.Configs[id]
+		if cfg == nil || cfg.MmprojPath != "" {
+			continue
+		}
+		if mmproj := FindMMProj(m.FilePath); mmproj != "" {
+			cfg.MmprojPath = mmproj
+			found++
+		}
+	}
+	if found > 0 {
+		r.save()
+	}
+	return found
 }
 
 // shardRe matches shard filenames like "model-00002-of-00005.gguf"

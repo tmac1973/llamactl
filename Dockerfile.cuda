@@ -22,7 +22,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ninja-build \
     git \
     curl \
-    build-essential
+    build-essential \
+    libssl-dev
 
 COPY --from=builder /app/llamactl /usr/local/bin/llamactl
 

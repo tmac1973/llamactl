@@ -46,9 +46,11 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			weightsGB := models.BytesToGB(m.SizeBytes) + 0.2
 			peakVRAM := weightsGB // fallback if no config
 			enabled := true
+			hasVision := false
 			if cfg, err := s.registry.GetConfig(m.ID); err == nil {
 				peakVRAM = models.VRAMEstimateForConfig(m, cfg)
 				enabled = cfg.Enabled
+				hasVision = cfg.MmprojPath != ""
 			}
 			baseVRAM := weightsGB
 
@@ -68,6 +70,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 				PendingEnable  bool
 				PendingDisable bool
 				NeedsReload    bool
+				HasVision      bool
 				ServiceState   string
 				BaseVRAMGB     float64
 				PeakVRAMGB     float64
@@ -79,6 +82,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 				PendingEnable:  pendingEnable,
 				PendingDisable: pendingDisable,
 				NeedsReload:    configChanged,
+				HasVision:      hasVision,
 				ServiceState:   state,
 				BaseVRAMGB:     baseVRAM,
 				PeakVRAMGB:     peakVRAM,

@@ -103,6 +103,9 @@ func writeConfigParams(b *strings.Builder, cfg *ModelConfig) {
 	if cfg.DirectIO {
 		b.WriteString("direct-io = true\n")
 	}
+	if cfg.MmprojPath != "" {
+		b.WriteString(fmt.Sprintf("mmproj = %s\n", cfg.MmprojPath))
+	}
 
 	// Sampling parameters
 	if cfg.Temperature != nil {

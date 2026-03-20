@@ -24,6 +24,12 @@ func ProfileOptions(profile string) []BuildOption {
 			Description: "Compile with -march=native for best performance on this machine. Disable if building for a different CPU.",
 			Default:     true,
 		},
+		{
+			Flag:        "LLAMA_OPENSSL",
+			Label:       "HTTPS Support (OpenSSL)",
+			Description: "Enable HTTPS for fetching remote images in vision models and downloading models by URL. Requires OpenSSL dev libraries.",
+			Default:     true,
+		},
 	}
 
 	switch profile {

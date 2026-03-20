@@ -19,6 +19,7 @@
     </td>
     <td>
         {{.ModelID}}
+        {{if .HasVision}} <mark style="padding:0 0.3rem;font-size:0.75rem;">vision</mark>{{end}}
         {{if .IsOrphan}} <del>missing</del>{{end}}
     </td>
     <td><kbd>{{.Quant}}</kbd></td>

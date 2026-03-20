@@ -91,6 +91,16 @@
         </label>
     </div>
 
+    {{if .HasMMProj}}
+    <div class="grid">
+        <label title="Path to the multimodal projector GGUF file. Enables vision/image understanding for this model. Auto-detected from the model directory.">
+            Vision Projector (mmproj)
+            <input type="text" name="mmproj_path" value="{{.Config.MmprojPath}}"
+                   placeholder="Auto-detected or enter path to mmproj GGUF">
+        </label>
+    </div>
+    {{end}}
+
     <hr style="margin: 1rem 0 0.5rem;">
     <small><strong>Sampling</strong> — applied per-request, no restart needed. Leave blank for server defaults.</small>
     <div class="grid">

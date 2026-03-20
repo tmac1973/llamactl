@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -188,6 +189,14 @@ func (s *Server) onDownloadComplete(downloadID, modelID, filename string, sizeBy
 	safeName := strings.ReplaceAll(modelID, "/", "--")
 	filePath := fmt.Sprintf("%s/models/%s/%s", s.cfg.DataDir, safeName, filename)
 
+	// mmproj files are vision projectors — don't register as models.
+	// Instead, auto-associate with sibling models in the same directory.
+	if models.IsMMProjFile(filename) {
+		slog.Info("mmproj downloaded, scanning for associated models", "file", filePath)
+		s.registry.AutoDetectMMProj()
+		return
+	}
+
 	safeFilename := strings.ReplaceAll(strings.TrimSuffix(filename, ".gguf"), "/", "--")
 	m := &models.Model{
 		ID:           fmt.Sprintf("%s--%s", safeName, safeFilename),
@@ -211,5 +220,14 @@ func (s *Server) onDownloadComplete(downloadID, modelID, filename string, sizeBy
 	}
 
 	s.registry.Add(m)
+
+	// Check if an mmproj file already exists in the same directory
+	if mmproj := models.FindMMProj(filePath); mmproj != "" {
+		if cfg, err := s.registry.GetConfig(m.ID); err == nil && cfg.MmprojPath == "" {
+			cfg.MmprojPath = mmproj
+			s.registry.SetConfig(m.ID, cfg)
+			slog.Info("auto-associated mmproj", "model", m.ID, "mmproj", mmproj)
+		}
+	}
 }
 

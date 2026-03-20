@@ -57,6 +57,9 @@ func NewServer(cfg *config.Config) *Server {
 	if n := s.registry.ScanModels(); n > 0 {
 		slog.Info("discovered models on disk", "count", n)
 	}
+	if n := s.registry.AutoDetectMMProj(); n > 0 {
+		slog.Info("auto-detected mmproj files", "count", n)
+	}
 	if orphans := s.registry.FindOrphans(); len(orphans) > 0 {
 		for _, m := range orphans {
 			slog.Warn("model file missing", "id", m.ID, "path", m.FilePath)

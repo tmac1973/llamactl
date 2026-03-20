@@ -340,8 +340,10 @@ func (s *Server) handleGetModelConfig(w http.ResponseWriter, r *http.Request) {
 		respondHTML(w)
 
 		maxContext := 0
+		detectedMMProj := ""
 		if model != nil {
 			maxContext = model.ContextLength
+			detectedMMProj = models.FindMMProj(model.FilePath)
 		}
 
 		data := struct {
@@ -349,11 +351,13 @@ func (s *Server) handleGetModelConfig(w http.ResponseWriter, r *http.Request) {
 			Config         *models.ModelConfig
 			EffectiveFlags string
 			MaxContext     int
+			HasMMProj      bool
 		}{
 			ModelID:        id,
 			Config:         cfg,
 			EffectiveFlags: cfg.EffectiveFlags(),
 			MaxContext:     maxContext,
+			HasMMProj:      cfg.MmprojPath != "" || detectedMMProj != "",
 		}
 		s.renderPartial(w, "model_config", data)
 		return
@@ -396,6 +400,8 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 		cfg.MinP = parseOptionalFloat(r.FormValue("min_p"))
 		cfg.PresencePenalty = parseOptionalFloat(r.FormValue("presence_penalty"))
 		cfg.RepeatPenalty = parseOptionalFloat(r.FormValue("repeat_penalty"))
+
+		cfg.MmprojPath = r.FormValue("mmproj_path")
 	}
 
 	if err := s.registry.SetConfig(id, cfg); err != nil {
