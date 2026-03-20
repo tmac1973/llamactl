@@ -150,15 +150,6 @@
                style="opacity: 0.7; cursor: default;">
     </label>
 
-    <div role="group">
-        <button type="submit">Save Config</button>
-        <button type="button"
-                hx-put="/api/models/{{.ModelID}}/activate"
-                hx-target="#model-list"
-                hx-swap="innerHTML"
-                class="outline">
-            Save &amp; Start
-        </button>
-    </div>
+    <small style="color: var(--pico-muted-color);">Changes are saved automatically.</small>
 </form>
 {{end}}

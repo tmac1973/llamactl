@@ -237,11 +237,11 @@ func (s *Server) startRouter() error {
 		slog.Warn("failed to write preset INI", "error", err)
 	}
 
-	modelsDir := s.cfg.DataDir + "/models"
-
+	// Don't use --models-dir alongside --models-preset to avoid duplicate
+	// entries (auto-discovery creates entries by filename, preset by our ID).
+	// The preset INI already has model paths.
 	return s.process.Start(process.RouterConfig{
 		BinaryPath: binaryPath,
-		ModelsDir:  modelsDir,
 		PresetPath: presetPath,
 		ModelsMax:  s.cfg.ModelsMax,
 		Port:       s.cfg.LlamaPort,
