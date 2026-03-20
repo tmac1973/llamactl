@@ -472,6 +472,11 @@ func (r *Registry) ScanModels() int {
 			"arch", m.Arch)
 	}
 
+	// Auto-associate mmproj files with newly scanned models
+	if len(found) > 0 {
+		r.AutoDetectMMProj()
+	}
+
 	return len(found)
 }
 
