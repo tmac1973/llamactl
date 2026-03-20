@@ -19,12 +19,15 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Build set of models the router knows about (any status)
-		routerKnown := make(map[string]string) // model ID → status value
-		if models, err := s.process.ListModels(); err == nil {
-			for _, m := range models {
-				routerKnown[m.ID] = m.Status.Value
-				if m.Model != "" && m.Model != m.ID {
-					routerKnown[m.Model] = m.Status.Value
+		routerKnown := make(map[string]string) // name/alias → status value
+		if routerModels, err := s.process.ListModels(); err == nil {
+			for _, rm := range routerModels {
+				routerKnown[rm.ID] = rm.Status.Value
+				if rm.Model != "" {
+					routerKnown[rm.Model] = rm.Status.Value
+				}
+				for _, alias := range rm.Aliases {
+					routerKnown[alias] = rm.Status.Value
 				}
 			}
 		}

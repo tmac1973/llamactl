@@ -19,9 +19,10 @@ import (
 
 // ModelStatus represents the state of a model in the router.
 type ModelStatus struct {
-	ID     string `json:"id"`
-	Model  string `json:"model"`
-	Status struct {
+	ID      string   `json:"id"`
+	Model   string   `json:"model"`
+	Aliases []string `json:"aliases"`
+	Status  struct {
 		Value string `json:"value"` // "loaded", "loading", "unloaded"
 	} `json:"status"`
 }
