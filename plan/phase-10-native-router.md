@@ -87,9 +87,11 @@ alias = large,main
 |---|---|
 | `internal/process/manager.go` — multi-instance process management, port allocation, health polling | llama.cpp router handles all subprocess lifecycle |
 | `internal/api/proxy.go` — model routing, request parsing, sampling injection | llama.cpp router handles routing; we keep proxy for API key auth and sampling injection |
-| VRAM budget check in `handleActivateModel` | LRU eviction via `--models-max` |
-| Per-model port allocation (8080-8099) | Router assigns ports to child processes internally |
-| `handleServiceLogs` per-model SSE | Read from router's stdout (all models combined), or query child process logs |
+| VRAM budget check in `handleActivateModel` | LRU eviction via `--models-max` (default 0 = unlimited, configurable in Settings) |
+| Per-model port allocation (8080-8099) | Router assigns ports to child processes internally; only port 8080 exposed |
+| Per-model GPU pinning (`GPUDevices`) | Dropped; use `tensor-split` in preset for GPU weighting |
+| `handleServiceLogs` per-model SSE | Read from router's stdout (all models combined) |
+| Per-model chat UI links on dashboard | Single chat UI link to router at :8080 (has built-in model dropdown) |
 
 ## What We Keep
 
@@ -179,9 +181,11 @@ The manager starts one `llama-server` process with:
 ```
 llama-server --models-dir /data/models \
              --models-preset /data/config/preset.ini \
-             --models-max 0 \
+             --models-max {from config, default 0} \
              --host 0.0.0.0 --port 8080
 ```
+
+`models_max` is read from `llamactl.yaml` (default `0` = unlimited) and configurable from the Settings page.
 
 ### 3. Activation Flow Changes
 
@@ -240,9 +244,9 @@ Remove `BuildID` from `ModelConfig`. Add a build selector to the Settings page i
 ### 7. Port Exposure
 
 **Current:** Ports 8080-8099 exposed, one per model.
-**New:** Only port 8080 (router) needs to be exposed. The router handles internal port allocation for child processes.
+**New:** Only port 8080 (router) exposed. The router's built-in chat web UI has a model dropdown selector — no need for per-model ports.
 
-However, the llama.cpp built-in chat web UI at the router port may not support model selection via URL. This needs investigation — if the router's web UI has a model dropdown (the blog article says it does), then a single port 8080 is sufficient.
+Revert compose files from `8080-8099:8080-8099` back to a single `8080:8080` mapping. The dashboard shows one "Chat UI" link pointing to `:8080`.
 
 ### 8. Startup Sequence
 
@@ -258,21 +262,23 @@ However, the llama.cpp built-in chat web UI at the router port may not support m
 ## Open Questions
 
 ### GPU Pinning Per Model
-Our current `GPUDevices` config sets `ROCR_VISIBLE_DEVICES` per subprocess. In the native router, child processes are spawned by the router, not by us. **Can the preset INI specify environment variables per model?** If not, we may lose per-model GPU pinning. Investigation needed — the router may pass through the parent's environment, or there may be a way to set env vars in presets.
-
-**Potential workaround:** If presets don't support env vars, we could use `tensor-split` to achieve similar effect (e.g., `tensor-split = 1,0,0,0` to use only GPU 0).
+**Decision: Drop per-model GPU pinning.** The `GPUDevices` config field and `ROCR_VISIBLE_DEVICES`/`CUDA_VISIBLE_DEVICES` per-process support will be removed. Users who need to control GPU distribution can use `tensor-split` per model in the preset (e.g., `tensor-split = 1,0,0,0` to weight GPU 0). Remove the GPU Devices dropdown from the model config UI.
 
 ### Per-Model Log Streaming
-The current tabbed log viewer shows per-model logs. With the router, all logs from all child processes flow through the router's stdout. **Can we distinguish which model a log line came from?** The router prefixes log lines with instance names — need to verify format and parse accordingly.
+The current tabbed log viewer shows per-model logs. With the router, all logs from all child processes flow through the router's stdout. **Can we distinguish which model a log line came from?** The router prefixes log lines with instance names — need to verify format and parse accordingly. The tabbed viewer may become a single combined stream, or we parse prefixes to filter.
 
-### Chat UI Port Access
-Currently each model's llama.cpp chat web UI is accessible on its own port (8080, 8081, etc.). With the router, child processes get internal ports that may not be exposed. **Does the router proxy the chat UI?** The blog says the router's web UI has a model dropdown, which would make individual port access unnecessary.
+### Chat UI
+**Decision: Single port, use router's built-in model dropdown.** The llama.cpp router web UI at port 8080 has a model selector dropdown. We don't need to expose individual child process ports (8080-8099). Revert port exposure back to just 8080. The dashboard links to the router's chat UI at `:8080` — one link, not per-model.
 
 ### Models Max Configuration
-Should `--models-max` be:
-- `0` (unlimited) — load everything the user asks for, rely on VRAM budget warnings
-- Equal to the number of GPUs — practical default
-- Configurable in Settings page
+**Decision: Default to `0` (unlimited), configurable in Settings.**
+
+Add `models_max` to application config (`llamactl.yaml`):
+```yaml
+models_max: 0   # 0 = unlimited, or set a number to enable LRU eviction
+```
+
+Expose in the Settings page as "Max Loaded Models" with a note explaining LRU eviction behavior. Pass as `--models-max` to the router.
 
 ### Dynamic Model Loading vs Preset INI
 The router supports loading models dynamically without a restart:
@@ -335,8 +341,7 @@ Existing `ModelConfig` entries have `BuildID`. We need to:
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| GPU pinning not supported in presets | Can't assign models to specific GPUs | Use tensor-split workaround; investigate env var support |
 | Router log format changes | Log viewer breaks | Parse with prefix matching; degrade gracefully |
 | Preset changes require model reload | Brief interruption when changing config | Only reload the affected model, not all |
 | llama.cpp router mode has bugs | Models fail to load/route | Keep ability to fall back to direct llama-server (non-router) mode |
-| Chat UI model dropdown missing | Can't use built-in chat UI for specific models | Expose child ports as fallback, or build our own chat UI |
+| INI only read at startup | New per-model presets require router restart | Use auto-load with global defaults when possible; only restart for custom settings |
