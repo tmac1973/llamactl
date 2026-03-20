@@ -32,6 +32,7 @@ type Model struct {
 	NHead         int    `json:"n_head,omitempty"`
 	NKVHead       int    `json:"n_kv_head,omitempty"`
 	ContextLength int    `json:"context_length,omitempty"` // max trained context
+	SupportsTools bool   `json:"supports_tools,omitempty"` // chat template handles tools
 }
 
 // ModelConfig holds per-model launch configuration for llama-server.
@@ -301,6 +302,7 @@ func (r *Registry) BackfillGGUFMeta() {
 		m.NHead = meta.NHead
 		m.NKVHead = meta.NKVHead
 		m.ContextLength = meta.ContextLength
+		m.SupportsTools = meta.SupportsTools
 		changed = true
 		slog.Info("backfilled GGUF metadata", "model", m.ID, "arch", meta.Architecture,
 			"layers", meta.NLayers, "kv_heads", meta.NKVHead, "ctx", meta.ContextLength)
@@ -456,6 +458,7 @@ func (r *Registry) ScanModels() int {
 			m.NHead = meta.NHead
 			m.NKVHead = meta.NKVHead
 			m.ContextLength = meta.ContextLength
+			m.SupportsTools = meta.SupportsTools
 		}
 
 		found = append(found, m)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 // GGUFMeta holds architecture parameters extracted from a GGUF file header.
@@ -14,7 +15,8 @@ type GGUFMeta struct {
 	NEmbd         int    `json:"n_embd"`
 	NHead         int    `json:"n_head"`
 	NKVHead       int    `json:"n_kv_head"`
-	ContextLength int    `json:"context_length"` // max trained context size
+	ContextLength int    `json:"context_length"`  // max trained context size
+	SupportsTools bool   `json:"supports_tools"`  // chat template references tools
 }
 
 // HeadDim returns the dimension per attention head.
@@ -62,7 +64,7 @@ func ParseGGUFMeta(path string) (*GGUFMeta, error) {
 	}
 
 	meta := &GGUFMeta{}
-	needed := 6 // architecture + 4 params + context_length
+	needed := 7 // architecture + 4 params + context_length + chat_template
 	found := 0
 
 	for i := uint64(0); i < kvCount && found < needed; i++ {
@@ -84,6 +86,15 @@ func ParseGGUFMeta(path string) (*GGUFMeta, error) {
 				return meta, nil
 			}
 			meta.Architecture = v
+			found++
+			continue
+
+		case key == "tokenizer.chat_template" && valueType == ggufTypeString:
+			v, err := readGGUFString(f)
+			if err != nil {
+				return meta, nil
+			}
+			meta.SupportsTools = strings.Contains(v, "tools")
 			found++
 			continue
 

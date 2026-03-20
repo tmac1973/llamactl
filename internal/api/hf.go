@@ -217,6 +217,7 @@ func (s *Server) onDownloadComplete(downloadID, modelID, filename string, sizeBy
 		m.NHead = meta.NHead
 		m.NKVHead = meta.NKVHead
 		m.ContextLength = meta.ContextLength
+		m.SupportsTools = meta.SupportsTools
 	}
 
 	s.registry.Add(m)
