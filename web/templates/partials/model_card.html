@@ -11,7 +11,8 @@
                    hx-target="#model-list"
                    hx-swap="innerHTML"
                    hx-vals='js:{"enabled": event.target.checked ? "true" : "false"}'>
-            {{if .NeedsRestart}}<span title="Server restart required to load this model" style="cursor: help; color: var(--pico-del-color);">&#x21bb;</span>{{end}}
+            {{if .PendingEnable}}<span title="Restart server to make this model available" style="cursor: help; color: var(--pico-primary);">&#x21bb;</span>{{end}}
+            {{if .PendingDisable}}<span title="Restart server to fully remove this model" style="cursor: help; color: var(--pico-del-color);">&#x2298;</span>{{end}}
         </span>
         {{end}}
     </td>

@@ -52,23 +52,28 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			}
 			baseVRAM := weightsGB
 
-			// Model needs restart if it's enabled but the router doesn't know about it
-			needsRestart := enabled && state == "" && s.process.IsRunning()
+			// Restart indicators:
+			// - pendingEnable: enabled in registry but router doesn't know about it
+			// - pendingDisable: disabled in registry but router still has it
+			pendingEnable := enabled && state == "" && s.process.IsRunning()
+			pendingDisable := !enabled && state != "" && s.process.IsRunning()
 
 			data := struct {
 				models.Model
-				IsActive     bool
-				IsEnabled    bool
-				NeedsRestart bool
-				ServiceState string
+				IsActive       bool
+				IsEnabled      bool
+				PendingEnable  bool
+				PendingDisable bool
+				ServiceState   string
 				BaseVRAMGB   float64
 				PeakVRAMGB   float64
 				IsOrphan     bool
 			}{
 				Model:        *m,
 				IsActive:     state == "loaded" || state == "loading",
-				IsEnabled:    enabled,
-				NeedsRestart: needsRestart,
+				IsEnabled:      enabled,
+				PendingEnable:  pendingEnable,
+				PendingDisable: pendingDisable,
 				ServiceState: state,
 				BaseVRAMGB:   baseVRAM,
 				PeakVRAMGB:   peakVRAM,
