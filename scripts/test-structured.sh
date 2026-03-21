@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Test structured output / JSON schema constrained generation.
-# Usage: ./scripts/test-structured.sh [model-name]
+# Usage: ./scripts/test-structured.sh [--host HOST] [--port PORT] [model-name]
 
 set -euo pipefail
 source "$(dirname "$0")/lib-test.sh"
 
-if [[ -n "${1:-}" ]]; then
-    MODEL="$1"
+if [[ ${#ARGS[@]} -gt 0 ]]; then
+    MODEL="${ARGS[0]}"
 else
     pick_model chat
 fi
@@ -49,29 +49,18 @@ RESPONSE=$(curl -s "${BASE_URL}/chat/completions" \
         }
     }")
 
-CONTENT=$(echo "$RESPONSE" | python3 -c "
-import sys, json
-r = json.load(sys.stdin)
-if 'error' in r:
-    print(f'Error: {r[\"error\"][\"message\"]}')
-    sys.exit(1)
-content = r['choices'][0]['message']['content']
-print('Raw:', content[:200])
-# Verify it's valid JSON matching the schema
-parsed = json.loads(content)
-colors = parsed['colors']
-print(f'Parsed {len(colors)} colors:')
-for c in colors:
-    print(f'  {c[\"name\"]}: {c[\"hex\"]}')
-print()
-print('Schema validation: PASS')
-" 2>/dev/null)
+echo "$RESPONSE" | jq .
 
-if [[ -n "$CONTENT" ]]; then
-    echo "$CONTENT"
+CONTENT=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty' 2>/dev/null || true)
+if [[ -n "$CONTENT" ]] && echo "$CONTENT" | jq -e '.colors | length > 0' &>/dev/null; then
+    echo ""
+    echo "Parsed colors:"
+    echo "$CONTENT" | jq -r '.colors[] | "  \(.name): \(.hex)"'
+    echo ""
+    echo "Schema validation: PASS"
 else
-    echo "Failed to parse response:"
-    echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE"
+    echo ""
+    echo "Schema validation: FAIL"
 fi
 
 # --- Test 2: response_format json_object (simpler) ---
@@ -89,18 +78,16 @@ RESPONSE=$(curl -s "${BASE_URL}/chat/completions" \
         \"response_format\": {\"type\": \"json_object\"}
     }")
 
-echo "$RESPONSE" | python3 -c "
-import sys, json
-r = json.load(sys.stdin)
-if 'error' in r:
-    print(f'Error: {r[\"error\"][\"message\"]}')
-    sys.exit(1)
-content = r['choices'][0]['message']['content']
-parsed = json.loads(content)
-print(json.dumps(parsed, indent=2))
-print()
-print('JSON parsing: PASS')
-" 2>/dev/null || {
-    echo "Failed:"
-    echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE"
-}
+echo "$RESPONSE" | jq .
+
+CONTENT=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty' 2>/dev/null || true)
+if [[ -n "$CONTENT" ]] && echo "$CONTENT" | jq empty &>/dev/null; then
+    echo ""
+    echo "Parsed object:"
+    echo "$CONTENT" | jq .
+    echo ""
+    echo "JSON parsing: PASS"
+else
+    echo ""
+    echo "JSON parsing: FAIL"
+fi

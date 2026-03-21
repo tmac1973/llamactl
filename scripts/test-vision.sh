@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Test multimodal vision support by sending an image to the chat completions API.
-# Usage: ./scripts/test-vision.sh [model-name] [image-url-or-path]
+# Usage: ./scripts/test-vision.sh [--host HOST] [--port PORT] [model-name] [image-url-or-path]
 
 set -euo pipefail
 source "$(dirname "$0")/lib-test.sh"
 
-if [[ -n "${1:-}" ]]; then
-    MODEL="$1"
+if [[ ${#ARGS[@]} -gt 0 ]]; then
+    MODEL="${ARGS[0]}"
 else
     pick_model chat
 fi
-IMAGE_SRC="${2:-https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg}"
+IMAGE_SRC="${ARGS[1]:-https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg}"
 
 # Resolve image source to a URL the server can use
 if [[ -f "$IMAGE_SRC" ]]; then
@@ -48,13 +48,9 @@ RESPONSE=$(curl -s "${BASE_URL}/chat/completions" \
     -d @"$REQFILE")
 
 echo "==> Response:"
-echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE"
+echo "$RESPONSE" | jq .
 
-CONTENT=$(echo "$RESPONSE" | python3 -c "
-import sys, json
-r = json.load(sys.stdin)
-print(r['choices'][0]['message']['content'])
-" 2>/dev/null || true)
+CONTENT=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty' 2>/dev/null || true)
 if [[ -n "$CONTENT" ]]; then
     echo ""
     echo "==> Model says: ${CONTENT}"

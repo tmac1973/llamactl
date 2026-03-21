@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Smoke test for LlamaCtl API endpoints.
-# Usage: ./scripts/test-api.sh [base_url]
+# Usage: ./scripts/test-api.sh [--host HOST] [--port PORT]
 #
 # Tests page routes, management API, OpenAI proxy (via llama.cpp router),
 # and chat completions.
 
-BASE="${1:-http://localhost:3000}"
+set -euo pipefail
+source "$(dirname "$0")/lib-test.sh"
+
+BASE="$MGMT_URL"
 PASS=0
 FAIL=0
 
@@ -42,7 +45,7 @@ test_json() {
 
     if [[ "$code" != "$expect" ]]; then
         fail "$desc → HTTP $code (expected $expect)"
-        echo "      ${DIM}$content${NC}" | head -3
+        echo "      ${DIM}$(echo "$content" | head -3)${NC}"
         return
     fi
 
@@ -51,7 +54,7 @@ test_json() {
             pass "$desc"
         else
             fail "$desc → pattern '$pattern' not found"
-            echo "      ${DIM}$content${NC}" | head -3
+            echo "      ${DIM}$(echo "$content" | head -3)${NC}"
         fi
     else
         pass "$desc"
@@ -89,14 +92,7 @@ echo ""
 # ─── Router Status ───────────────────────────────────────────────────────────
 
 echo "=== Router Status ==="
-router_state=$(curl -s "$BASE/api/service/status" | python3 -c "
-import json,sys
-try:
-    d = json.load(sys.stdin)
-    print(d.get('state', 'unknown'))
-except:
-    print('unknown')
-" 2>/dev/null)
+router_state=$(curl -s "$BASE/api/service/status" | jq -r '.state // "unknown"' 2>/dev/null)
 echo "  ${DIM}Router state: $router_state${NC}"
 
 if [[ "$router_state" == "running" ]]; then
@@ -127,43 +123,18 @@ else
 fi
 
 # Count models from /v1/models
-model_count=$(echo "$v1_body" | python3 -c "
-import json,sys
-try:
-    d = json.load(sys.stdin)
-    print(len(d.get('data', [])))
-except:
-    print(0)
-" 2>/dev/null)
-echo "  ${DIM}Models reported by router: $model_count${NC}"
+model_count=$(echo "$v1_body" | jq '.data | length' 2>/dev/null || echo 0)
+echo "  ${DIM}Models available: $model_count${NC}"
 
 # Get the first chat model (skip embedding models)
-first_model=$(echo "$v1_body" | python3 -c "
-import json,sys
-embed_patterns = ['embed', 'bge-', 'e5-', 'gte-', 'arctic-embed', 'mxbai-embed', 'jina-embed']
-def is_embedding(mid):
-    mid = mid.lower()
-    return any(p in mid for p in embed_patterns)
-try:
-    d = json.load(sys.stdin)
-    # Prefer a loaded chat model
-    for m in d.get('data', []):
-        s = m.get('status', {})
-        if isinstance(s, dict) and s.get('value') == 'loaded' and not is_embedding(m['id']):
-            print(m['id'])
-            break
-    else:
-        # Fallback: first non-embedding model
-        for m in d.get('data', []):
-            if not is_embedding(m['id']):
-                print(m['id'])
-                break
-except:
-    pass
-" 2>/dev/null)
+first_model=$(echo "$v1_body" | jq -r '
+    [.data[] | select(.meta.capabilities | index("embedding") | not)] |
+    first // empty |
+    .id
+' 2>/dev/null)
 
 if [[ -z "$first_model" ]]; then
-    echo "  ${DIM}No loaded models found. Skipping completion tests.${NC}"
+    echo "  ${DIM}No chat models found. Skipping completion tests.${NC}"
     echo ""
     echo "=== Results: ${GREEN}$PASS passed${NC}, ${RED}$FAIL failed${NC} ==="
     [[ $FAIL -eq 0 ]] && exit 0 || exit 1

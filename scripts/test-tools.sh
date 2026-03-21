@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Test tool/function calling via the OpenAI-compatible chat completions API.
-# Usage: ./scripts/test-tools.sh [model-name]
+# Usage: ./scripts/test-tools.sh [--host HOST] [--port PORT] [model-name]
 
 set -euo pipefail
 source "$(dirname "$0")/lib-test.sh"
 
-if [[ -n "${1:-}" ]]; then
-    MODEL="$1"
+if [[ ${#ARGS[@]} -gt 0 ]]; then
+    MODEL="${ARGS[0]}"
 else
     pick_model chat
 fi
@@ -47,41 +47,18 @@ RESPONSE=$(curl -s "${BASE_URL}/chat/completions" \
         \"tool_choice\": \"auto\"
     }")
 
-echo "$RESPONSE" | python3 -c "
-import sys, json
+echo "$RESPONSE" | jq .
 
-r = json.load(sys.stdin)
-if 'error' in r:
-    print(f'Error: {r[\"error\"][\"message\"]}')
-    sys.exit(1)
-
-msg = r['choices'][0]['message']
-role = msg.get('role', '')
-content = msg.get('content', '')
-tool_calls = msg.get('tool_calls', [])
-
-if tool_calls:
-    print(f'Role: {role}')
-    print(f'Tool calls: {len(tool_calls)}')
-    for tc in tool_calls:
-        fn = tc['function']
-        args = json.loads(fn['arguments']) if isinstance(fn['arguments'], str) else fn['arguments']
-        print(f'  Function: {fn[\"name\"]}')
-        print(f'  Arguments: {json.dumps(args, indent=4)}')
-        print(f'  Call ID: {tc.get(\"id\", \"n/a\")}')
-    print()
-    print('Tool calling: PASS')
-else:
-    print(f'Role: {role}')
-    print(f'Content: {content[:200]}')
-    print()
-    print('Tool calling: FAIL (model responded with text instead of tool call)')
-    print('This may indicate the model does not support tool calling,')
-    print('or the chat template does not handle tools correctly.')
-" 2>/dev/null || {
-    echo "Failed to parse response:"
-    echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE"
-}
+TOOL_CALLS=$(echo "$RESPONSE" | jq '.choices[0].message.tool_calls // [] | length' 2>/dev/null || echo 0)
+if [[ "$TOOL_CALLS" -gt 0 ]]; then
+    echo ""
+    echo "Tool calling: PASS"
+else
+    echo ""
+    echo "Tool calling: FAIL (model responded with text instead of tool call)"
+    echo "This may indicate the model does not support tool calling,"
+    echo "or the chat template does not handle tools correctly."
+fi
 
 # --- Test 2: Multi-turn with tool result ---
 echo ""
@@ -101,27 +78,13 @@ RESPONSE=$(curl -s "${BASE_URL}/chat/completions" \
         \"max_tokens\": 256
     }")
 
-echo "$RESPONSE" | python3 -c "
-import sys, json
+echo "$RESPONSE" | jq .
 
-r = json.load(sys.stdin)
-if 'error' in r:
-    print(f'Error: {r[\"error\"][\"message\"]}')
-    sys.exit(1)
-
-msg = r['choices'][0]['message']
-content = msg.get('content', '')
-print(f'Model response: {content[:300]}')
-
-# Check that model incorporated the tool result
-lower = content.lower()
-if any(w in lower for w in ['22', 'tokyo', 'cloudy', 'celsius']):
-    print()
-    print('Tool result integration: PASS')
-else:
-    print()
-    print('Tool result integration: UNCLEAR (response may not reference the tool data)')
-" 2>/dev/null || {
-    echo "Failed to parse response:"
-    echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE"
-}
+CONTENT=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // ""' 2>/dev/null)
+if echo "$CONTENT" | grep -qiE '22|tokyo|cloudy|celsius'; then
+    echo ""
+    echo "Tool result integration: PASS"
+else
+    echo ""
+    echo "Tool result integration: UNCLEAR (response may not reference the tool data)"
+fi

@@ -193,8 +193,14 @@ func (s *Server) buildRouter() chi.Router {
 		})
 	})
 
-	// OpenAI-compatible proxy with optional API key auth
-	r.Mount("/v1", s.apiKeyAuth(s.newProxyHandler()))
+	// OpenAI-compatible endpoints: models are served directly,
+	// everything else is proxied to llama-server.
+	r.Route("/v1", func(r chi.Router) {
+		r.Use(s.apiKeyAuth)
+		r.Get("/models", s.handleV1Models)
+		r.Get("/models/{model}", s.handleV1Model)
+		r.Handle("/*", s.newProxyHandler())
+	})
 
 	return r
 }
