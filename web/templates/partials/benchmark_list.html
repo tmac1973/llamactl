@@ -1,4 +1,7 @@
 {{define "benchmark_list"}}
+{{if .HasRunning}}
+<div hx-get="/api/benchmarks" hx-trigger="every 3s" hx-target="#benchmark-list" hx-swap="innerHTML"></div>
+{{end}}
 {{if not .Runs}}
 <p>No benchmarks yet. Run one above to get started.</p>
 {{else}}

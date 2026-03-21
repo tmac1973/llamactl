@@ -20,9 +20,17 @@ func (s *Server) handleListBenchmarks(w http.ResponseWriter, r *http.Request) {
 
 	if isHTMX(r) {
 		respondHTML(w)
+		hasRunning := false
+		for _, run := range runs {
+			if run.Status == benchmark.StatusRunning {
+				hasRunning = true
+				break
+			}
+		}
 		s.renderPartial(w, "benchmark_list", struct {
-			Runs []benchmark.BenchmarkRun
-		}{Runs: runs})
+			Runs       []benchmark.BenchmarkRun
+			HasRunning bool
+		}{Runs: runs, HasRunning: hasRunning})
 		return
 	}
 
