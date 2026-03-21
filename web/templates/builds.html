@@ -55,7 +55,11 @@
     </form>
 </article>
 
-<div id="build-output"></div>
+<div id="build-output"
+     hx-get="/api/builds/active-log"
+     hx-trigger="load"
+     hx-swap="innerHTML">
+</div>
 
 <article>
     <header>Compiled Builds</header>

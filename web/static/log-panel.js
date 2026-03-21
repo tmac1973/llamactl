@@ -1,4 +1,4 @@
-// Log panel: live-tail auto-scroll + copy to clipboard
+// Log panel: live-tail auto-scroll + copy to clipboard + clear
 document.addEventListener('DOMContentLoaded', () => {
     initLogPanels();
 });
@@ -16,6 +16,7 @@ function initLogPanels() {
         const pre = panel.querySelector('pre');
         const tailToggle = panel.querySelector('.log-tail-toggle');
         const copyBtn = panel.querySelector('.log-copy-btn');
+        const clearBtn = panel.querySelector('.log-clear-btn');
         if (!pre) return;
 
         // Live tail: auto-scroll on new content
@@ -33,16 +34,49 @@ function initLogPanels() {
         });
         observer.observe(pre, { childList: true, characterData: true, subtree: true });
 
-        // Copy to clipboard
+        // Copy to clipboard with fallback
         if (copyBtn) {
             copyBtn.addEventListener('click', () => {
-                const text = pre.textContent;
-                navigator.clipboard.writeText(text).then(() => {
+                const text = pre.textContent || pre.innerText;
+                copyToClipboard(text).then(() => {
                     const orig = copyBtn.textContent;
                     copyBtn.textContent = 'Copied!';
                     setTimeout(() => { copyBtn.textContent = orig; }, 1500);
+                }).catch(() => {
+                    copyBtn.textContent = 'Failed';
+                    setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
                 });
             });
+        }
+
+        // Clear log contents
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                pre.textContent = '';
+            });
+        }
+    });
+}
+
+// Copy text to clipboard with fallback for non-secure contexts
+function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text);
+    }
+    // Fallback: create a temporary textarea
+    return new Promise((resolve, reject) => {
+        try {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            resolve();
+        } catch (e) {
+            reject(e);
         }
     });
 }

@@ -37,6 +37,8 @@ type BuildResult struct {
 	Error      string    `json:"error,omitempty"`
 }
 
+const buildLogHistorySize = 2000
+
 // Builder orchestrates llama.cpp builds.
 type Builder struct {
 	dataDir string
@@ -45,6 +47,12 @@ type Builder struct {
 	builds []BuildResult
 	logChs map[string]chan string
 
+	// Log history and broadcasting per build
+	logMu         sync.Mutex
+	logHistory    map[string][]string              // build ID → log lines
+	logSubs       map[string]map[chan string]struct{} // build ID → subscribers
+	lastBuildID   string                           // most recent build ID
+
 	refsMu    sync.Mutex
 	cachedRefs []string
 }
@@ -52,8 +60,10 @@ type Builder struct {
 // NewBuilder creates a Builder and loads persisted build state.
 func NewBuilder(dataDir string) *Builder {
 	b := &Builder{
-		dataDir: dataDir,
-		logChs:  make(map[string]chan string),
+		dataDir:    dataDir,
+		logChs:     make(map[string]chan string),
+		logHistory: make(map[string][]string),
+		logSubs:    make(map[string]map[chan string]struct{}),
 	}
 	b.loadBuilds()
 	return b
@@ -74,6 +84,81 @@ func (b *Builder) LogChannel(buildID string) (<-chan string, bool) {
 	defer b.mu.Unlock()
 	ch, ok := b.logChs[buildID]
 	return ch, ok
+}
+
+// SubscribeLogs returns a channel that receives log lines for a build,
+// starting with any existing history. Returns nil if the build has no logs.
+func (b *Builder) SubscribeLogs(buildID string) chan string {
+	b.logMu.Lock()
+	defer b.logMu.Unlock()
+
+	history := b.logHistory[buildID]
+	if history == nil {
+		// No log history — check if build is still running with old channel
+		return nil
+	}
+
+	ch := make(chan string, buildLogHistorySize)
+	// Replay history
+	for _, line := range history {
+		select {
+		case ch <- line:
+		default:
+		}
+	}
+
+	// Register as subscriber for new lines
+	if b.logSubs[buildID] == nil {
+		b.logSubs[buildID] = make(map[chan string]struct{})
+	}
+	b.logSubs[buildID][ch] = struct{}{}
+	return ch
+}
+
+// UnsubscribeLogs removes a log subscriber.
+func (b *Builder) UnsubscribeLogs(buildID string, ch chan string) {
+	b.logMu.Lock()
+	defer b.logMu.Unlock()
+	if subs := b.logSubs[buildID]; subs != nil {
+		delete(subs, ch)
+	}
+}
+
+// broadcastLog stores a log line and sends it to all subscribers.
+func (b *Builder) broadcastLog(buildID, line string) {
+	b.logMu.Lock()
+	defer b.logMu.Unlock()
+
+	if len(b.logHistory[buildID]) >= buildLogHistorySize {
+		b.logHistory[buildID] = b.logHistory[buildID][1:]
+	}
+	b.logHistory[buildID] = append(b.logHistory[buildID], line)
+
+	for ch := range b.logSubs[buildID] {
+		select {
+		case ch <- line:
+		default:
+		}
+	}
+}
+
+// LastBuildID returns the most recently started build ID.
+func (b *Builder) LastBuildID() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.lastBuildID
+}
+
+// BuildStatus returns the status of a build by ID.
+func (b *Builder) BuildStatus(id string) string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, build := range b.builds {
+		if build.ID == id {
+			return build.Status
+		}
+	}
+	return ""
 }
 
 // DuplicateBuildError is returned when a build with the same ref+profile already exists.
@@ -171,7 +256,13 @@ func (b *Builder) Build(ctx context.Context, profile string, gitRef string, forc
 	}
 	b.logChs[result.ID] = logCh
 	b.builds = append(b.builds, *result)
+	b.lastBuildID = result.ID
 	b.mu.Unlock()
+
+	// Initialize log history for this build
+	b.logMu.Lock()
+	b.logHistory[result.ID] = nil
+	b.logMu.Unlock()
 
 	// Run the actual build asynchronously
 	go b.runBuild(ctx, prof, srcDir, result, logCh)
@@ -205,13 +296,23 @@ func (b *Builder) Delete(id string) error {
 }
 
 func (b *Builder) runBuild(ctx context.Context, prof BuildProfile, srcDir string, result *BuildResult, logCh chan string) {
-	defer close(logCh)
+	defer func() {
+		close(logCh)
+		// Close all subscriber channels for this build
+		b.logMu.Lock()
+		for ch := range b.logSubs[result.ID] {
+			close(ch)
+		}
+		delete(b.logSubs, result.ID)
+		b.logMu.Unlock()
+	}()
 
 	sendLog := func(msg string) {
 		select {
 		case logCh <- msg:
 		default:
 		}
+		b.broadcastLog(result.ID, msg)
 	}
 
 	buildDir := filepath.Join(srcDir, "build-"+prof.Name)
@@ -229,7 +330,7 @@ func (b *Builder) runBuild(ctx context.Context, prof BuildProfile, srcDir string
 		cmakeArgs = append(cmakeArgs, fmt.Sprintf("-D%s=%s", k, v))
 	}
 
-	if err := b.runCmd(ctx, buildDir, logCh, "cmake", cmakeArgs...); err != nil {
+	if err := b.runCmd(ctx, buildDir, logCh, result.ID, "cmake", cmakeArgs...); err != nil {
 		b.finishBuild(result, BuildStatusFailed, fmt.Sprintf("cmake failed: %v", err))
 		sendLog(fmt.Sprintf("==> cmake FAILED: %v", err))
 		return
@@ -237,7 +338,7 @@ func (b *Builder) runBuild(ctx context.Context, prof BuildProfile, srcDir string
 
 	// ninja — build all targets (target names vary across llama.cpp versions)
 	sendLog("==> Running ninja...")
-	if err := b.runCmd(ctx, buildDir, logCh, "ninja", "-j", fmt.Sprintf("%d", numCPU())); err != nil {
+	if err := b.runCmd(ctx, buildDir, logCh, result.ID, "ninja", "-j", fmt.Sprintf("%d", numCPU())); err != nil {
 		b.finishBuild(result, BuildStatusFailed, fmt.Sprintf("ninja failed: %v", err))
 		sendLog(fmt.Sprintf("==> ninja FAILED: %v", err))
 		return
@@ -343,11 +444,11 @@ func (b *Builder) finishBuild(result *BuildResult, status, errMsg string) {
 func (b *Builder) ensureRepo(ctx context.Context, srcDir string, logCh chan string) error {
 	if _, err := os.Stat(filepath.Join(srcDir, ".git")); err == nil {
 		sendLog(logCh, "==> Fetching latest from llama.cpp...")
-		return b.runCmd(ctx, srcDir, logCh, "git", "fetch", "--all", "--tags")
+		return b.runCmd(ctx, srcDir, logCh, "", "git", "fetch", "--all", "--tags")
 	}
 
 	sendLog(logCh, "==> Cloning llama.cpp...")
-	return b.runCmd(ctx, filepath.Dir(srcDir), logCh, "git", "clone", llamaCppRepo, filepath.Base(srcDir))
+	return b.runCmd(ctx, filepath.Dir(srcDir), logCh, "", "git", "clone", llamaCppRepo, filepath.Base(srcDir))
 }
 
 // checkoutRef checks out the given ref and returns (resolvedRef, sha, error).
@@ -370,7 +471,7 @@ func (b *Builder) checkoutRef(ctx context.Context, srcDir string, ref string, lo
 	}
 
 	sendLog(logCh, fmt.Sprintf("==> Checking out %s...", ref))
-	if err := b.runCmd(ctx, srcDir, logCh, "git", "checkout", ref); err != nil {
+	if err := b.runCmd(ctx, srcDir, logCh, "", "git", "checkout", ref); err != nil {
 		return "", "", err
 	}
 
@@ -432,7 +533,7 @@ func (b *Builder) HasBuild(id string) bool {
 }
 
 // runCmd runs a command, streaming stdout+stderr line-by-line to the log channel.
-func (b *Builder) runCmd(ctx context.Context, dir string, logCh chan string, name string, args ...string) error {
+func (b *Builder) runCmd(ctx context.Context, dir string, logCh chan string, buildID string, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 
@@ -453,6 +554,9 @@ func (b *Builder) runCmd(ctx context.Context, dir string, logCh chan string, nam
 		case logCh <- line:
 		default:
 			// drop if channel full
+		}
+		if buildID != "" {
+			b.broadcastLog(buildID, line)
 		}
 	}
 

@@ -166,6 +166,7 @@ func (s *Server) buildRouter() chi.Router {
 			r.Get("/backends", s.handleListBackends)
 			r.Get("/refs", s.handleListRefs)
 			r.Get("/options", s.handleProfileOptions)
+			r.Get("/active-log", s.handleActiveBuildLog)
 			r.Get("/{id}/logs", s.handleBuildLogs)
 			r.Delete("/{id}", s.handleDeleteBuild)
 		})

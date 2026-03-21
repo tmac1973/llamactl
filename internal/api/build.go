@@ -246,12 +246,40 @@ func (s *Server) handleTriggerBuild(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleBuildLogs(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+
+	// Try the live channel first (original SSE connection during build)
 	ch, ok := s.builder.LogChannel(id)
-	if !ok {
+	if ok {
+		StreamLines(w, r.Context(), ch, "Build complete")
+		return
+	}
+
+	// Fall back to subscribe (replays history + streams new lines)
+	sub := s.builder.SubscribeLogs(id)
+	if sub == nil {
 		http.NotFound(w, r)
 		return
 	}
-	StreamLines(w, r.Context(), ch, "Build complete")
+	defer s.builder.UnsubscribeLogs(id, sub)
+	StreamLines(w, r.Context(), sub, "Build complete")
+}
+
+// handleActiveBuildLog returns the build_log partial for the most recent build,
+// allowing the builds page to reconnect after tab switches.
+func (s *Server) handleActiveBuildLog(w http.ResponseWriter, r *http.Request) {
+	respondHTML(w)
+	lastID := s.builder.LastBuildID()
+	if lastID == "" {
+		return
+	}
+
+	status := s.builder.BuildStatus(lastID)
+	if status == "" {
+		return
+	}
+
+	// Show the log panel for running or recently completed builds
+	s.renderPartial(w, "build_log", &builder.BuildResult{ID: lastID, Status: status})
 }
 
 func (s *Server) handleDeleteBuild(w http.ResponseWriter, r *http.Request) {
