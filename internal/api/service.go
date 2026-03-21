@@ -478,6 +478,9 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 		// should not overwrite saved values (same pattern as Enabled).
 		if r.Form.Has("draft_model_path") {
 			cfg.DraftModelPath = r.FormValue("draft_model_path")
+			slog.Info("draft model config", "has_field", true, "value", cfg.DraftModelPath)
+		} else {
+			slog.Info("draft model config", "has_field", false, "existing", cfg.DraftModelPath)
 		}
 		if r.Form.Has("draft_max") {
 			if v, err := strconv.Atoi(r.FormValue("draft_max")); err == nil && v > 0 {
