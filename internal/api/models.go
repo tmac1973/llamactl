@@ -207,6 +207,7 @@ func (s *Server) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isHTMX(r) {
+		w.Header().Set("HX-Trigger", `{"gpuMapChanged":true}`)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
