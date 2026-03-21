@@ -113,13 +113,27 @@ func writeConfigParams(b *strings.Builder, cfg *ModelConfig, isEmbedding bool) {
 		if cfg.MmprojPath != "" {
 			b.WriteString(fmt.Sprintf("mmproj = %s\n", cfg.MmprojPath))
 		}
-		if cfg.DraftModelPath != "" {
+		// Speculative decoding
+		if cfg.SpecType == "draft" && cfg.DraftModelPath != "" {
 			b.WriteString(fmt.Sprintf("model-draft = %s\n", cfg.DraftModelPath))
+		} else if cfg.SpecType != "" && cfg.SpecType != "draft" {
+			b.WriteString(fmt.Sprintf("spec-type = %s\n", cfg.SpecType))
+			if cfg.NgramSizeN > 0 {
+				b.WriteString(fmt.Sprintf("spec-ngram-size-n = %d\n", cfg.NgramSizeN))
+			}
+			if cfg.NgramSizeM > 0 {
+				b.WriteString(fmt.Sprintf("spec-ngram-size-m = %d\n", cfg.NgramSizeM))
+			}
+		}
+		if cfg.SpecType != "" {
 			if cfg.DraftMax > 0 {
 				b.WriteString(fmt.Sprintf("draft-max = %d\n", cfg.DraftMax))
 			}
 			if cfg.DraftMin > 0 {
 				b.WriteString(fmt.Sprintf("draft-min = %d\n", cfg.DraftMin))
+			}
+			if cfg.DraftPMin != "" {
+				b.WriteString(fmt.Sprintf("draft-p-min = %s\n", cfg.DraftPMin))
 			}
 		}
 	}

@@ -111,12 +111,25 @@
     {{end}}
 
     <hr style="margin: 1rem 0 0.5rem;">
-    <small><strong>Speculative Decoding</strong> — use a small draft model to speed up generation. Restart required.</small>
+    <small><strong>Speculative Decoding</strong> — predict multiple tokens per step for faster generation. Restart required.</small>
     <div class="grid">
-        <label title="A smaller model of the same architecture proposes tokens that the main model verifies in parallel. Typically 2-3x speedup.">
+        <label title="Speculative decoding mode. Draft model uses a smaller model to propose tokens. N-gram modes use pattern matching from the prompt — no extra model needed.">
+            Mode
+            <select name="spec_type">
+                <option value="" {{if eq .Config.SpecType ""}}selected{{end}}>Disabled</option>
+                <option value="draft" {{if eq .Config.SpecType "draft"}}selected{{end}}>Draft Model{{if not .DraftCandidates}} (no compatible models){{end}}</option>
+                <option value="ngram-simple" {{if eq .Config.SpecType "ngram-simple"}}selected{{end}}>N-gram Simple</option>
+                <option value="ngram-cache" {{if eq .Config.SpecType "ngram-cache"}}selected{{end}}>N-gram Cache</option>
+                <option value="ngram-map-k" {{if eq .Config.SpecType "ngram-map-k"}}selected{{end}}>N-gram Map-K</option>
+                <option value="ngram-map-k4v" {{if eq .Config.SpecType "ngram-map-k4v"}}selected{{end}}>N-gram Map-K4V</option>
+                <option value="ngram-mod" {{if eq .Config.SpecType "ngram-mod"}}selected{{end}}>N-gram Mod</option>
+            </select>
+        </label>
+        {{if eq .Config.SpecType "draft"}}
+        <label title="A smaller model of the same architecture proposes tokens that the main model verifies in parallel.">
             Draft Model
             <select name="draft_model_path">
-                <option value="" {{if eq .Config.DraftModelPath ""}}selected{{end}}>None{{if not .DraftCandidates}} (no compatible models){{end}}</option>
+                <option value="">None</option>
                 {{range .DraftCandidates}}
                 <option value="{{.FilePath}}" {{if eq $.Config.DraftModelPath .FilePath}}selected{{end}}>
                     {{.Filename}} ({{printf "%.1f" .SizeGB}} GB)
@@ -124,7 +137,42 @@
                 {{end}}
             </select>
         </label>
+        {{end}}
     </div>
+    {{if ne .Config.SpecType ""}}
+    <div class="grid">
+        <label title="Maximum tokens to draft per step. Higher = more aggressive speculation. MoE models benefit from longer drafts. Default: 16">
+            Draft Max
+            <input type="number" name="draft_max" value="{{.Config.DraftMax}}"
+                   min="0" max="128" placeholder="16">
+        </label>
+        <label title="Minimum tokens to draft before verification. Dense models can use lower values. Default: 0">
+            Draft Min
+            <input type="number" name="draft_min" value="{{.Config.DraftMin}}"
+                   min="0" max="64" placeholder="0">
+        </label>
+        <label title="Minimum probability for accepting a drafted token. Lower = accept more drafts. Default: 0.75">
+            Min Probability
+            <input type="number" name="draft_p_min" step="0.05" min="0" max="1"
+                   value="{{.Config.DraftPMin}}"
+                   placeholder="0.75">
+        </label>
+    </div>
+    {{end}}
+    {{if and (ne .Config.SpecType "") (ne .Config.SpecType "draft")}}
+    <div class="grid">
+        <label title="Length of the n-gram used for lookup in generation history. Default: 12">
+            N-gram Lookup Size
+            <input type="number" name="ngram_size_n" value="{{.Config.NgramSizeN}}"
+                   min="0" max="64" placeholder="12">
+        </label>
+        <label title="Length of the draft sequence generated from n-gram matches. Default: 48">
+            N-gram Draft Size
+            <input type="number" name="ngram_size_m" value="{{.Config.NgramSizeM}}"
+                   min="0" max="128" placeholder="48">
+        </label>
+    </div>
+    {{end}}
 
     <hr style="margin: 1rem 0 0.5rem;">
     <small><strong>Sampling</strong> — applied per-request, no restart needed. Leave blank for server defaults.</small>

@@ -46,11 +46,18 @@ type ModelConfig struct {
 	Jinja          bool   `json:"jinja"`
 	KVCacheQuant   string `json:"kv_cache_quant"` // "", "q8_0", "q4_0"
 	DirectIO       bool   `json:"direct_io"`       // bypass page cache, load straight to VRAM
-	MmprojPath     string `json:"mmproj_path,omitempty"`      // path to mmproj GGUF for vision models
-	DraftModelPath string   `json:"draft_model_path,omitempty"` // path to draft model for speculative decoding
-	DraftMax       int      `json:"draft_max,omitempty"`        // max draft tokens (default 16)
-	DraftMin       int      `json:"draft_min,omitempty"`        // min draft tokens (default 2)
-	Aliases        []string `json:"aliases,omitempty"`          // user-defined friendly names
+	MmprojPath     string `json:"mmproj_path,omitempty"` // path to mmproj GGUF for vision models
+
+	// Speculative decoding
+	SpecType       string `json:"spec_type,omitempty"`        // "", "draft", "ngram-simple", "ngram-cache", etc.
+	DraftModelPath string `json:"draft_model_path,omitempty"` // path to draft model (when spec_type="draft")
+	DraftMax       int    `json:"draft_max,omitempty"`        // max draft tokens per step
+	DraftMin       int    `json:"draft_min,omitempty"`        // min draft tokens per step
+	DraftPMin      string `json:"draft_p_min,omitempty"`      // min probability threshold (string to allow empty=default)
+	NgramSizeN     int    `json:"ngram_size_n,omitempty"`     // n-gram lookup length
+	NgramSizeM     int    `json:"ngram_size_m,omitempty"`     // n-gram draft length
+
+	Aliases []string `json:"aliases,omitempty"` // user-defined friendly names
 	ExtraFlags     string   `json:"extra_flags"`
 
 	// Sampling parameters — nil means use llama.cpp server default.
@@ -120,13 +127,27 @@ func (c *ModelConfig) EffectiveFlagsFor(isEmbedding bool) string {
 		if c.MmprojPath != "" {
 			parts = append(parts, "--mmproj", c.MmprojPath)
 		}
-		if c.DraftModelPath != "" {
+		// Speculative decoding
+		if c.SpecType == "draft" && c.DraftModelPath != "" {
 			parts = append(parts, "--model-draft", c.DraftModelPath)
+		} else if c.SpecType != "" && c.SpecType != "draft" {
+			parts = append(parts, "--spec-type", c.SpecType)
+			if c.NgramSizeN > 0 {
+				parts = append(parts, "--spec-ngram-size-n", strconv.Itoa(c.NgramSizeN))
+			}
+			if c.NgramSizeM > 0 {
+				parts = append(parts, "--spec-ngram-size-m", strconv.Itoa(c.NgramSizeM))
+			}
+		}
+		if c.SpecType != "" {
 			if c.DraftMax > 0 {
 				parts = append(parts, "--draft-max", strconv.Itoa(c.DraftMax))
 			}
 			if c.DraftMin > 0 {
 				parts = append(parts, "--draft-min", strconv.Itoa(c.DraftMin))
+			}
+			if c.DraftPMin != "" {
+				parts = append(parts, "--draft-p-min", c.DraftPMin)
 			}
 		}
 	}

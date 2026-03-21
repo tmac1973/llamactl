@@ -463,25 +463,31 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 			cfg.Aliases = nil
 		}
 
-		// Only update draft/mmproj/alias fields if they're present in the form.
-		// These sections are conditionally rendered, so missing fields
-		// should not overwrite saved values (same pattern as Enabled).
+		// Speculative decoding
+		cfg.SpecType = r.FormValue("spec_type")
 		if r.Form.Has("draft_model_path") {
 			cfg.DraftModelPath = r.FormValue("draft_model_path")
 		}
-		if r.Form.Has("draft_max") {
-			if v, err := strconv.Atoi(r.FormValue("draft_max")); err == nil && v > 0 {
-				cfg.DraftMax = v
-			} else {
-				cfg.DraftMax = 0
-			}
+		if v, err := strconv.Atoi(r.FormValue("draft_max")); err == nil && v > 0 {
+			cfg.DraftMax = v
+		} else {
+			cfg.DraftMax = 0
 		}
-		if r.Form.Has("draft_min") {
-			if v, err := strconv.Atoi(r.FormValue("draft_min")); err == nil && v > 0 {
-				cfg.DraftMin = v
-			} else {
-				cfg.DraftMin = 0
-			}
+		if v, err := strconv.Atoi(r.FormValue("draft_min")); err == nil && v > 0 {
+			cfg.DraftMin = v
+		} else {
+			cfg.DraftMin = 0
+		}
+		cfg.DraftPMin = r.FormValue("draft_p_min")
+		if v, err := strconv.Atoi(r.FormValue("ngram_size_n")); err == nil && v > 0 {
+			cfg.NgramSizeN = v
+		} else {
+			cfg.NgramSizeN = 0
+		}
+		if v, err := strconv.Atoi(r.FormValue("ngram_size_m")); err == nil && v > 0 {
+			cfg.NgramSizeM = v
+		} else {
+			cfg.NgramSizeM = 0
 		}
 	}
 
