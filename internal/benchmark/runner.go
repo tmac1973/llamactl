@@ -68,7 +68,11 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig, progress chan<- Progres
 		}
 	}
 
-	// Step 1: Ensure model is loaded
+	// Step 0: Unload all models to ensure clean VRAM for benchmarking
+	send("loading", "Unloading all models for clean benchmark...", 3)
+	r.unloadAllModels(cfg.RouterURL)
+
+	// Step 1: Load the benchmark target model
 	send("loading", "Loading model into VRAM — this may take a minute for large models...", 5)
 	if err := r.ensureModelLoaded(ctx, cfg.RouterURL, cfg.RouterName); err != nil {
 		run.Status = StatusFailed
@@ -209,6 +213,32 @@ func (r *Runner) ensureModelLoaded(ctx context.Context, routerURL, modelName str
 		return nil
 	}
 	return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+}
+
+// unloadAllModels unloads every loaded model from the router to free VRAM.
+func (r *Runner) unloadAllModels(routerURL string) {
+	resp, err := http.Get(routerURL + "/models")
+	if err != nil {
+		slog.Warn("benchmark: failed to list models for unload", "error", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	var models []struct {
+		ID     string `json:"id"`
+		Status struct {
+			Value string `json:"value"`
+		} `json:"status"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&models) != nil {
+		return
+	}
+
+	for _, m := range models {
+		if m.Status.Value == "loaded" || m.Status.Value == "loading" {
+			r.unloadModel(routerURL, m.ID)
+		}
+	}
 }
 
 // unloadModel tells the router to unload a model, freeing VRAM.
