@@ -16,6 +16,63 @@ import (
 	"github.com/tmlabonte/llamactl/internal/process"
 )
 
+// applySpecDefaults fills in recommended parameter values when a speculative
+// decoding mode is selected and the fields are at zero/empty defaults.
+func applySpecDefaults(cfg *models.ModelConfig) {
+	switch cfg.SpecType {
+	case "draft":
+		if cfg.DraftMax == 0 {
+			cfg.DraftMax = 16
+		}
+		if cfg.DraftPMin == "" {
+			cfg.DraftPMin = "0.75"
+		}
+	case "ngram-simple":
+		if cfg.DraftMax == 0 {
+			cfg.DraftMax = 16
+		}
+		if cfg.NgramSizeN == 0 {
+			cfg.NgramSizeN = 12
+		}
+		if cfg.NgramSizeM == 0 {
+			cfg.NgramSizeM = 48
+		}
+	case "ngram-cache":
+		if cfg.DraftMax == 0 {
+			cfg.DraftMax = 16
+		}
+		if cfg.NgramSizeN == 0 {
+			cfg.NgramSizeN = 12
+		}
+		if cfg.NgramSizeM == 0 {
+			cfg.NgramSizeM = 48
+		}
+	case "ngram-map-k", "ngram-map-k4v":
+		if cfg.DraftMax == 0 {
+			cfg.DraftMax = 16
+		}
+		if cfg.NgramSizeN == 0 {
+			cfg.NgramSizeN = 12
+		}
+		if cfg.NgramSizeM == 0 {
+			cfg.NgramSizeM = 48
+		}
+	case "ngram-mod":
+		if cfg.DraftMax == 0 {
+			cfg.DraftMax = 64
+		}
+		if cfg.DraftMin == 0 {
+			cfg.DraftMin = 48
+		}
+		if cfg.NgramSizeN == 0 {
+			cfg.NgramSizeN = 24
+		}
+		if cfg.NgramSizeM == 0 {
+			cfg.NgramSizeM = 48
+		}
+	}
+}
+
 // parseOptionalFloat returns a *float64 if s is non-empty and valid, else nil.
 func parseOptionalFloat(s string) *float64 {
 	s = strings.TrimSpace(s)
@@ -553,6 +610,9 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 		} else {
 			cfg.NgramSizeM = 0
 		}
+
+		// Apply recommended defaults when switching modes and fields are empty
+		applySpecDefaults(cfg)
 	}
 
 	if err := s.registry.SetConfig(id, cfg); err != nil {
