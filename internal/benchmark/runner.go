@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -145,13 +146,18 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig, progress chan<- Progres
 		return
 	}
 
-	// Step 4: llama-bench (if preset says so)
+	// Step 4: llama-bench (if preset says so and binary exists)
 	if cfg.Preset.RunLlamaBench && cfg.BinaryDir != "" && cfg.ModelPath != "" {
-		send("llama-bench", "Running llama-bench — raw inference without server overhead...", 90)
-		if lb, err := r.runLlamaBench(ctx, cfg); err != nil {
-			slog.Warn("llama-bench failed", "error", err)
+		benchBinary := filepath.Join(cfg.BinaryDir, "llama-bench")
+		if _, err := os.Stat(benchBinary); err == nil {
+			send("llama-bench", "Running llama-bench — raw inference without server overhead...", 90)
+			if lb, err := r.runLlamaBench(ctx, cfg); err != nil {
+				slog.Warn("llama-bench failed", "error", err)
+			} else {
+				run.LlamaBench = lb
+			}
 		} else {
-			run.LlamaBench = lb
+			slog.Info("llama-bench not found in build directory, skipping", "path", benchBinary)
 		}
 	}
 
@@ -162,78 +168,35 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig, progress chan<- Progres
 }
 
 // ensureModelLoaded loads the model via the router and waits for it.
+// The router's /models/load blocks until the model is ready, so a successful
+// response means the model is loaded and ready for inference.
 func (r *Runner) ensureModelLoaded(ctx context.Context, routerURL, modelName string) error {
+	slog.Info("benchmark: loading model", "name", modelName, "url", routerURL)
 	body, _ := json.Marshal(map[string]string{"model": modelName})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, routerURL+"/models/load", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+
+	// The load request can take minutes for large models — use a generous timeout
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("load request failed: %w", err)
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
+
 	if resp.StatusCode == http.StatusOK {
-		// Model load initiated — wait for it below
-	} else if resp.StatusCode == http.StatusBadRequest && strings.Contains(string(respBody), "already loaded") {
-		// Model already loaded — that's fine
+		slog.Info("benchmark: model loaded successfully", "name", modelName)
 		return nil
-	} else {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
-
-	// Wait for model to be loaded (poll /models)
-	deadline := time.After(5 * time.Minute)
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-deadline:
-			return fmt.Errorf("timeout waiting for model to load")
-		case <-ticker.C:
-			if r.isModelLoaded(routerURL, modelName) {
-				return nil
-			}
-		}
+	if resp.StatusCode == http.StatusBadRequest && strings.Contains(string(respBody), "already loaded") {
+		slog.Info("benchmark: model already loaded", "name", modelName)
+		return nil
 	}
-}
-
-// isModelLoaded checks if a model is in "loaded" state.
-func (r *Runner) isModelLoaded(routerURL, modelName string) bool {
-	resp, err := http.Get(routerURL + "/models")
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-
-	var models []struct {
-		ID      string   `json:"id"`
-		Aliases []string `json:"aliases"`
-		Status  struct {
-			Value string `json:"value"`
-		} `json:"status"`
-	}
-	if json.NewDecoder(resp.Body).Decode(&models) != nil {
-		return false
-	}
-
-	for _, m := range models {
-		if m.Status.Value == "loaded" {
-			if m.ID == modelName {
-				return true
-			}
-			for _, a := range m.Aliases {
-				if a == modelName {
-					return true
-				}
-			}
-		}
-	}
-	return false
+	return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 }
 
 // benchPromptText is a fixed, deterministic text used for benchmarking.

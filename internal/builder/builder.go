@@ -300,6 +300,21 @@ func (b *Builder) runBuild(ctx context.Context, prof BuildProfile, srcDir string
 		}
 	}
 
+	// Copy llama-bench if it exists (used for benchmarking)
+	for _, benchCandidate := range []string{
+		filepath.Join(buildDir, "bin", "llama-bench"),
+		filepath.Join(buildDir, "bin", "bench"),
+	} {
+		if _, err := os.Stat(benchCandidate); err == nil {
+			dstBench := filepath.Join(outDir, "llama-bench")
+			if err := copyFile(benchCandidate, dstBench); err == nil {
+				os.Chmod(dstBench, 0o755)
+				sendLog("    Installed: llama-bench")
+			}
+			break
+		}
+	}
+
 	// Cleanup temp build dir
 	os.RemoveAll(buildDir)
 
