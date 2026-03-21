@@ -59,7 +59,7 @@ EOF
 
 VOLUME ["/data"]
 
-# LlamaCtl web UI
+# Llama Toolchest web UI
 EXPOSE 3000
 # llama-server inference + chat UI
 EXPOSE 8080

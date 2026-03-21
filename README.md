@@ -1,4 +1,4 @@
-# LlamaCtl
+# Llama Toolchest
 
 A web-based management interface for [llama.cpp](https://github.com/ggerganov/llama.cpp) inference servers. Build llama.cpp from source, download models from HuggingFace, configure and run inference, and expose an OpenAI-compatible API — all from a single containerized application.
 
@@ -9,7 +9,7 @@ A web-based management interface for [llama.cpp](https://github.com/ggerganov/ll
 - **Build Management** — Clone and compile llama.cpp inside the container with CUDA, ROCm, or CPU backends. Toggleable build options including OpenSSL for HTTPS support. View real-time build logs via SSE streaming.
 - **Model Management** — Download GGUF models directly from HuggingFace. Search repos, browse available quantizations, and track download progress. Configure per-model inference parameters. Scan directories for existing GGUF files.
 - **Multi-Model Loading** — Run multiple models simultaneously via llama.cpp's native router mode. Each model runs in its own isolated subprocess with per-model configuration. LRU eviction automatically unloads least-used models when VRAM limits are reached.
-- **Per-Model Configuration** — Each model can have its own context size, KV cache quantization, GPU layers, tensor split, flash attention, direct I/O, sampling parameters, user-defined aliases, and speculative decoding draft model. Settings are stored in the llamactl registry and translated to llama.cpp preset INI format.
+- **Per-Model Configuration** — Each model can have its own context size, KV cache quantization, GPU layers, tensor split, flash attention, direct I/O, sampling parameters, user-defined aliases, and speculative decoding draft model. Settings are stored in the registry and translated to llama.cpp preset INI format.
 - **Vision / Multimodal** — Automatic detection and association of mmproj (multimodal projector) files for vision-capable models. Vision badge shown on model cards. Send images via the OpenAI-compatible chat API using base64 or URL (requires OpenSSL build).
 - **Embedding Models** — Separate embedding model section with curated one-click downloads (nomic-embed, bge, mxbai-embed, snowflake-arctic-embed). Simplified config for embedding models. Automatic `--embeddings` flag injection.
 - **Speculative Decoding** — Pair a small draft model with a large model for faster inference. Draft model picker auto-filters by architecture and size. Config generates `model-draft` in the preset INI.
@@ -32,8 +32,8 @@ A web-based management interface for [llama.cpp](https://github.com/ggerganov/ll
 ## Quick Start
 
 ```bash
-git clone https://github.com/tmlabonte/llamactl.git
-cd llamactl
+git clone https://github.com/tmac1973/llama-toolchest.git
+cd llama-toolchest
 ./setup.sh install
 ```
 
@@ -123,7 +123,7 @@ RUNTIME=podman ./setup.sh install   # force Podman runtime
 
 ## Configuration
 
-LlamaCtl uses a YAML config file at `/data/config/llamactl.yaml` inside the container. Settings can also be changed from the Settings page in the UI.
+Llama Toolchest uses a YAML config file at `/data/config/llamactl.yaml` inside the container. Settings can also be changed from the Settings page in the UI.
 
 ```yaml
 listen_addr: ":3000"       # Management UI listen address

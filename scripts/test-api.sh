@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke test for LlamaCtl API endpoints.
+# Smoke test for Llama Toolchest API endpoints.
 # Usage: ./scripts/test-api.sh [--host HOST] [--port PORT]
 #
 # Tests page routes, management API, OpenAI proxy (via llama.cpp router),
@@ -62,7 +62,7 @@ test_json() {
 }
 
 echo ""
-echo "${CYAN}Testing LlamaCtl at $BASE${NC}"
+echo "${CYAN}Testing Llama Toolchest at $BASE${NC}"
 echo ""
 
 # ─── Pages ───────────────────────────────────────────────────────────────────
