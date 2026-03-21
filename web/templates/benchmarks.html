@@ -11,11 +11,18 @@
     <header>
         <div style="display:flex;justify-content:space-between;align-items:center;">
             <span>Benchmark Results</span>
-            <button type="button" class="outline secondary"
-                    style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;"
-                    onclick="var checks=document.querySelectorAll('.bench-check:checked');if(checks.length<2){alert('Select at least 2 benchmarks to compare');return;}var ids=Array.from(checks).map(c=>c.value).join(',');htmx.ajax('GET','/api/benchmarks/compare?ids='+ids,{target:'#comparison-view',swap:'innerHTML'});">
-                Compare Selected
-            </button>
+            <div role="group" style="margin:0;">
+                <button type="button" class="outline secondary"
+                        style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;"
+                        onclick="document.getElementById('bench-help').showModal();">
+                    ?
+                </button>
+                <button type="button" class="outline secondary"
+                        style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;"
+                        onclick="var checks=document.querySelectorAll('.bench-check:checked');if(checks.length<2){alert('Select at least 2 benchmarks to compare');return;}var ids=Array.from(checks).map(c=>c.value).join(',');htmx.ajax('GET','/api/benchmarks/compare?ids='+ids,{target:'#comparison-view',swap:'innerHTML'});">
+                    Compare Selected
+                </button>
+            </div>
         </div>
     </header>
     <div id="comparison-view"></div>
@@ -35,4 +42,45 @@
          hx-swap="innerHTML">
     </div>
 </article>
+
+<dialog id="bench-help" style="max-width:600px;">
+    <article>
+        <header>
+            <button type="button" aria-label="Close" rel="prev" onclick="this.closest('dialog').close();"></button>
+            About Benchmarks
+        </header>
+        <h5>What benchmarks measure</h5>
+        <p>Benchmarks send real chat completion requests to the running server and measure the response timings reported by llama.cpp. This captures true end-to-end performance including server overhead, GPU scheduling, and memory transfer.</p>
+
+        <h5>Metrics</h5>
+        <dl>
+            <dt><strong>PP t/s</strong> (Prompt Processing tokens/sec)</dt>
+            <dd>How fast the model reads and processes your input prompt. Higher is better. This is GPU compute-bound and benefits from batching.</dd>
+
+            <dt><strong>TG t/s</strong> (Token Generation tokens/sec)</dt>
+            <dd>How fast the model generates its response, token by token. This is the speed you feel during chat. Memory bandwidth-bound on GPU.</dd>
+
+            <dt><strong>TTFT</strong> (Time To First Token)</dt>
+            <dd>Wall-clock time from sending the request until the first response token appears. Lower is better. Includes prompt processing.</dd>
+        </dl>
+
+        <h5>Presets</h5>
+        <dl>
+            <dt><strong>Quick</strong> (~10 seconds)</dt>
+            <dd>Single test: 256 prompt tokens, 128 generated tokens, 1 repetition. Good for a fast sanity check.</dd>
+
+            <dt><strong>Standard</strong> (~2 minutes)</dt>
+            <dd>Tests 128, 512, and 2048 prompt tokens with 3 repetitions each. Also runs <code>llama-bench</code> for raw inference numbers without server overhead.</dd>
+
+            <dt><strong>Thorough</strong> (~10 minutes)</dt>
+            <dd>Tests 128, 512, 2048, and 8192 prompt tokens with 5 repetitions and 256 generated tokens. Includes <code>llama-bench</code>.</dd>
+        </dl>
+
+        <h5>llama-bench</h5>
+        <p>When included (Standard and Thorough presets), <code>llama-bench</code> runs the model directly without the HTTP server layer. This gives a performance ceiling — the fastest the model can run on your hardware. Comparing API results to llama-bench results shows how much overhead the server adds.</p>
+
+        <h5>Live Performance</h5>
+        <p>The Live Performance section at the bottom passively captures timing data from every chat completion request made through the API — no explicit benchmark needed. It shows a rolling average of real-world performance.</p>
+    </article>
+</dialog>
 {{end}}

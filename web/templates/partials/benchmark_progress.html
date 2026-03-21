@@ -1,19 +1,22 @@
 {{define "benchmark_progress"}}
 {{if eq .Status "running"}}
-<article aria-busy="true"
-         hx-get="/api/benchmarks/{{.ID}}/progress"
-         hx-trigger="every 2s"
-         hx-target="#benchmark-progress"
-         hx-swap="innerHTML">
-    <p>{{if .Detail}}{{.Detail}}{{else}}Benchmark starting...{{end}}</p>
-</article>
+<div style="padding:0.75rem 1rem;border:1px solid var(--pico-muted-border-color);border-radius:0.25rem;margin-bottom:1rem;"
+     hx-get="/api/benchmarks/{{.ID}}/progress"
+     hx-trigger="every 2s"
+     hx-target="#benchmark-progress"
+     hx-swap="innerHTML">
+    <span aria-busy="true" style="margin-right:0.5rem;"></span>
+    {{if .Detail}}{{.Detail}}{{else}}Benchmark starting...{{end}}
+</div>
 {{else if eq .Status "completed"}}
-<article hx-trigger="load" hx-get="/api/benchmarks" hx-target="#benchmark-list" hx-swap="innerHTML">
-    <p><ins>Benchmark complete!</ins></p>
-</article>
+<div style="padding:0.75rem 1rem;border:1px solid var(--pico-ins-color);border-radius:0.25rem;margin-bottom:1rem;"
+     hx-trigger="load" hx-get="/api/benchmarks" hx-target="#benchmark-list" hx-swap="innerHTML">
+    <ins>Benchmark complete!</ins>
+</div>
 {{else if eq .Status "failed"}}
-<article hx-trigger="load" hx-get="/api/benchmarks" hx-target="#benchmark-list" hx-swap="innerHTML">
-    <p><del>Benchmark failed:</del> {{.Error}}</p>
-</article>
+<div style="padding:0.75rem 1rem;border:1px solid var(--pico-del-color);border-radius:0.25rem;margin-bottom:1rem;"
+     hx-trigger="load" hx-get="/api/benchmarks" hx-target="#benchmark-list" hx-swap="innerHTML">
+    <del>Benchmark failed:</del> {{.Error}}
+</div>
 {{end}}
 {{end}}

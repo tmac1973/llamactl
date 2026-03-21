@@ -8,7 +8,7 @@
           hx-target="#benchmark-progress"
           hx-swap="innerHTML">
         <div class="grid">
-            <label>
+            <label title="Select an enabled model to benchmark. The model will be loaded automatically if not already in VRAM.">
                 Model
                 <select name="model_id" required>
                     {{range .Models}}
@@ -16,7 +16,7 @@
                     {{end}}
                 </select>
             </label>
-            <label>
+            <label title="Quick: single fast test. Standard: multiple prompt sizes + llama-bench. Thorough: comprehensive with larger prompts and more repetitions.">
                 Preset
                 <select name="preset">
                     {{range .Presets}}
