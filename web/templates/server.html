@@ -8,19 +8,6 @@
     .server-controls {
         flex-shrink: 0;
     }
-    .server-page .resize-handle {
-        flex-shrink: 0;
-        height: 6px;
-        cursor: row-resize;
-        background: var(--pico-muted-border-color);
-        border-radius: 3px;
-        margin: 2px 0;
-        transition: background 0.15s;
-    }
-    .server-page .resize-handle:hover,
-    .server-page .resize-handle.dragging {
-        background: var(--pico-primary);
-    }
     .server-page .log-section {
         flex: 1;
         min-height: 80px;
@@ -111,8 +98,6 @@
         </div>
     </div>
 
-    <div class="resize-handle" title="Drag to resize"></div>
-
     <div class="log-section">
         <article class="log-panel">
             <header>
@@ -142,37 +127,6 @@
 
 <script>
 (function() {
-    // --- Resize handle ---
-    const handle = document.querySelector('.server-page .resize-handle');
-    const logSection = document.querySelector('.server-page .log-section');
-    const page = document.querySelector('.server-page');
-
-    handle.addEventListener('mousedown', function(e) {
-        e.preventDefault();
-        handle.classList.add('dragging');
-        document.body.style.cursor = 'row-resize';
-        document.body.style.userSelect = 'none';
-        document.addEventListener('mousemove', onDrag);
-        document.addEventListener('mouseup', onRelease);
-    });
-
-    function onDrag(e) {
-        // Log section height = bottom of page minus cursor position minus handle height
-        var pageRect = page.getBoundingClientRect();
-        var newH = pageRect.bottom - e.clientY - handle.offsetHeight;
-        newH = Math.max(80, Math.min(newH, pageRect.height - 200));
-        logSection.style.flex = 'none';
-        logSection.style.height = newH + 'px';
-    }
-
-    function onRelease() {
-        handle.classList.remove('dragging');
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        document.removeEventListener('mousemove', onDrag);
-        document.removeEventListener('mouseup', onRelease);
-    }
-
     // --- Server log stream ---
     var logSSE = new EventSource('/api/service/logs');
     logSSE.onmessage = function(e) {
