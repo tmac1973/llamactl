@@ -5,7 +5,8 @@
      hx-swap="innerHTML">
 </div>
 
-<div id="benchmark-progress"></div>
+<div id="benchmark-progress"
+     style="padding:0.75rem 1rem;border-radius:0.25rem;margin-bottom:1rem;display:none;border:1px solid var(--pico-muted-border-color);"></div>
 
 <article>
     <header>
@@ -83,4 +84,34 @@
         <p>The Live Performance section at the bottom passively captures timing data from every chat completion request made through the API — no explicit benchmark needed. It shows a rolling average of real-world performance.</p>
     </article>
 </dialog>
+
+<script>
+(function() {
+    var pollTimer = null;
+    document.body.addEventListener('benchmarkStarted', function(e) {
+        var id = e.detail && e.detail.id;
+        if (!id) return;
+        var el = document.getElementById('benchmark-progress');
+        el.style.display = '';
+        // Clear any existing poll
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = setInterval(function() {
+            fetch('/api/benchmarks/' + id + '/progress', {headers: {'HX-Request': 'true'}})
+                .then(function(r) { return r.text(); })
+                .then(function(html) {
+                    el.innerHTML = html;
+                    // Check if done
+                    if (html.indexOf('complete') !== -1 || html.indexOf('failed') !== -1) {
+                        clearInterval(pollTimer);
+                        pollTimer = null;
+                        // Refresh the list
+                        htmx.ajax('GET', '/api/benchmarks', {target: '#benchmark-list', swap: 'innerHTML'});
+                        // Hide progress after a moment
+                        setTimeout(function() { el.style.display = 'none'; }, 5000);
+                    }
+                });
+        }, 2000);
+    });
+})();
+</script>
 {{end}}

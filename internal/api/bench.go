@@ -170,10 +170,11 @@ func (s *Server) handleStartBenchmark(w http.ResponseWriter, r *http.Request) {
 
 	if isHTMX(r) {
 		respondHTML(w)
-		s.renderPartial(w, "benchmark_progress", struct {
-			ID     string
-			Status string
-		}{ID: run.ID, Status: "running"})
+		// Return just the initial text content. The HX-Trigger-After-Swap
+		// header tells the page JS to start polling.
+		w.Header().Set("HX-Trigger-After-Swap", fmt.Sprintf(
+			`{"benchmarkStarted":{"id":%q}}`, run.ID))
+		fmt.Fprint(w, "&#x23F3; Benchmark starting...")
 		return
 	}
 

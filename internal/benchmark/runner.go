@@ -325,9 +325,12 @@ func (r *Runner) runLlamaBench(ctx context.Context, cfg RunConfig) (*LlamaBenchR
 	cmd := exec.CommandContext(ctx, benchBinary, args...)
 	cmd.Env = append(cmd.Environ(), "LD_LIBRARY_PATH="+cfg.BinaryDir)
 
+	slog.Info("running llama-bench", "binary", benchBinary, "args", strings.Join(args, " "))
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("llama-bench: %w", err)
+		return nil, fmt.Errorf("llama-bench: %w\nstderr: %s", err, stderr.String())
 	}
 
 	return parseLlamaBenchJSON(out)

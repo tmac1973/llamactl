@@ -1,22 +1,9 @@
 {{define "benchmark_progress"}}
 {{if eq .Status "running"}}
-<div id="bench-progress-poll"
-     style="padding:0.75rem 1rem;border:1px solid var(--pico-muted-border-color);border-radius:0.25rem;margin-bottom:1rem;"
-     hx-get="/api/benchmarks/{{.ID}}/progress"
-     hx-trigger="every 2s"
-     hx-target="#bench-progress-poll"
-     hx-swap="outerHTML">
-    &#x23F3; {{if .Detail}}{{.Detail}}{{else}}Benchmark starting...{{end}}
-</div>
+&#x23F3; {{if .Detail}}{{.Detail}}{{else}}Benchmark starting...{{end}}
 {{else if eq .Status "completed"}}
-<div style="padding:0.75rem 1rem;border:1px solid var(--pico-ins-color);border-radius:0.25rem;margin-bottom:1rem;"
-     hx-trigger="load" hx-get="/api/benchmarks" hx-target="#benchmark-list" hx-swap="innerHTML">
-    Benchmark complete!
-</div>
+Benchmark complete!
 {{else if eq .Status "failed"}}
-<div style="padding:0.75rem 1rem;border:1px solid var(--pico-del-color);border-radius:0.25rem;margin-bottom:1rem;"
-     hx-trigger="load" hx-get="/api/benchmarks" hx-target="#benchmark-list" hx-swap="innerHTML">
-    Benchmark failed: {{.Error}}
-</div>
+Benchmark failed: {{.Error}}
 {{end}}
 {{end}}
