@@ -20,7 +20,7 @@
                 </button>
                 <button type="button" class="outline secondary"
                         style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
-                        onclick="var checks=document.querySelectorAll('.bench-check:checked');if(checks.length<2){alert('Select at least 2 benchmarks to compare');return;}var ids=Array.from(checks).map(c=>c.value).join(',');htmx.ajax('GET','/api/benchmarks/compare?ids='+ids,{target:'#comparison-view',swap:'innerHTML'});">
+                        onclick="var checks=document.querySelectorAll('.bench-check:checked');if(checks.length<2){alert('Select at least 2 benchmarks to compare');return;}var ids=Array.from(checks).map(function(c){return c.value}).join(',');var el=document.getElementById('comparison-view');fetch('/api/benchmarks/compare?ids='+ids,{headers:{'HX-Request':'true'}}).then(function(r){return r.text()}).then(function(h){el.innerHTML=h});">
                     Compare Selected
                 </button>
             </span>
