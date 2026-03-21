@@ -243,11 +243,15 @@ func (s *Server) renderModelTable(w http.ResponseWriter, r *http.Request, modelL
 		peakVRAM := weightsGB
 		enabled := true
 		hasVision := m.HasBuiltinVision
+		gpuLabel := ""
 		if cfg, err := s.registry.GetConfig(m.ID); err == nil {
 			peakVRAM = models.VRAMEstimateForConfig(m, cfg)
 			enabled = cfg.Enabled
 			if cfg.MmprojPath != "" {
 				hasVision = true
+			}
+			if cfg.GPUAssign != "" && cfg.GPUAssign != "all" {
+				gpuLabel = models.GPUAssignLabel(cfg.GPUAssign)
 			}
 		}
 		baseVRAM := weightsGB
@@ -264,6 +268,7 @@ func (s *Server) renderModelTable(w http.ResponseWriter, r *http.Request, modelL
 			PendingDisable bool
 			NeedsReload    bool
 			HasVision      bool
+			GPULabel       string
 			ServiceState   string
 			BaseVRAMGB     float64
 			PeakVRAMGB     float64
@@ -276,6 +281,7 @@ func (s *Server) renderModelTable(w http.ResponseWriter, r *http.Request, modelL
 			PendingDisable: pendingDisable,
 			NeedsReload:    configChanged,
 			HasVision:      hasVision,
+			GPULabel:       gpuLabel,
 			ServiceState:   state,
 			BaseVRAMGB:     baseVRAM,
 			PeakVRAMGB:     peakVRAM,

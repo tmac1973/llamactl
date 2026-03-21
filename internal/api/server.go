@@ -147,6 +147,7 @@ func (s *Server) buildRouter() chi.Router {
 			r.Get("/{id}/logs", s.handleBuildLogs)
 			r.Delete("/{id}", s.handleDeleteBuild)
 		})
+		r.Get("/gpu-map", s.handleGPUMap)
 		r.Route("/models", func(r chi.Router) {
 			r.Get("/", s.handleListModels)
 			r.Get("/embeddings", s.handleListEmbeddingModels)

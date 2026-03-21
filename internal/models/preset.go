@@ -93,6 +93,12 @@ func writeConfigParams(b *strings.Builder, cfg *ModelConfig, isEmbedding bool) {
 	if cfg.TensorSplit != "" {
 		b.WriteString(fmt.Sprintf("tensor-split = %s\n", cfg.TensorSplit))
 	}
+	if cfg.SplitMode != "" {
+		b.WriteString(fmt.Sprintf("split-mode = %s\n", cfg.SplitMode))
+	}
+	if cfg.MainGPU > 0 {
+		b.WriteString(fmt.Sprintf("main-gpu = %d\n", cfg.MainGPU))
+	}
 	if isEmbedding {
 		b.WriteString("embeddings = true\n")
 	}

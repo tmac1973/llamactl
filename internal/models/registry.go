@@ -41,6 +41,9 @@ type ModelConfig struct {
 	Enabled        bool   `json:"enabled"`
 	GPULayers      int    `json:"gpu_layers"`
 	TensorSplit    string `json:"tensor_split"`
+	SplitMode      string `json:"split_mode,omitempty"`  // "layer" or ""
+	MainGPU        int    `json:"main_gpu,omitempty"`
+	GPUAssign      string `json:"gpu_assign,omitempty"`  // "all", "0", "0-1", "custom", etc.
 	ContextSize    int    `json:"context_size"`
 	Threads        int    `json:"threads"`
 	FlashAttention bool   `json:"flash_attention"`
@@ -111,6 +114,12 @@ func (c *ModelConfig) EffectiveFlagsFor(isEmbedding bool) string {
 	parts = append(parts, "--threads", strconv.Itoa(c.Threads))
 	if c.TensorSplit != "" {
 		parts = append(parts, "--tensor-split", c.TensorSplit)
+	}
+	if c.SplitMode != "" {
+		parts = append(parts, "--split-mode", c.SplitMode)
+	}
+	if c.MainGPU > 0 {
+		parts = append(parts, "--main-gpu", strconv.Itoa(c.MainGPU))
 	}
 	if !isEmbedding {
 		if c.FlashAttention {

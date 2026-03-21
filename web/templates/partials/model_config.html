@@ -58,11 +58,36 @@
     </div>
 
     <div class="grid">
+        {{if gt .NumGPUs 0}}
+        <label title="Assign this model to specific GPUs. Controls tensor-split, split-mode, and main-gpu automatically.">
+            GPU Assignment
+            <select name="gpu_assign"
+                    onchange="var c=this.closest('form').querySelector('.tensor-split-custom'); if(this.value==='custom'){c.style.display='';c.querySelector('input').name='tensor_split';}else{c.style.display='none';c.querySelector('input').removeAttribute('name');}">
+                {{range .GPUOptions}}
+                <option value="{{.Value}}"
+                        {{if eq $.Config.GPUAssign .Value}}selected{{end}}
+                        {{if and (eq $.Config.GPUAssign "") (eq .Value "all")}}selected{{end}}
+                        {{if .Disabled}}disabled{{end}}>
+                    {{.Label}}{{if .Recommend}} ★{{end}}
+                </option>
+                {{end}}
+            </select>
+        </label>
+        <div class="tensor-split-custom" style="{{if ne .Config.GPUAssign "custom"}}display:none;{{end}}">
+            <label title="Manual tensor-split ratios. Comma-separated values for each GPU.">
+                Tensor Split
+                <input type="text" {{if eq .Config.GPUAssign "custom"}}name="tensor_split"{{end}}
+                       value="{{.Config.TensorSplit}}"
+                       placeholder="e.g. 1,1,0,0">
+            </label>
+        </div>
+        {{else}}
         <label title="Split model across multiple GPUs. Comma-separated ratios that must match the number of selected GPUs. Leave empty for auto (equal split across all selected GPUs).">
             Tensor Split
             <input type="text" name="tensor_split" value="{{.Config.TensorSplit}}"
                    placeholder="Auto (equal split)">
         </label>
+        {{end}}
         <label title="Number of CPU threads for inference. More threads help with CPU-bound layers. Generally set to your physical core count.">
             Threads
             <input type="number" name="threads" value="{{.Config.Threads}}"

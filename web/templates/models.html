@@ -10,6 +10,12 @@
     </button>
 </div>
 
+<div id="gpu-map"
+     hx-get="/api/gpu-map"
+     hx-trigger="load, gpuMapChanged from:body"
+     hx-swap="innerHTML">
+</div>
+
 <div id="active-downloads"
      hx-get="/api/hf/downloads"
      hx-trigger="load, every 3s"

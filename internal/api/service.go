@@ -319,6 +319,7 @@ func (s *Server) handleModelEnable(w http.ResponseWriter, r *http.Request) {
 	// available list, so we don't call them here.
 
 	if isHTMX(r) {
+		w.Header().Set("HX-Trigger-After-Swap", `{"gpuMapChanged":true}`)
 		s.handleListModels(w, r)
 		return
 	}
@@ -393,6 +394,38 @@ func (s *Server) handleGetModelConfig(w http.ResponseWriter, r *http.Request) {
 
 		hasBuiltinVision := model != nil && model.HasBuiltinVision
 
+		// GPU assignment options
+		metrics := s.monitor.Current()
+		numGPUs := len(metrics.GPU)
+		gpuOptions := models.GPUAssignOptions(numGPUs)
+
+		// Migration: if TensorSplit is set but GPUAssign is empty, show as "custom"
+		if cfg.GPUAssign == "" && cfg.TensorSplit != "" {
+			cfg.GPUAssign = "custom"
+		}
+
+		// Mark disabled/recommended options
+		if numGPUs > 0 && model != nil {
+			perGPUGB := float64(metrics.GPU[0].VRAMTotalMB) / 1024.0
+			modelVRAM := models.VRAMEstimateForConfig(model, cfg)
+			allModels := s.registry.List()
+			allConfigs := make(map[string]*models.ModelConfig)
+			for _, m := range allModels {
+				if c, err := s.registry.GetConfig(m.ID); err == nil {
+					allConfigs[m.ID] = c
+				}
+			}
+			existing := models.ComputeAllocations(allModels, allConfigs, numGPUs)
+			// Exclude the current model from existing allocations
+			var filtered []models.GPUAllocation
+			for _, a := range existing {
+				if a.ModelID != id {
+					filtered = append(filtered, a)
+				}
+			}
+			models.MarkRecommended(gpuOptions, modelVRAM, perGPUGB, filtered)
+		}
+
 		data := struct {
 			ModelID          string
 			Config           *models.ModelConfig
@@ -402,6 +435,8 @@ func (s *Server) handleGetModelConfig(w http.ResponseWriter, r *http.Request) {
 			HasBuiltinVision bool
 			IsEmbedding      bool
 			DraftCandidates  []models.DraftCandidate
+			GPUOptions       []models.GPUOption
+			NumGPUs          int
 		}{
 			ModelID:          id,
 			Config:           cfg,
@@ -411,6 +446,8 @@ func (s *Server) handleGetModelConfig(w http.ResponseWriter, r *http.Request) {
 			HasBuiltinVision: hasBuiltinVision,
 			IsEmbedding:      isEmbedding,
 			DraftCandidates:  draftCandidates,
+			GPUOptions:       gpuOptions,
+			NumGPUs:          numGPUs,
 		}
 		s.renderPartial(w, "model_config", data)
 		return
@@ -438,7 +475,26 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 	} else {
 		r.ParseForm()
 		cfg.GPULayers, _ = strconv.Atoi(r.FormValue("gpu_layers"))
-		cfg.TensorSplit = r.FormValue("tensor_split")
+
+		// GPU assignment
+		gpuAssign := r.FormValue("gpu_assign")
+		cfg.GPUAssign = gpuAssign
+		if gpuAssign != "" && gpuAssign != "custom" && gpuAssign != "all" {
+			numGPUs := len(s.monitor.Current().GPU)
+			ts, sm, mg := models.ResolveGPUAssign(gpuAssign, numGPUs)
+			cfg.TensorSplit = ts
+			cfg.SplitMode = sm
+			cfg.MainGPU = mg
+		} else if gpuAssign == "all" {
+			cfg.TensorSplit = ""
+			cfg.SplitMode = ""
+			cfg.MainGPU = 0
+		} else {
+			// "custom" — preserve the raw tensor_split from form
+			cfg.TensorSplit = r.FormValue("tensor_split")
+			cfg.SplitMode = ""
+			cfg.MainGPU = 0
+		}
 		cfg.ContextSize, _ = strconv.Atoi(r.FormValue("context_size"))
 		cfg.Threads, _ = strconv.Atoi(r.FormValue("threads"))
 		cfg.FlashAttention = r.FormValue("flash_attention") == "on"
@@ -521,7 +577,7 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 			baseVRAM := models.BytesToGB(model.SizeBytes) + 0.2
 			peakVRAM := models.VRAMEstimateForConfig(model, cfg)
 			w.Header().Set("HX-Trigger", fmt.Sprintf(
-				`{"vramUpdated":{"id":%q,"vram":"%.1f - %.1f GB"}}`,
+				`{"vramUpdated":{"id":%q,"vram":"%.1f - %.1f GB"},"gpuMapChanged":true}`,
 				id, baseVRAM, peakVRAM))
 		}
 	}
