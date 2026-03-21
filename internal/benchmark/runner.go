@@ -73,11 +73,29 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig, progress chan<- Progres
 		return
 	}
 
-	// Step 2: Warmup
-	send("warmup", "Warming up (JIT kernels)...", 10)
-	if err := r.sendCompletion(ctx, cfg.RouterURL, cfg.RouterName, 64, 16); err != nil {
-		slog.Warn("benchmark warmup failed", "error", err)
-		// Continue anyway — model might still work
+	// Step 2: Warmup — retry with backoff since model may still be initializing
+	send("warmup", "Warming up (waiting for model to be ready)...", 10)
+	var warmupErr error
+	for attempt := 1; attempt <= 5; attempt++ {
+		warmupErr = r.sendCompletion(ctx, cfg.RouterURL, cfg.RouterName, 64, 16)
+		if warmupErr == nil {
+			break
+		}
+		slog.Warn("benchmark warmup attempt failed, retrying...", "attempt", attempt, "error", warmupErr)
+		select {
+		case <-ctx.Done():
+			run.Status = StatusFailed
+			run.Error = "cancelled during warmup"
+			send("error", run.Error, 0)
+			return
+		case <-time.After(time.Duration(attempt*3) * time.Second):
+		}
+	}
+	if warmupErr != nil {
+		run.Status = StatusFailed
+		run.Error = fmt.Sprintf("warmup failed after retries: %v", warmupErr)
+		send("error", run.Error, 0)
+		return
 	}
 
 	// Step 3: Run benchmarks

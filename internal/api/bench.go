@@ -20,17 +20,9 @@ func (s *Server) handleListBenchmarks(w http.ResponseWriter, r *http.Request) {
 
 	if isHTMX(r) {
 		respondHTML(w)
-		hasRunning := false
-		for _, run := range runs {
-			if run.Status == benchmark.StatusRunning {
-				hasRunning = true
-				break
-			}
-		}
 		s.renderPartial(w, "benchmark_list", struct {
-			Runs       []benchmark.BenchmarkRun
-			HasRunning bool
-		}{Runs: runs, HasRunning: hasRunning})
+			Runs []benchmark.BenchmarkRun
+		}{Runs: runs})
 		return
 	}
 
@@ -203,64 +195,28 @@ func (s *Server) handleDeleteBenchmark(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleBenchmarkProgress streams SSE progress updates.
+// handleBenchmarkProgress returns the current state of a running benchmark.
+// Called by HTMX polling from the progress partial.
 func (s *Server) handleBenchmarkProgress(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	s.benchProgressMu.RLock()
-	ch := s.benchProgress[id]
-	s.benchProgressMu.RUnlock()
-
-	// If no active progress channel, check if benchmark is already done
-	if ch == nil {
-		run, err := s.bench.Get(id)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
-		}
-		if isHTMX(r) {
-			respondHTML(w)
-			if run.Status == benchmark.StatusCompleted || run.Status == benchmark.StatusFailed {
-				// Benchmark already done — render final state
-				s.renderPartial(w, "benchmark_progress", struct {
-					ID     string
-					Status string
-					Error  string
-				}{ID: run.ID, Status: run.Status, Error: run.Error})
-			}
-			return
-		}
-		respondJSON(w, run)
+	run, err := s.bench.Get(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
-	// Stream SSE
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+	if isHTMX(r) {
+		respondHTML(w)
+		s.renderPartial(w, "benchmark_progress", struct {
+			ID     string
+			Status string
+			Error  string
+		}{ID: run.ID, Status: run.Status, Error: run.Error})
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	for {
-		select {
-		case update, ok := <-ch:
-			if !ok {
-				// Channel closed — benchmark done
-				fmt.Fprintf(w, "event: done\ndata: {}\n\n")
-				flusher.Flush()
-				return
-			}
-			fmt.Fprintf(w, "data: {\"stage\":%q,\"detail\":%q,\"pct\":%d}\n\n",
-				update.Stage, update.Detail, update.Pct)
-			flusher.Flush()
-		case <-r.Context().Done():
-			return
-		}
-	}
+	respondJSON(w, run)
 }
 
 // handleCompareBenchmarks returns comparison data for selected runs.
