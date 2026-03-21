@@ -53,6 +53,9 @@ type BenchmarkRun struct {
 	Summary    *BenchmarkSummary  `json:"summary,omitempty"`
 	LlamaBench *LlamaBenchResult  `json:"llama_bench,omitempty"`
 
+	// Progress (transient, not persisted — only meaningful while running)
+	ProgressDetail string `json:"progress_detail,omitempty"`
+
 	// Duration
 	DurationMs int64 `json:"duration_ms,omitempty"`
 }

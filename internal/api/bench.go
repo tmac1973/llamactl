@@ -211,8 +211,9 @@ func (s *Server) handleBenchmarkProgress(w http.ResponseWriter, r *http.Request)
 		s.renderPartial(w, "benchmark_progress", struct {
 			ID     string
 			Status string
+			Detail string
 			Error  string
-		}{ID: run.ID, Status: run.Status, Error: run.Error})
+		}{ID: run.ID, Status: run.Status, Detail: run.ProgressDetail, Error: run.Error})
 		return
 	}
 

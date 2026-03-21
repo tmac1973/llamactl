@@ -5,7 +5,7 @@
          hx-trigger="every 2s"
          hx-target="#benchmark-progress"
          hx-swap="innerHTML">
-    <p>Benchmark running... <small>Results will appear when complete.</small></p>
+    <p>{{if .Detail}}{{.Detail}}{{else}}Benchmark starting...{{end}}</p>
 </article>
 {{else if eq .Status "completed"}}
 <article hx-trigger="load" hx-get="/api/benchmarks" hx-target="#benchmark-list" hx-swap="innerHTML">

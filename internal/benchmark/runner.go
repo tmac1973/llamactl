@@ -56,6 +56,9 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig, progress chan<- Progres
 	}()
 
 	send := func(stage, detail string, pct int) {
+		// Update the run's progress detail so the polling endpoint can serve it
+		run.ProgressDetail = detail
+		r.store.Save(run)
 		if progress != nil {
 			select {
 			case progress <- ProgressUpdate{Stage: stage, Detail: detail, Pct: pct}:
@@ -65,7 +68,7 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig, progress chan<- Progres
 	}
 
 	// Step 1: Ensure model is loaded
-	send("loading", "Loading model into VRAM...", 5)
+	send("loading", "Loading model into VRAM — this may take a minute for large models...", 5)
 	if err := r.ensureModelLoaded(ctx, cfg.RouterURL, cfg.RouterName); err != nil {
 		run.Status = StatusFailed
 		run.Error = fmt.Sprintf("failed to load model: %v", err)
@@ -74,7 +77,7 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig, progress chan<- Progres
 	}
 
 	// Step 2: Warmup — retry with backoff since model may still be initializing
-	send("warmup", "Warming up (waiting for model to be ready)...", 10)
+	send("warmup", "Warming up — sending test request to initialize GPU kernels...", 10)
 	var warmupErr error
 	for attempt := 1; attempt <= 5; attempt++ {
 		warmupErr = r.sendCompletion(ctx, cfg.RouterURL, cfg.RouterName, 64, 16)
@@ -118,7 +121,7 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig, progress chan<- Progres
 
 			completedTests++
 			pct := 15 + (completedTests*70)/totalTests
-			send("benchmark", fmt.Sprintf("%d tokens, rep %d/%d", promptTokens, rep, cfg.Preset.Repetitions), pct)
+			send("benchmark", fmt.Sprintf("API benchmark: %d prompt tokens, generating %d tokens (rep %d/%d)", promptTokens, cfg.Preset.GenTokens, rep, cfg.Preset.Repetitions), pct)
 
 			result, err := r.runOneTest(ctx, cfg.RouterURL, cfg.RouterName, promptTokens, cfg.Preset.GenTokens, rep)
 			if err != nil {
@@ -144,7 +147,7 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig, progress chan<- Progres
 
 	// Step 4: llama-bench (if preset says so)
 	if cfg.Preset.RunLlamaBench && cfg.BinaryDir != "" && cfg.ModelPath != "" {
-		send("llama-bench", "Running raw inference benchmark...", 90)
+		send("llama-bench", "Running llama-bench — raw inference without server overhead...", 90)
 		if lb, err := r.runLlamaBench(ctx, cfg); err != nil {
 			slog.Warn("llama-bench failed", "error", err)
 		} else {
