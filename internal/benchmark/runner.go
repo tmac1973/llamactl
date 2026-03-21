@@ -88,6 +88,7 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig, progress chan<- Progres
 	}
 	completedTests := 0
 
+	var lastErr error
 	for _, promptTokens := range cfg.Preset.PromptTokens {
 		for rep := 1; rep <= cfg.Preset.Repetitions; rep++ {
 			if ctx.Err() != nil {
@@ -103,13 +104,24 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig, progress chan<- Progres
 
 			result, err := r.runOneTest(ctx, cfg.RouterURL, cfg.RouterName, promptTokens, cfg.Preset.GenTokens, rep)
 			if err != nil {
-				slog.Warn("benchmark test failed", "prompt_tokens", promptTokens, "rep", rep, "error", err)
+				lastErr = err
+				slog.Error("benchmark test failed", "prompt_tokens", promptTokens, "rep", rep, "error", err)
 				continue
 			}
+			slog.Info("benchmark result", "prompt_tokens", result.PromptTokens,
+				"gen_tokens", result.GenTokens, "pp_tps", result.PromptTokPerSec,
+				"tg_tps", result.GenTokPerSec)
 			run.Results = append(run.Results, *result)
 			// Save intermediate results
 			r.store.Save(run)
 		}
+	}
+
+	if len(run.Results) == 0 && lastErr != nil {
+		run.Status = StatusFailed
+		run.Error = fmt.Sprintf("all tests failed: %v", lastErr)
+		send("error", run.Error, 0)
+		return
 	}
 
 	// Step 4: llama-bench (if preset says so)
@@ -141,8 +153,13 @@ func (r *Runner) ensureModelLoaded(ctx context.Context, routerURL, modelName str
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusOK {
+		// Model load initiated — wait for it below
+	} else if resp.StatusCode == http.StatusBadRequest && strings.Contains(string(respBody), "already loaded") {
+		// Model already loaded — that's fine
+		return nil
+	} else {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
