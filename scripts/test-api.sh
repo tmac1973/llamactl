@@ -137,20 +137,27 @@ except:
 " 2>/dev/null)
 echo "  ${DIM}Models reported by router: $model_count${NC}"
 
-# Get the first loaded model name
+# Get the first chat model (skip embedding models)
 first_model=$(echo "$v1_body" | python3 -c "
 import json,sys
+embed_patterns = ['embed', 'bge-', 'e5-', 'gte-', 'arctic-embed', 'mxbai-embed', 'jina-embed']
+def is_embedding(mid):
+    mid = mid.lower()
+    return any(p in mid for p in embed_patterns)
 try:
     d = json.load(sys.stdin)
+    # Prefer a loaded chat model
     for m in d.get('data', []):
         s = m.get('status', {})
-        if isinstance(s, dict) and s.get('value') == 'loaded':
+        if isinstance(s, dict) and s.get('value') == 'loaded' and not is_embedding(m['id']):
             print(m['id'])
             break
     else:
-        # Fallback: first model regardless of status
-        if d.get('data'):
-            print(d['data'][0]['id'])
+        # Fallback: first non-embedding model
+        for m in d.get('data', []):
+            if not is_embedding(m['id']):
+                print(m['id'])
+                break
 except:
     pass
 " 2>/dev/null)
@@ -174,12 +181,12 @@ test_json POST "$BASE/v1/chat/completions" \
     '"choices"' \
     "Chat completion with model name"
 
-# Test without model field — router should use default or error
+# Test without model field — router requires model name in multi-model mode
 test_json POST "$BASE/v1/chat/completions" \
     '{"messages":[{"role":"user","content":"Say hi"}],"max_tokens":8}' \
     '' \
-    "Chat completion without model field (router decides)" \
-    200
+    "Chat completion without model field (expect 400)" \
+    400
 
 echo ""
 echo "=== Results: ${GREEN}$PASS passed${NC}, ${RED}$FAIL failed${NC} ==="
