@@ -1,11 +1,11 @@
 services:
-  llamactl:
+  llama-toolchest:
     build:
       context: .
       dockerfile: Dockerfile.rocm
-    container_name: llamactl
+    container_name: llama-toolchest
     ports:
-      - "${LLAMACTL_PORT:-3000}:3000"   # LlamaCtl management UI
+      - "${LLAMACTL_PORT:-3000}:3000"   # Llama Toolchest management UI
       - "${LLAMACTL_INFERENCE_PORT:-8080}:8080"   # llama-server router (chat UI + inference)
     volumes:
       - llamactl-data:/data:z

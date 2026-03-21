@@ -7,6 +7,6 @@
 # The host directory is bind-mounted to /data/models inside the container,
 # so models persist independently of the Docker volume.
 services:
-  llamactl:
+  llama-toolchest:
     volumes:
       - ${LLAMACTL_MODELS_DIR}:/data/models:z
