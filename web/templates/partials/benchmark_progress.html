@@ -1,11 +1,15 @@
 {{define "benchmark_progress"}}
 {{if eq .Status "running"}}
-<div style="padding:0.75rem 1rem;border:1px solid var(--pico-muted-border-color);border-radius:0.25rem;margin-bottom:1rem;"
+<div style="padding:0.75rem 1rem;border:1px solid var(--pico-muted-border-color);border-radius:0.25rem;margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;"
      hx-get="/api/benchmarks/{{.ID}}/progress"
      hx-trigger="every 2s"
      hx-target="#benchmark-progress"
      hx-swap="innerHTML">
-    <span aria-busy="true" style="margin-right:0.5rem;"></span>
+    <svg width="16" height="16" viewBox="0 0 16 16" style="flex-shrink:0;animation:bench-spin 1s linear infinite;">
+        <circle cx="8" cy="8" r="6" fill="none" stroke="var(--pico-muted-color)" stroke-width="2"/>
+        <path d="M8 2a6 6 0 0 1 6 6" fill="none" stroke="var(--pico-primary)" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <style>@keyframes bench-spin{to{transform:rotate(360deg)}}</style>
     {{if .Detail}}{{.Detail}}{{else}}Benchmark starting...{{end}}
 </div>
 {{else if eq .Status "completed"}}

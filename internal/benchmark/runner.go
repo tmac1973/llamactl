@@ -240,11 +240,14 @@ func (r *Runner) isModelLoaded(routerURL, modelName string) bool {
 const benchPromptText = `The history of computing is a story of human ingenuity and the relentless pursuit of automation. From the earliest mechanical calculators of the 17th century to the modern silicon chips that power our world, each generation has built upon the discoveries of the last. Charles Babbage conceived of the Analytical Engine in the 1830s, a mechanical general-purpose computer that, had it been built, would have contained many features of modern computers. Ada Lovelace, working with Babbage, wrote what is often considered the first computer program. The 20th century brought electronic computing into reality. Alan Turing formalized the concept of computation itself, while engineers at the University of Pennsylvania built ENIAC, one of the first electronic general-purpose computers. The invention of the transistor at Bell Labs in 1947 revolutionized electronics, leading to smaller, faster, and more reliable computers. The integrated circuit, developed independently by Jack Kilby and Robert Noyce, made it possible to place thousands and eventually billions of transistors on a single chip. This exponential growth in computing power, described by Moore's Law, has driven decades of innovation. Personal computers brought computing to the masses in the 1980s, the internet connected them in the 1990s, and smartphones made computing truly ubiquitous in the 2000s. Today, artificial intelligence and machine learning represent the latest frontier, with large language models demonstrating remarkable capabilities in understanding and generating human language. These models, trained on vast amounts of text data, can engage in conversation, write code, analyze documents, and assist with creative tasks. The computational requirements for training and running these models have driven advances in GPU computing, distributed systems, and specialized hardware accelerators. `
 
 // buildPrompt constructs a prompt of approximately the target token count
-// by repeating the benchmark text.
-func buildPrompt(targetTokens int) string {
+// by repeating the benchmark text. The repetition parameter varies the
+// prompt to defeat llama.cpp's prompt cache.
+func buildPrompt(targetTokens int, repetition int) string {
 	// Rough approximation: 1 token ≈ 4 characters for English text
 	targetChars := targetTokens * 4
 	var b strings.Builder
+	// Prefix with repetition-specific text to defeat prompt caching
+	b.WriteString(fmt.Sprintf("This is benchmark repetition number %d. Please analyze the following text carefully and provide a detailed response.\n\n", repetition))
 	for b.Len() < targetChars {
 		b.WriteString(benchPromptText)
 	}
@@ -257,7 +260,7 @@ func buildPrompt(targetTokens int) string {
 
 // sendCompletion sends a chat completion and returns the timings.
 func (r *Runner) sendCompletion(ctx context.Context, routerURL, model string, promptTokens, genTokens int) error {
-	_, err := r.sendCompletionWithTimings(ctx, routerURL, model, promptTokens, genTokens)
+	_, err := r.sendCompletionWithTimings(ctx, routerURL, model, promptTokens, genTokens, 0)
 	return err
 }
 
@@ -271,8 +274,8 @@ type timingsResponse struct {
 	PredictedPerSec float64 `json:"predicted_per_second"`
 }
 
-func (r *Runner) sendCompletionWithTimings(ctx context.Context, routerURL, model string, promptTokens, genTokens int) (*timingsResponse, error) {
-	prompt := buildPrompt(promptTokens)
+func (r *Runner) sendCompletionWithTimings(ctx context.Context, routerURL, model string, promptTokens, genTokens, repetition int) (*timingsResponse, error) {
+	prompt := buildPrompt(promptTokens, repetition)
 	reqBody, _ := json.Marshal(map[string]any{
 		"model":      model,
 		"max_tokens": genTokens,
@@ -319,7 +322,7 @@ func (r *Runner) sendCompletionWithTimings(ctx context.Context, routerURL, model
 
 // runOneTest runs a single benchmark test point.
 func (r *Runner) runOneTest(ctx context.Context, routerURL, model string, promptTokens, genTokens, rep int) (*BenchmarkResult, error) {
-	timings, err := r.sendCompletionWithTimings(ctx, routerURL, model, promptTokens, genTokens)
+	timings, err := r.sendCompletionWithTimings(ctx, routerURL, model, promptTokens, genTokens, rep)
 	if err != nil {
 		return nil, err
 	}

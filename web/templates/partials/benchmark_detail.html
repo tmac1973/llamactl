@@ -9,7 +9,7 @@
             <small><strong>Configuration</strong></small><br>
             <small>
                 GPU Layers: {{.Config.GPULayers}} |
-                Context: {{.Config.ContextSize}} |
+                Context: {{if .Config.ContextSize}}{{.Config.ContextSize}}{{else}}default{{end}} |
                 Threads: {{.Config.Threads}}<br>
                 {{if .Config.GPUAssign}}GPU Assign: {{.Config.GPUAssign}} | {{end}}
                 {{if .Config.TensorSplit}}Tensor Split: {{.Config.TensorSplit}} | {{end}}
@@ -27,17 +27,17 @@
     </div>
 
     {{if .Results}}
-    <small><strong>Results by Prompt Size</strong></small>
+    <small><strong>API Benchmark</strong> — real chat completion requests through the server</small>
     <table role="grid" style="font-size:0.85rem;">
         <thead>
             <tr>
-                <th>Prompt Tokens</th>
-                <th>Gen Tokens</th>
-                <th>Rep</th>
-                <th>PP t/s</th>
-                <th>TG t/s</th>
-                <th>TTFT (ms)</th>
-                <th>Total (ms)</th>
+                <th title="Number of tokens in the input prompt">Prompt</th>
+                <th title="Number of tokens generated in the response">Generated</th>
+                <th title="Repetition number">Rep</th>
+                <th title="Prompt processing speed (tokens/sec) — how fast input is read">PP t/s</th>
+                <th title="Token generation speed (tokens/sec) — how fast output is written">TG t/s</th>
+                <th title="Time to first token (milliseconds) — wait before response starts">TTFT</th>
+                <th title="Total request time (milliseconds)">Total</th>
             </tr>
         </thead>
         <tbody>
@@ -57,7 +57,7 @@
     {{end}}
 
     {{if .LlamaBench}}
-    <small><strong>Raw Inference (llama-bench)</strong></small>
+    <small><strong>Raw Inference (llama-bench)</strong> — direct model benchmark, no server overhead</small>
     <table role="grid" style="font-size:0.85rem;">
         <thead><tr><th>Metric</th><th>Value</th></tr></thead>
         <tbody>
@@ -67,6 +67,10 @@
         </tbody>
     </table>
     {{end}}
+
+    {{if not .LlamaBench}}{{if .Results}}
+    <small style="color:var(--pico-muted-color);">No llama-bench results — use Standard or Thorough preset to include raw inference benchmarks.</small>
+    {{end}}{{end}}
 
     {{if .DurationMs}}
     <small>Total duration: {{printf "%.1f" (divf .DurationMs 1000.0)}}s</small>
