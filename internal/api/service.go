@@ -176,16 +176,6 @@ func (s *Server) handleLoadedModels(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, `</div>`)
 }
 
-// handleDebugRouterModels dumps the raw JSON from the router's /models endpoint.
-func (s *Server) handleDebugRouterModels(w http.ResponseWriter, r *http.Request) {
-	raw, err := s.process.ListModelsRaw()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(raw)
-}
 
 func (s *Server) handleServiceLogTabs(w http.ResponseWriter, r *http.Request) {
 	// With the native router, logs are combined — no tabs needed.

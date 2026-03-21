@@ -245,7 +245,6 @@ func (m *Manager) LoadModel(name string) error {
 		return fmt.Errorf("router not running")
 	}
 
-	slog.Info("router: loading model", "name", name)
 	body, _ := json.Marshal(map[string]string{"model": name})
 	resp, err := http.Post(url+"/models/load", "application/json", bytes.NewReader(body))
 	if err != nil {
@@ -257,7 +256,6 @@ func (m *Manager) LoadModel(name string) error {
 		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("load model %q: HTTP %d: %s", name, resp.StatusCode, string(respBody))
 	}
-	slog.Info("router: model loaded", "name", name)
 	return nil
 }
 
@@ -285,8 +283,8 @@ func (m *Manager) UnloadModel(name string) error {
 	return nil
 }
 
-// ListModelsRaw returns the raw JSON from the router's /models endpoint.
-func (m *Manager) ListModelsRaw() ([]byte, error) {
+// ListModels queries the router for all known models and their status.
+func (m *Manager) ListModels() ([]ModelStatus, error) {
 	m.mu.Lock()
 	url := m.routerURL
 	m.mu.Unlock()
@@ -301,21 +299,12 @@ func (m *Manager) ListModelsRaw() ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
-}
-
-// ListModels queries the router for all known models and their status.
-func (m *Manager) ListModels() ([]ModelStatus, error) {
-	raw, err := m.ListModelsRaw()
-	if err != nil {
-		return nil, err
-	}
 
 	var result struct {
 		Data []ModelStatus `json:"data"`
 	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("decode models: %w (raw: %s)", err, string(raw))
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
 	}
 	return result.Data, nil
 }

@@ -180,7 +180,6 @@ func (s *Server) buildRouter() chi.Router {
 			r.Get("/log-tabs", s.handleServiceLogTabs)
 			r.Get("/health", s.handleServiceHealth)
 			r.Get("/loaded-models", s.handleLoadedModels)
-			r.Get("/debug/router-models", s.handleDebugRouterModels)
 		})
 		r.Get("/ps", s.handlePS)
 		r.Route("/settings", func(r chi.Router) {
