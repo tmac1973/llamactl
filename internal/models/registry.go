@@ -46,7 +46,10 @@ type ModelConfig struct {
 	Jinja          bool   `json:"jinja"`
 	KVCacheQuant   string `json:"kv_cache_quant"` // "", "q8_0", "q4_0"
 	DirectIO       bool   `json:"direct_io"`       // bypass page cache, load straight to VRAM
-	MmprojPath     string `json:"mmproj_path,omitempty"` // path to mmproj GGUF for vision models
+	MmprojPath     string `json:"mmproj_path,omitempty"`      // path to mmproj GGUF for vision models
+	DraftModelPath string `json:"draft_model_path,omitempty"` // path to draft model for speculative decoding
+	DraftMax       int    `json:"draft_max,omitempty"`        // max draft tokens (default 16)
+	DraftMin       int    `json:"draft_min,omitempty"`        // min draft tokens (default 2)
 	ExtraFlags     string `json:"extra_flags"`
 
 	// Sampling parameters — nil means use llama.cpp server default.
@@ -115,6 +118,15 @@ func (c *ModelConfig) EffectiveFlagsFor(isEmbedding bool) string {
 		}
 		if c.MmprojPath != "" {
 			parts = append(parts, "--mmproj", c.MmprojPath)
+		}
+		if c.DraftModelPath != "" {
+			parts = append(parts, "--model-draft", c.DraftModelPath)
+			if c.DraftMax > 0 {
+				parts = append(parts, "--draft-max", strconv.Itoa(c.DraftMax))
+			}
+			if c.DraftMin > 0 {
+				parts = append(parts, "--draft-min", strconv.Itoa(c.DraftMin))
+			}
 		}
 	}
 	if c.ExtraFlags != "" {
@@ -535,6 +547,54 @@ func (r *Registry) AutoDetectMMProj() int {
 		r.save()
 	}
 	return found
+}
+
+// DraftCandidate represents a model that could serve as a speculative draft.
+type DraftCandidate struct {
+	ID       string
+	Filename string
+	FilePath string
+	SizeGB   float64
+	Arch     string
+}
+
+// FindDraftCandidates returns models that could serve as draft models for
+// the given model: same architecture family, significantly smaller.
+func (r *Registry) FindDraftCandidates(id string) []DraftCandidate {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	target, ok := r.data.Models[id]
+	if !ok || target.Arch == "" {
+		return nil
+	}
+
+	var candidates []DraftCandidate
+	for _, m := range r.data.Models {
+		if m.ID == id {
+			continue
+		}
+		// Same architecture family
+		if m.Arch != target.Arch {
+			continue
+		}
+		// Must be significantly smaller (< 40% of target size)
+		if m.SizeBytes >= target.SizeBytes*4/10 {
+			continue
+		}
+		// Skip embedding models
+		if IsEmbeddingModel(m.ModelID) || IsEmbeddingModel(m.ID) {
+			continue
+		}
+		candidates = append(candidates, DraftCandidate{
+			ID:       m.ID,
+			Filename: m.Filename,
+			FilePath: m.FilePath,
+			SizeGB:   BytesToGB(m.SizeBytes),
+			Arch:     m.Arch,
+		})
+	}
+	return candidates
 }
 
 // shardRe matches shard filenames like "model-00002-of-00005.gguf"

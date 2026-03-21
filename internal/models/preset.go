@@ -111,6 +111,15 @@ func writeConfigParams(b *strings.Builder, cfg *ModelConfig, isEmbedding bool) {
 		if cfg.MmprojPath != "" {
 			b.WriteString(fmt.Sprintf("mmproj = %s\n", cfg.MmprojPath))
 		}
+		if cfg.DraftModelPath != "" {
+			b.WriteString(fmt.Sprintf("model-draft = %s\n", cfg.DraftModelPath))
+			if cfg.DraftMax > 0 {
+				b.WriteString(fmt.Sprintf("draft-max = %d\n", cfg.DraftMax))
+			}
+			if cfg.DraftMin > 0 {
+				b.WriteString(fmt.Sprintf("draft-min = %d\n", cfg.DraftMin))
+			}
+		}
 	}
 
 	// Sampling parameters

@@ -104,6 +104,36 @@
     </div>
     {{end}}
 
+    {{if .DraftCandidates}}
+    <hr style="margin: 1rem 0 0.5rem;">
+    <small><strong>Speculative Decoding</strong> — use a small draft model to speed up generation. Restart required.</small>
+    <div class="grid">
+        <label title="A smaller model of the same architecture proposes tokens that the main model verifies in parallel. Typically 2-3x speedup.">
+            Draft Model
+            <select name="draft_model_path">
+                <option value="" {{if eq .Config.DraftModelPath ""}}selected{{end}}>None (disabled)</option>
+                {{range .DraftCandidates}}
+                <option value="{{.FilePath}}" {{if eq $.Config.DraftModelPath .FilePath}}selected{{end}}>
+                    {{.Filename}} ({{printf "%.1f" .SizeGB}} GB)
+                </option>
+                {{end}}
+            </select>
+        </label>
+    </div>
+    <div class="grid">
+        <label title="Maximum number of tokens the draft model proposes per step. Higher = more speculative, may waste compute. Default: 16">
+            Draft Max Tokens
+            <input type="number" name="draft_max" value="{{.Config.DraftMax}}"
+                   min="1" max="64" placeholder="16">
+        </label>
+        <label title="Minimum number of draft tokens before verification. Default: 2">
+            Draft Min Tokens
+            <input type="number" name="draft_min" value="{{.Config.DraftMin}}"
+                   min="1" max="32" placeholder="2">
+        </label>
+    </div>
+    {{end}}
+
     <hr style="margin: 1rem 0 0.5rem;">
     <small><strong>Sampling</strong> — applied per-request, no restart needed. Leave blank for server defaults.</small>
     <div class="grid">
