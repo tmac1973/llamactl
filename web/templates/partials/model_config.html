@@ -116,12 +116,7 @@
     <div class="grid">
         <label title="A smaller model of the same architecture proposes tokens that the main model verifies in parallel. Typically 2-3x speedup.">
             Draft Model
-            <select name="draft_model_path"
-                    hx-put="/api/models/{{$.ModelID}}/config"
-                    hx-target="#model-config-form"
-                    hx-swap="outerHTML"
-                    hx-include="#model-config-form"
-                    hx-trigger="change delay:500ms">
+            <select name="draft_model_path">
                 <option value="" {{if eq .Config.DraftModelPath ""}}selected{{end}}>None (disabled)</option>
                 {{range .DraftCandidates}}
                 <option value="{{.FilePath}}" {{if eq $.Config.DraftModelPath .FilePath}}selected{{end}}>
