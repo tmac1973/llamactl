@@ -175,6 +175,8 @@ func (s *Server) buildRouter() chi.Router {
 			r.Post("/", s.handleStartBenchmark)
 			r.Get("/form", s.handleBenchmarkForm)
 			r.Get("/compare", s.handleCompareBenchmarks)
+			r.Get("/export", s.handleExportBenchmarks)
+			r.Delete("/batch-delete", s.handleBatchDeleteBenchmarks)
 			r.Get("/{id}", s.handleGetBenchmark)
 			r.Delete("/{id}", s.handleDeleteBenchmark)
 			r.Get("/{id}/progress", s.handleBenchmarkProgress)

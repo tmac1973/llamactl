@@ -21,7 +21,17 @@
                 <button type="button" class="outline secondary"
                         style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
                         onclick="var checks=document.querySelectorAll('.bench-check:checked');if(checks.length<2){alert('Select at least 2 benchmarks to compare');return;}var ids=Array.from(checks).map(function(c){return c.value}).join(',');var el=document.getElementById('comparison-view');fetch('/api/benchmarks/compare?ids='+ids,{headers:{'HX-Request':'true'}}).then(function(r){return r.text()}).then(function(h){el.innerHTML=h});">
-                    Compare Selected
+                    Compare
+                </button>
+                <button type="button" class="outline secondary"
+                        style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
+                        onclick="var checks=document.querySelectorAll('.bench-check:checked');if(checks.length===0){alert('Select benchmarks to export');return;}var ids=Array.from(checks).map(function(c){return c.value}).join(',');window.location='/api/benchmarks/export?ids='+ids;">
+                    Export CSV
+                </button>
+                <button type="button" class="outline secondary"
+                        style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
+                        onclick="var checks=document.querySelectorAll('.bench-check:checked');if(checks.length===0){alert('Select benchmarks to delete');return;}if(!confirm('Delete '+checks.length+' benchmark(s)?'))return;var ids=Array.from(checks).map(function(c){return c.value}).join(',');fetch('/api/benchmarks/batch-delete?ids='+ids,{method:'DELETE',headers:{'HX-Request':'true'}}).then(function(){htmx.ajax('GET','/api/benchmarks',{target:'#benchmark-list',swap:'innerHTML'})});">
+                    Delete Selected
                 </button>
             </span>
         </div>

@@ -197,6 +197,96 @@ func (s *Server) handleDeleteBenchmark(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleBatchDeleteBenchmarks deletes multiple benchmark runs at once.
+func (s *Server) handleBatchDeleteBenchmarks(w http.ResponseWriter, r *http.Request) {
+	idsParam := r.URL.Query().Get("ids")
+	if idsParam == "" {
+		http.Error(w, "ids parameter required", http.StatusBadRequest)
+		return
+	}
+	for _, id := range strings.Split(idsParam, ",") {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			s.bench.Delete(id)
+		}
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// handleExportBenchmarks exports selected benchmark runs as CSV.
+func (s *Server) handleExportBenchmarks(w http.ResponseWriter, r *http.Request) {
+	idsParam := r.URL.Query().Get("ids")
+	if idsParam == "" {
+		http.Error(w, "ids parameter required", http.StatusBadRequest)
+		return
+	}
+
+	var runs []benchmark.BenchmarkRun
+	for _, id := range strings.Split(idsParam, ",") {
+		id = strings.TrimSpace(id)
+		if run, err := s.bench.Get(id); err == nil {
+			runs = append(runs, *run)
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment; filename=benchmarks.csv")
+
+	// Header row
+	fmt.Fprintln(w, "Model,Quant,Size (GB),Preset,PP t/s,TG t/s,TTFT (ms),GPU Layers,Context,GPU Assign,Tensor Split,Flash Attn,KV Quant,Direct IO,Threads,Spec Type,Build,Build Ref,GPUs,Date,llama-bench PP t/s,llama-bench TG t/s")
+
+	for _, run := range runs {
+		ppTPS := 0.0
+		tgTPS := 0.0
+		ttft := 0.0
+		if run.Summary != nil {
+			ppTPS = run.Summary.AvgPromptTokPerSec
+			tgTPS = run.Summary.AvgGenTokPerSec
+			ttft = run.Summary.AvgTTFTMs
+		}
+
+		gpuNames := ""
+		for i, g := range run.GPUs {
+			if i > 0 {
+				gpuNames += "; "
+			}
+			gpuNames += g.Name
+		}
+
+		lbPP := ""
+		lbTG := ""
+		if run.LlamaBench != nil {
+			lbPP = fmt.Sprintf("%.0f", run.LlamaBench.PromptTokPerSec)
+			lbTG = fmt.Sprintf("%.1f", run.LlamaBench.GenTokPerSec)
+		}
+
+		fmt.Fprintf(w, "%s,%s,%.1f,%s,%.0f,%.1f,%.0f,%d,%d,%s,%s,%t,%s,%t,%d,%s,%s,%s,\"%s\",%s,%s,%s\n",
+			run.ModelName,
+			run.Quant,
+			run.SizeGB,
+			run.Preset,
+			ppTPS,
+			tgTPS,
+			ttft,
+			run.Config.GPULayers,
+			run.Config.ContextSize,
+			run.Config.GPUAssign,
+			run.Config.TensorSplit,
+			run.Config.FlashAttention,
+			run.Config.KVCacheQuant,
+			run.Config.DirectIO,
+			run.Config.Threads,
+			run.Config.SpecType,
+			run.BuildID,
+			run.BuildRef,
+			gpuNames,
+			run.CreatedAt.Format("2006-01-02 15:04"),
+			lbPP,
+			lbTG,
+		)
+	}
+}
+
 // handleBenchmarkProgress returns the current state of a running benchmark.
 // Called by HTMX polling from the progress partial.
 func (s *Server) handleBenchmarkProgress(w http.ResponseWriter, r *http.Request) {

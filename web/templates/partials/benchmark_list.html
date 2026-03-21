@@ -5,7 +5,10 @@
 <table role="grid">
     <thead>
         <tr>
-            <th style="width:2rem;"></th>
+            <th style="width:2rem;">
+                <input type="checkbox" style="margin:0;" title="Select all"
+                       onchange="document.querySelectorAll('.bench-check').forEach(function(c){c.checked=this.checked}.bind(this));">
+            </th>
             <th>Model</th>
             <th>Quant</th>
             <th title="Prompt Processing: how fast the model reads your input. Higher = less wait before response starts. Measured in tokens per second.">PP t/s</th>
@@ -26,7 +29,7 @@
             {{else if eq .Status "running"}}
             <span title="Running...">...</span>
             {{else}}
-            <span title="Failed" style="color:var(--pico-del-color);">!</span>
+            <input type="checkbox" class="bench-check" value="{{.ID}}" style="margin:0;">
             {{end}}
         </td>
         <td>
@@ -47,24 +50,16 @@
         <td><small>{{.Preset}}</small></td>
         <td><small>{{.CreatedAt.Format "Jan 2 15:04"}}</small></td>
         <td>
-            <div role="group">
+            <span style="display:flex;gap:0.25rem;">
                 <button type="button" class="outline secondary"
-                        style="padding:0.2rem 0.5rem;font-size:0.8rem;"
+                        style="padding:0.2rem 0.5rem;font-size:0.8rem;width:auto;"
                         hx-get="/api/benchmarks/{{.ID}}"
                         hx-target="next .bench-detail"
                         hx-swap="innerHTML"
                         hx-on::before-request="var d=this.closest('tr').nextElementSibling.querySelector('td');if(d.innerHTML.trim()){d.innerHTML='';event.preventDefault();}">
                     Detail
                 </button>
-                <button type="button" class="outline secondary"
-                        style="padding:0.2rem 0.5rem;font-size:0.8rem;"
-                        hx-delete="/api/benchmarks/{{.ID}}"
-                        hx-target="#benchmark-list"
-                        hx-swap="innerHTML"
-                        hx-confirm="Delete this benchmark?">
-                    Del
-                </button>
-            </div>
+            </span>
         </td>
     </tr>
     <tr><td colspan="10" class="bench-detail"></td></tr>
