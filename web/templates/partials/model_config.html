@@ -3,7 +3,7 @@
       hx-put="/api/models/{{.ModelID}}/config"
       hx-target="this"
       hx-swap="outerHTML"
-      hx-trigger="submit, change[!this.classList.contains('ctx-editing')] delay:500ms">
+      hx-trigger="submit, change from:find select delay:500ms, change from:find [type=checkbox] delay:500ms, input from:find [type=number] delay:500ms, input from:find [type=text] delay:500ms">
 
     <label title="Friendly names for this model. Clients can use these instead of the full ID. Comma-separated, e.g. qwen3:latest, my-chat-model">
         Aliases
