@@ -146,12 +146,9 @@
     const handle = document.querySelector('.server-page .resize-handle');
     const logSection = document.querySelector('.server-page .log-section');
     const page = document.querySelector('.server-page');
-    let startY, startH;
 
     handle.addEventListener('mousedown', function(e) {
         e.preventDefault();
-        startY = e.clientY;
-        startH = logSection.offsetHeight;
         handle.classList.add('dragging');
         document.body.style.cursor = 'row-resize';
         document.body.style.userSelect = 'none';
@@ -160,8 +157,10 @@
     });
 
     function onDrag(e) {
-        const delta = startY - e.clientY;
-        const newH = Math.max(80, Math.min(startH + delta, page.offsetHeight - 200));
+        // Log section height = bottom of page minus cursor position minus handle height
+        var pageRect = page.getBoundingClientRect();
+        var newH = pageRect.bottom - e.clientY - handle.offsetHeight;
+        newH = Math.max(80, Math.min(newH, pageRect.height - 200));
         logSection.style.flex = 'none';
         logSection.style.height = newH + 'px';
     }
