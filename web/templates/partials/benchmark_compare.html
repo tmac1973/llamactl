@@ -2,7 +2,7 @@
 <div style="margin-bottom: 1rem;">
     <h5 style="margin-bottom: 0.5rem;">Comparison: {{len .Runs}} runs</h5>
 
-    {{if gt .MaxGenTPS 0}}
+    {{if gt .MaxGenTPS 0.0}}
     <small><strong>Generation Speed (tokens/sec)</strong></small>
     <div style="margin-bottom: 0.75rem;">
         {{range .Runs}}
@@ -19,7 +19,7 @@
     </div>
     {{end}}
 
-    {{if gt .MaxPromptTPS 0}}
+    {{if gt .MaxPromptTPS 0.0}}
     <small><strong>Prompt Processing (tokens/sec)</strong></small>
     <div style="margin-bottom: 0.75rem;">
         {{range .Runs}}
