@@ -398,7 +398,7 @@ func (r *Runner) runLlamaBench(ctx context.Context, cfg RunConfig) (*LlamaBenchR
 		args = append(args, "-ts", cfg.Run.Config.TensorSplit)
 	}
 	if cfg.Run.Config.DirectIO {
-		args = append(args, "--direct-io")
+		args = append(args, "--direct-io", "1")
 	}
 	if cfg.Run.Config.KVCacheQuant != "" {
 		args = append(args, "-ctk", cfg.Run.Config.KVCacheQuant, "-ctv", cfg.Run.Config.KVCacheQuant)
