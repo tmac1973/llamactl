@@ -46,13 +46,15 @@ func GeneratePresetINI(dataDir string, models []*Model, configs map[string]*Mode
 		// that auto-discovery can't find, and harmless for ones it can.
 		b.WriteString(fmt.Sprintf("model = %s\n", m.FilePath))
 
-		// Set alias to our registry ID so API routing works with our names
-		// Include both the section name and registry ID as aliases
-		aliases := sectionName
+		// Set aliases: section name, registry ID, plus any user-defined aliases
+		aliasList := []string{sectionName}
 		if m.ID != sectionName {
-			aliases += "," + m.ID
+			aliasList = append(aliasList, m.ID)
 		}
-		b.WriteString(fmt.Sprintf("alias = %s\n", aliases))
+		if cfg.Aliases != nil {
+			aliasList = append(aliasList, cfg.Aliases...)
+		}
+		b.WriteString(fmt.Sprintf("alias = %s\n", strings.Join(aliasList, ",")))
 
 		isEmbed := IsEmbeddingModel(m.ModelID) || IsEmbeddingModel(m.ID)
 		writeConfigParams(&b, cfg, isEmbed)

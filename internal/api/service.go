@@ -457,6 +457,20 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 		cfg.RepeatPenalty = parseOptionalFloat(r.FormValue("repeat_penalty"))
 
 		cfg.MmprojPath = r.FormValue("mmproj_path")
+		// Parse aliases (comma-separated, trimmed)
+		if aliasStr := strings.TrimSpace(r.FormValue("aliases")); aliasStr != "" {
+			var aliases []string
+			for _, a := range strings.Split(aliasStr, ",") {
+				a = strings.TrimSpace(a)
+				if a != "" {
+					aliases = append(aliases, a)
+				}
+			}
+			cfg.Aliases = aliases
+		} else {
+			cfg.Aliases = nil
+		}
+
 		cfg.DraftModelPath = r.FormValue("draft_model_path")
 		if v, err := strconv.Atoi(r.FormValue("draft_max")); err == nil && v > 0 {
 			cfg.DraftMax = v

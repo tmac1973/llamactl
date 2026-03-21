@@ -5,6 +5,12 @@
       hx-swap="outerHTML"
       hx-trigger="submit, change[!this.classList.contains('ctx-editing')] delay:500ms">
 
+    <label title="Friendly names for this model. Clients can use these instead of the full ID. Comma-separated, e.g. qwen3:latest, my-chat-model">
+        Aliases
+        <input type="text" name="aliases" value="{{range $i, $a := .Config.Aliases}}{{if $i}}, {{end}}{{$a}}{{end}}"
+               placeholder="e.g. qwen3:latest, my-chat-model">
+    </label>
+
     <div class="grid">
         <label title="Number of model layers to offload to the GPU. 999 offloads all layers. Lower values keep some layers on CPU, reducing VRAM usage at the cost of speed.">
             GPU Layers

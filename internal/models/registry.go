@@ -47,10 +47,11 @@ type ModelConfig struct {
 	KVCacheQuant   string `json:"kv_cache_quant"` // "", "q8_0", "q4_0"
 	DirectIO       bool   `json:"direct_io"`       // bypass page cache, load straight to VRAM
 	MmprojPath     string `json:"mmproj_path,omitempty"`      // path to mmproj GGUF for vision models
-	DraftModelPath string `json:"draft_model_path,omitempty"` // path to draft model for speculative decoding
-	DraftMax       int    `json:"draft_max,omitempty"`        // max draft tokens (default 16)
-	DraftMin       int    `json:"draft_min,omitempty"`        // min draft tokens (default 2)
-	ExtraFlags     string `json:"extra_flags"`
+	DraftModelPath string   `json:"draft_model_path,omitempty"` // path to draft model for speculative decoding
+	DraftMax       int      `json:"draft_max,omitempty"`        // max draft tokens (default 16)
+	DraftMin       int      `json:"draft_min,omitempty"`        // min draft tokens (default 2)
+	Aliases        []string `json:"aliases,omitempty"`          // user-defined friendly names
+	ExtraFlags     string   `json:"extra_flags"`
 
 	// Sampling parameters — nil means use llama.cpp server default.
 	Temperature     *float64 `json:"temperature,omitempty"`
