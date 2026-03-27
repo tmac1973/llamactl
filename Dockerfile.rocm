@@ -20,7 +20,7 @@ RUN <<'EOF'
 tee /etc/yum.repos.d/rocm.repo <<REPO
 [ROCm-7.2]
 name=ROCm7.2
-baseurl=https://repo.radeon.com/rocm/el9/7.2/main
+baseurl=https://repo.radeon.com/rocm/el9/7.2.1/main
 enabled=1
 priority=50
 gpgcheck=1
