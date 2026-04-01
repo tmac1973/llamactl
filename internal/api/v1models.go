@@ -42,13 +42,17 @@ func (s *Server) openAIModel(m *models.Model, cfg *models.ModelConfig) map[strin
 		}
 	}
 
-	return map[string]any{
+	obj := map[string]any{
 		"id":       m.ID,
 		"object":   "model",
 		"created":  m.DownloadedAt.Unix(),
 		"owned_by": "llamactl",
 		"meta":     meta,
 	}
+	if cfg != nil && len(cfg.Aliases) > 0 {
+		obj["aliases"] = cfg.Aliases
+	}
+	return obj
 }
 
 // handleV1Models returns an OpenAI-compatible model list with meta extensions.
