@@ -436,7 +436,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			pn := m.PublicName()
 			copyBtn := fmt.Sprintf(`<button type="button" class="action-icon" title="Copy model name" `+
 				`data-icon="%s" data-icon-check="%s" data-copy="%s" `+
-				`onclick="copyModelName(this)">%s</button>`,
+				`onclick="copyFromButton(this)">%s</button>`,
 				html.EscapeString(copySVG), html.EscapeString(checkSVG), html.EscapeString(pn), copySVG)
 
 			fmt.Fprintf(&buf, `<div class="available-model-row">%s%s<code>%s</code>%s</div>`,
@@ -452,6 +452,14 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = stateBadge // server-status-badge has its own poll endpoint now
+
+	const copySVG = `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3.5A.5.5 0 0 1 3.5 3H10"/></svg>`
+	const checkSVG = `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 8l3 3 7-7"/></svg>`
+	apiCopyBtn := fmt.Sprintf(`<button type="button" class="action-icon" title="Copy endpoint URL" `+
+		`data-icon="%s" data-icon-check="%s" data-copy="%s" `+
+		`onclick="copyFromButton(this)">%s</button>`,
+		html.EscapeString(copySVG), html.EscapeString(checkSVG), html.EscapeString(apiURL), copySVG)
+
 	respondHTML(w)
 	fmt.Fprintf(w, `<article>
     <header>Available Models</header>
@@ -465,13 +473,17 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 </article>
 <article>
     <header>API Endpoint</header>
-    <pre style="user-select: all; cursor: pointer;">%s</pre>
+    <div style="display:flex;align-items:center;gap:0.4rem;">
+        <pre style="user-select: all; cursor: pointer; margin:0; flex:1; overflow-x:auto;">%s</pre>
+        %s
+    </div>
     <p><a href="/settings">Settings →</a></p>
 </article>`,
 		availableHTML,
 		successBuilds,
 		len(registeredModels),
 		apiURL,
+		apiCopyBtn,
 	)
 }
 

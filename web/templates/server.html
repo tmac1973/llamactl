@@ -178,8 +178,8 @@
 </div>
 
 <script>
-// --- Copy model name to clipboard (flash checkmark briefly) ---
-function copyModelName(btn) {
+// --- Copy the value from a button's data-copy to clipboard (flash a check) ---
+function copyFromButton(btn) {
     navigator.clipboard.writeText(btn.dataset.copy || '');
     btn.innerHTML = btn.dataset.iconCheck;
     setTimeout(function(){ btn.innerHTML = btn.dataset.icon; }, 900);
