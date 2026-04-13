@@ -513,8 +513,10 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 
 		// Always preserve split_mode and number_processors from form
 		cfg.SplitMode = r.FormValue("split_mode")
-		if np, err := strconv.Atoi(r.FormValue("number_processors")); err == nil && np > 0 {
-			cfg.NumberProcessors = np
+		if npStr := r.FormValue("number_processors"); npStr != "" {
+			if np, err := strconv.Atoi(npStr); err == nil {
+				cfg.NumberProcessors = np
+			}
 		}
 
 		if gpuAssign != "" && gpuAssign != "custom" && gpuAssign != "all" {
@@ -525,9 +527,14 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 			cfg.NumberProcessors = np
 			cfg.MainGPU = mg
 		} else if gpuAssign == "tensor" || (gpuAssign == "" && cfg.SplitMode == "tensor") {
-			// Tensor parallelism mode - use all GPUs
+			// Tensor parallelism mode - use user-specified number of GPUs
 			numGPUs := len(s.monitor.Current().GPU)
+			// If no number specified, default to all GPUs
 			if cfg.NumberProcessors == 0 {
+				cfg.NumberProcessors = numGPUs
+			}
+			// Cap at available GPUs
+			if cfg.NumberProcessors > numGPUs {
 				cfg.NumberProcessors = numGPUs
 			}
 			cfg.TensorSplit = ""
@@ -538,12 +545,24 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 			numGPUs := len(s.monitor.Current().GPU)
 			cfg.TensorSplit = ""
 			cfg.SplitMode = "tensor"
-			cfg.NumberProcessors = numGPUs
+			// Preserve user's NumberProcessors if set, otherwise use all GPUs
+			if cfg.NumberProcessors == 0 || cfg.NumberProcessors > numGPUs {
+				cfg.NumberProcessors = numGPUs
+			}
 			cfg.MainGPU = 0
 		} else {
-			// "custom" — preserve the raw tensor_split from form
+			// "custom" or other cases — preserve the raw tensor_split from form
 			cfg.TensorSplit = r.FormValue("tensor_split")
 			cfg.MainGPU = 0
+			// Ensure split_mode and number_processors are preserved if sent in form
+			if sm := r.FormValue("split_mode"); sm != "" {
+				cfg.SplitMode = sm
+			}
+			if npStr := r.FormValue("number_processors"); npStr != "" {
+				if np, err := strconv.Atoi(npStr); err == nil && np > 0 {
+					cfg.NumberProcessors = np
+				}
+			}
 		}
 		cfg.ContextSize, _ = strconv.Atoi(r.FormValue("context_size"))
 		cfg.Threads, _ = strconv.Atoi(r.FormValue("threads"))

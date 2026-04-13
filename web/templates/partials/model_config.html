@@ -76,7 +76,7 @@
         </label>
         <label title="Split mode: 'layer' splits layers sequentially across GPUs, 'tensor' splits tensors across all GPUs simultaneously (experimental).">
             Split Mode
-            <select name="split_mode" onchange="this.closest('form').querySelector('.number-processors-row').style.display=(this.value==='tensor'? 'flex':'none')">
+            <select name="split_mode" onchange="var row=this.closest('form').querySelector('.number-processors-row'); var input=row.querySelector('input'); row.style.display=(this.value==='tensor'? 'flex':'none'); if(this.value==='tensor' && input.value === '0') input.value='2'">
                 <option value="layer" {{if eq .Config.SplitMode "layer"}}selected{{end}}>Layer</option>
                 <option value="tensor" {{if eq .Config.SplitMode "tensor"}}selected{{end}}>Tensor (parallel)</option>
             </select>
@@ -84,7 +84,7 @@
         <div class="number-processors-row" style="{{if or (eq .Config.SplitMode "tensor") (eq .Config.GPUAssign "tensor") (eq .Config.GPUAssign "all")}}display:flex;gap:0.5rem;{{else}}display:none;{{end}}">
             <label title="Number of GPUs for tensor parallelism. Selects the first N GPUs (0, 1, ..., N-1). For layer mode, this is auto-calculated from GPU Assignment.">
                 Processors
-                <input type="number" name="number_processors" value="{{.Config.NumberProcessors}}" min="1" placeholder="All GPUs">
+                <input type="number" name="number_processors" value="{{if gt .Config.NumberProcessors 0}}{{.Config.NumberProcessors}}{{else}}2{{end}}" min="1" placeholder="2">
             </label>
         </div>
         <div class="tensor-split-custom" style="{{if ne .Config.GPUAssign "custom"}}display:none;{{end}}">
