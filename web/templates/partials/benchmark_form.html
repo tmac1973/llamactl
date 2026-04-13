@@ -16,13 +16,16 @@
                     {{end}}
                 </select>
             </label>
-            <label title="Quick: single fast test. Standard: multiple prompt sizes + llama-bench. Thorough: comprehensive with larger prompts and more repetitions.">
+            <label>
                 Preset
-                <select name="preset">
-                    {{range .Presets}}
-                    <option value="{{.Name}}">{{.Label}}</option>
+                <select name="preset" onchange="document.getElementById('preset-desc').textContent=this.options[this.selectedIndex].dataset.desc||'';">
+                    {{range $i, $p := .Presets}}
+                    <option value="{{$p.Name}}" data-desc="{{$p.Description}}" {{if eq $i 0}}data-initial="true"{{end}}>{{$p.Label}}</option>
                     {{end}}
                 </select>
+                <small id="preset-desc" style="color:var(--pico-muted-color);font-size:0.75rem;">
+                    {{with index .Presets 0}}{{.Description}}{{end}}
+                </small>
             </label>
             <label>
                 &nbsp;

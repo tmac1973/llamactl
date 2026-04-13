@@ -124,20 +124,36 @@ type TimingSample struct {
 
 // Preset defines benchmark parameters.
 type Preset struct {
-	Name         string
-	Label        string
-	PromptTokens []int
-	GenTokens    int
-	Repetitions  int
+	Name          string
+	Label         string
+	Description   string
+	PromptTokens  []int
+	GenTokens     int
+	Repetitions   int
 	RunLlamaBench bool
 }
 
 // Presets returns the available benchmark presets.
 func Presets() []Preset {
 	return []Preset{
-		{Name: "quick", Label: "Quick (~10s)", PromptTokens: []int{256}, GenTokens: 128, Repetitions: 1, RunLlamaBench: false},
-		{Name: "standard", Label: "Standard (~2min)", PromptTokens: []int{128, 512, 2048}, GenTokens: 128, Repetitions: 3, RunLlamaBench: true},
-		{Name: "thorough", Label: "Thorough (~10min)", PromptTokens: []int{128, 512, 2048, 8192}, GenTokens: 256, Repetitions: 5, RunLlamaBench: true},
+		{
+			Name:         "quick",
+			Label:        "Quick — 1 rep, 256-token prompt (~10s)",
+			Description:  "Single end-to-end request with a 256-token prompt and 128 generated tokens. Sanity check that the model loads and runs.",
+			PromptTokens: []int{256}, GenTokens: 128, Repetitions: 1, RunLlamaBench: false,
+		},
+		{
+			Name:         "standard",
+			Label:        "Standard — 3 reps × 3 prompt sizes + llama-bench (~2 min)",
+			Description:  "Three repetitions of end-to-end requests at 128, 512, and 2048-token prompts (128 gen tokens each), plus llama-bench for raw kernel throughput.",
+			PromptTokens: []int{128, 512, 2048}, GenTokens: 128, Repetitions: 3, RunLlamaBench: true,
+		},
+		{
+			Name:         "thorough",
+			Label:        "Thorough — 5 reps × 4 prompt sizes up to 8K + llama-bench (~10 min)",
+			Description:  "Five repetitions at 128 / 512 / 2048 / 8192-token prompts with 256 generated tokens each, plus llama-bench. Stresses long-context performance.",
+			PromptTokens: []int{128, 512, 2048, 8192}, GenTokens: 256, Repetitions: 5, RunLlamaBench: true,
+		},
 	}
 }
 

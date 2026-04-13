@@ -34,7 +34,7 @@ func (s *Server) newProxyHandler() http.Handler {
 		})
 	}
 
-	// Capture timings from non-streaming chat completion responses.
+	// Capture timings from chat completion responses — both JSON and SSE streams.
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		if resp.Request == nil || resp.StatusCode != http.StatusOK {
 			return nil
@@ -42,9 +42,13 @@ func (s *Server) newProxyHandler() http.Handler {
 		if !strings.HasSuffix(resp.Request.URL.Path, "/chat/completions") {
 			return nil
 		}
+
 		ct := resp.Header.Get("Content-Type")
 		if strings.Contains(ct, "text/event-stream") {
-			return nil // streaming — skip for now
+			// Wrap the body so we can scan SSE chunks for the final
+			// timings event without blocking delivery to the client.
+			resp.Body = newSSETimingCapture(resp.Body, s.captureTimings)
+			return nil
 		}
 
 		body, err := io.ReadAll(resp.Body)
@@ -77,6 +81,71 @@ func (s *Server) newProxyHandler() http.Handler {
 		}
 		proxy.ServeHTTP(w, r)
 	})
+}
+
+// sseTimingCapture wraps a streaming SSE response body, passing bytes
+// through to the client while scanning for the final chunk that carries
+// llama.cpp's `timings` field. When seen, captureFn is invoked once.
+type sseTimingCapture struct {
+	orig     io.ReadCloser
+	capture  func(modelID string, timings map[string]any)
+	buf      bytes.Buffer
+	model    string
+	captured bool
+}
+
+func newSSETimingCapture(orig io.ReadCloser, capture func(string, map[string]any)) *sseTimingCapture {
+	return &sseTimingCapture{orig: orig, capture: capture}
+}
+
+func (s *sseTimingCapture) Read(p []byte) (int, error) {
+	n, err := s.orig.Read(p)
+	if n > 0 && !s.captured {
+		s.buf.Write(p[:n])
+		s.scan()
+	}
+	return n, err
+}
+
+func (s *sseTimingCapture) scan() {
+	// SSE events are separated by a blank line ("\n\n").
+	for {
+		data := s.buf.Bytes()
+		idx := bytes.Index(data, []byte("\n\n"))
+		if idx < 0 {
+			return
+		}
+		event := string(data[:idx])
+		s.buf.Next(idx + 2)
+
+		for _, line := range strings.Split(event, "\n") {
+			line = strings.TrimPrefix(line, "data: ")
+			line = strings.TrimPrefix(line, "data:") // tolerate no-space form
+			line = strings.TrimSpace(line)
+			if line == "" || line == "[DONE]" {
+				continue
+			}
+			var chunk struct {
+				Model   string         `json:"model"`
+				Timings map[string]any `json:"timings"`
+			}
+			if json.Unmarshal([]byte(line), &chunk) != nil {
+				continue
+			}
+			if s.model == "" && chunk.Model != "" {
+				s.model = chunk.Model
+			}
+			if chunk.Timings != nil && s.model != "" {
+				go s.capture(s.model, chunk.Timings)
+				s.captured = true
+				return
+			}
+		}
+	}
+}
+
+func (s *sseTimingCapture) Close() error {
+	return s.orig.Close()
 }
 
 // injectSamplingDefaults reads the model field from the request body,

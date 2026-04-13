@@ -205,9 +205,12 @@ func (r *Runner) ensureModelLoaded(ctx context.Context, routerURL, modelName str
 		slog.Info("benchmark: model loaded successfully", "name", modelName)
 		return nil
 	}
-	if resp.StatusCode == http.StatusBadRequest && strings.Contains(string(respBody), "already loaded") {
-		slog.Info("benchmark: model already loaded", "name", modelName)
-		return nil
+	if resp.StatusCode == http.StatusBadRequest {
+		msg := strings.ToLower(string(respBody))
+		if strings.Contains(msg, "already loaded") || strings.Contains(msg, "already running") {
+			slog.Info("benchmark: model already loaded", "name", modelName)
+			return nil
+		}
 	}
 	return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 }

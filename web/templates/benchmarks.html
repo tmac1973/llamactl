@@ -45,15 +45,6 @@
     </div>
 </article>
 
-<article>
-    <header>Live Performance</header>
-    <div id="timings-summary"
-         hx-get="/api/timings"
-         hx-trigger="load, every 10s"
-         hx-swap="innerHTML">
-    </div>
-</article>
-
 <dialog id="bench-help" style="max-width:600px;">
     <article>
         <header>
@@ -91,7 +82,7 @@
         <p>When included (Standard and Thorough presets), <code>llama-bench</code> runs the model directly without the HTTP server layer. This gives a performance ceiling — the fastest the model can run on your hardware. Comparing API results to llama-bench results shows how much overhead the server adds.</p>
 
         <h5>Live Performance</h5>
-        <p>The Live Performance section at the bottom passively captures timing data from every chat completion request made through the API — no explicit benchmark needed. It shows a rolling average of real-world performance.</p>
+        <p>Live Performance (on the Server tab) passively captures timing data from every chat completion request made through the API — no explicit benchmark needed. It shows a rolling average of real-world performance across recent requests.</p>
     </article>
 </dialog>
 
