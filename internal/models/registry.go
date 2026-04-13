@@ -762,15 +762,6 @@ func (r *Registry) load() {
 	if r.data.Configs == nil {
 		r.data.Configs = make(map[string]*ModelConfig)
 	}
-	for id, cfg := range r.data.Configs {
-		if cfg.SplitMode == "" {
-			cfg.SplitMode = ""
-		}
-		if cfg.NumberProcessors == 0 {
-			cfg.NumberProcessors = 0
-		}
-		r.data.Configs[id] = cfg
-	}
 }
 
 func (r *Registry) save() {

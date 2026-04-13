@@ -16,32 +16,14 @@ type GPUOption struct {
 }
 
 // GPUAssignOptions generates all GPU assignment options for a given number of GPUs.
-// Returns tensor parallelism, single GPUs, contiguous pairs, triples (for 4+ GPUs), "all", and "custom".
+// Returns single GPUs, contiguous pairs, triples (for 4+ GPUs), "all", tensor
+// parallelism variants for 2..numGPUs, and "custom".
 func GPUAssignOptions(numGPUs int) []GPUOption {
 	if numGPUs <= 0 {
 		return nil
 	}
 
 	var opts []GPUOption
-
-	// "Tensor" mode (tensor parallelism) is first
-	opts = append(opts, GPUOption{
-		Value:    "tensor",
-		Label:    "Tensor Parallelism (all GPUs)",
-		GPUs:     nil,
-		IsTensor: true,
-	})
-
-	// "All GPUs" is second
-	allGPUs := make([]int, numGPUs)
-	for i := range allGPUs {
-		allGPUs[i] = i
-	}
-	opts = append(opts, GPUOption{
-		Value: "all",
-		Label: fmt.Sprintf("All GPUs (%d)", numGPUs),
-		GPUs:  allGPUs,
-	})
 
 	// Single GPUs
 	for i := 0; i < numGPUs; i++ {
@@ -74,6 +56,36 @@ func GPUAssignOptions(numGPUs int) []GPUOption {
 		}
 	}
 
+	// "All GPUs" — layer split across all
+	allGPUs := make([]int, numGPUs)
+	for i := range allGPUs {
+		allGPUs[i] = i
+	}
+	opts = append(opts, GPUOption{
+		Value: "all",
+		Label: fmt.Sprintf("All GPUs (%d, layer split)", numGPUs),
+		GPUs:  allGPUs,
+	})
+
+	// Tensor parallelism variants — one per GPU count (2..numGPUs).
+	// --number-processors N takes the first N GPUs (indices 0..N-1).
+	for n := 2; n <= numGPUs; n++ {
+		tpGPUs := make([]int, n)
+		for i := range tpGPUs {
+			tpGPUs[i] = i
+		}
+		label := fmt.Sprintf("Tensor Parallelism (%d GPUs, experimental)", n)
+		if n == numGPUs {
+			label = fmt.Sprintf("Tensor Parallelism (all %d GPUs, experimental)", n)
+		}
+		opts = append(opts, GPUOption{
+			Value:    fmt.Sprintf("tensor-%d", n),
+			Label:    label,
+			GPUs:     tpGPUs,
+			IsTensor: true,
+		})
+	}
+
 	// "Custom" is always last
 	opts = append(opts, GPUOption{
 		Value: "custom",
@@ -86,19 +98,32 @@ func GPUAssignOptions(numGPUs int) []GPUOption {
 // ResolveGPUAssign converts a GPU assignment string into tensor-split, split-mode,
 // number-processors, and main-gpu values for llama-server.
 //
-//	"all"    → ("", "tensor", numGPUs, 0)     — tensor parallelism on all GPUs
-//	"0"      → ("1,0,0,0", "layer", 0, 0)      — single GPU (layer mode)
-//	"0-1"    → ("1,1,0,0", "layer", 0, 0)      — two GPUs (layer mode)
-//	"2-3"    → ("0,0,1,1", "layer", 0, 2)      — GPUs 2-3 (layer mode)
-//	"custom" → ("", "", 0, 0)                  — caller preserves raw TensorSplit
+//	"all"      → ("", "layer", 0, 0)             — layer split across all GPUs
+//	"tensor-N" → ("", "tensor", N, 0)            — tensor parallelism on first N GPUs
+//	"0"        → ("1,0,0,0", "layer", 0, 0)      — single GPU
+//	"0-1"      → ("1,1,0,0", "layer", 0, 0)      — two GPUs (layer)
+//	"2-3"      → ("0,0,1,1", "layer", 0, 2)      — GPUs 2-3 (layer)
+//	"custom"   → ("", "", 0, 0)                  — caller preserves raw TensorSplit
 func ResolveGPUAssign(assign string, numGPUs int) (tensorSplit, splitMode string, numberProcessors, mainGPU int) {
 	if assign == "" || assign == "custom" || numGPUs <= 0 {
 		return "", "", 0, 0
 	}
 
-	// "all" always uses tensor parallelism on all GPUs
+	// "all" — layer split across all GPUs
 	if assign == "all" {
-		return "", "tensor", numGPUs, 0
+		return "", "layer", 0, 0
+	}
+
+	// "tensor-N" — tensor parallelism on first N GPUs
+	if strings.HasPrefix(assign, "tensor-") {
+		var n int
+		if _, err := fmt.Sscanf(assign, "tensor-%d", &n); err == nil && n > 0 {
+			if n > numGPUs {
+				n = numGPUs
+			}
+			return "", "tensor", n, 0
+		}
+		return "", "", 0, 0
 	}
 
 	// Parse the assignment to get GPU indices
@@ -204,6 +229,20 @@ func ComputeAllocations(modelList []*Model, configs map[string]*ModelConfig, num
 
 // resolveModelGPUs determines which GPUs a model is assigned to.
 func resolveModelGPUs(cfg *ModelConfig, numGPUs int) []int {
+	if strings.HasPrefix(cfg.GPUAssign, "tensor-") {
+		var n int
+		if _, err := fmt.Sscanf(cfg.GPUAssign, "tensor-%d", &n); err == nil && n > 0 {
+			if n > numGPUs {
+				n = numGPUs
+			}
+			gpus := make([]int, n)
+			for i := range gpus {
+				gpus[i] = i
+			}
+			return gpus
+		}
+	}
+
 	if cfg.GPUAssign != "" && cfg.GPUAssign != "all" && cfg.GPUAssign != "custom" {
 		if gpus := parseGPURange(cfg.GPUAssign); len(gpus) > 0 {
 			return gpus
@@ -237,6 +276,8 @@ func GPUAssignLabel(assign string) string {
 		return "all gpus"
 	case assign == "custom":
 		return "custom"
+	case strings.HasPrefix(assign, "tensor-"):
+		return "tp:" + strings.TrimPrefix(assign, "tensor-")
 	default:
 		return "gpu:" + assign
 	}

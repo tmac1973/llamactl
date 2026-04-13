@@ -430,9 +430,22 @@ func (s *Server) handleGetModelConfig(w http.ResponseWriter, r *http.Request) {
 		numGPUs := len(metrics.GPU)
 		gpuOptions := models.GPUAssignOptions(numGPUs)
 
-		// Migration: if TensorSplit is set but GPUAssign is empty, show as "custom"
-		if cfg.GPUAssign == "" && cfg.TensorSplit != "" {
-			cfg.GPUAssign = "custom"
+		// Migration: map legacy configs onto the unified dropdown values.
+		if cfg.GPUAssign == "" || cfg.GPUAssign == "tensor" {
+			switch {
+			case cfg.SplitMode == "tensor":
+				n := cfg.NumberProcessors
+				if n <= 0 || n > numGPUs {
+					n = numGPUs
+				}
+				if n >= 2 {
+					cfg.GPUAssign = fmt.Sprintf("tensor-%d", n)
+				} else {
+					cfg.GPUAssign = "all"
+				}
+			case cfg.TensorSplit != "":
+				cfg.GPUAssign = "custom"
+			}
 		}
 
 		// Mark disabled/recommended options
@@ -507,62 +520,22 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 		r.ParseForm()
 		cfg.GPULayers, _ = strconv.Atoi(r.FormValue("gpu_layers"))
 
-		// GPU assignment
+		// GPU assignment — single dropdown drives tensor-split, split-mode,
+		// number-processors, and main-gpu. "custom" preserves the raw tensor_split.
 		gpuAssign := r.FormValue("gpu_assign")
 		cfg.GPUAssign = gpuAssign
-
-		// Always preserve split_mode and number_processors from form
-		cfg.SplitMode = r.FormValue("split_mode")
-		if npStr := r.FormValue("number_processors"); npStr != "" {
-			if np, err := strconv.Atoi(npStr); err == nil {
-				cfg.NumberProcessors = np
-			}
-		}
-
-		if gpuAssign != "" && gpuAssign != "custom" && gpuAssign != "all" {
-			numGPUs := len(s.monitor.Current().GPU)
+		numGPUs := len(s.monitor.Current().GPU)
+		if gpuAssign == "custom" {
+			cfg.TensorSplit = r.FormValue("tensor_split")
+			cfg.SplitMode = ""
+			cfg.NumberProcessors = 0
+			cfg.MainGPU = 0
+		} else {
 			ts, sm, np, mg := models.ResolveGPUAssign(gpuAssign, numGPUs)
 			cfg.TensorSplit = ts
 			cfg.SplitMode = sm
 			cfg.NumberProcessors = np
 			cfg.MainGPU = mg
-		} else if gpuAssign == "tensor" || (gpuAssign == "" && cfg.SplitMode == "tensor") {
-			// Tensor parallelism mode - use user-specified number of GPUs
-			numGPUs := len(s.monitor.Current().GPU)
-			// If no number specified, default to all GPUs
-			if cfg.NumberProcessors == 0 {
-				cfg.NumberProcessors = numGPUs
-			}
-			// Cap at available GPUs
-			if cfg.NumberProcessors > numGPUs {
-				cfg.NumberProcessors = numGPUs
-			}
-			cfg.TensorSplit = ""
-			cfg.SplitMode = "tensor"
-			cfg.MainGPU = 0
-		} else if gpuAssign == "all" {
-			// All GPUs - uses tensor parallelism
-			numGPUs := len(s.monitor.Current().GPU)
-			cfg.TensorSplit = ""
-			cfg.SplitMode = "tensor"
-			// Preserve user's NumberProcessors if set, otherwise use all GPUs
-			if cfg.NumberProcessors == 0 || cfg.NumberProcessors > numGPUs {
-				cfg.NumberProcessors = numGPUs
-			}
-			cfg.MainGPU = 0
-		} else {
-			// "custom" or other cases — preserve the raw tensor_split from form
-			cfg.TensorSplit = r.FormValue("tensor_split")
-			cfg.MainGPU = 0
-			// Ensure split_mode and number_processors are preserved if sent in form
-			if sm := r.FormValue("split_mode"); sm != "" {
-				cfg.SplitMode = sm
-			}
-			if npStr := r.FormValue("number_processors"); npStr != "" {
-				if np, err := strconv.Atoi(npStr); err == nil && np > 0 {
-					cfg.NumberProcessors = np
-				}
-			}
 		}
 		cfg.ContextSize, _ = strconv.Atoi(r.FormValue("context_size"))
 		cfg.Threads, _ = strconv.Atoi(r.FormValue("threads"))
