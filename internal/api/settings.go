@@ -86,6 +86,9 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 				s.cfg.ModelsMax = v
 			}
 		}
+		if r.Form.Has("auto_start_touched") {
+			s.cfg.AutoStart = r.FormValue("auto_start") == "on"
+		}
 	}
 
 	// Persist config

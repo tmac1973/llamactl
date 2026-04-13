@@ -208,6 +208,64 @@
         [data-custom-theme="cyberpunk"] progress::-webkit-progress-value { background-color: #ff00ff; }
         [data-custom-theme="cyberpunk"] progress::-moz-progress-bar { background-color: #ff00ff; }
 
+        /* Available Models card (on Server page) */
+        .available-model-row {
+            display: flex;
+            align-items: center;
+            gap: 0.2rem;
+            margin-bottom: 0.2rem;
+            font-size: 0.75rem;
+            line-height: 1.4;
+        }
+        .available-model-row > code {
+            font-size: 0.75rem;
+            padding: 0.05rem 0.3rem;
+            background: transparent;
+            color: var(--pico-color);
+            word-break: break-all;
+        }
+        button.action-icon,
+        button.action-icon:hover,
+        button.action-icon:focus {
+            background: none;
+            border: none;
+            padding: 0 0.2rem;
+            margin: 0;
+            width: auto;
+            height: auto;
+            font-size: 0.85rem;
+            line-height: 1;
+            color: var(--pico-muted-color);
+            cursor: pointer;
+            box-shadow: none;
+        }
+        button.action-icon:hover {
+            color: var(--pico-primary);
+        }
+        .action-icon-placeholder {
+            display: inline-block;
+            width: 1.1rem;
+        }
+
+        /* Model-list filter + collapse/expand controls */
+        .model-list-controls {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        .model-list-controls input.model-filter {
+            flex: 1;
+            margin: 0;
+        }
+        .model-list-controls button {
+            margin: 0;
+            padding: 0.35rem 0.75rem;
+            font-size: 0.85rem;
+            width: auto;
+            white-space: nowrap;
+        }
+
         /* Collapsible model-list groups */
         tbody.group-header > tr > td {
             cursor: pointer;
@@ -303,13 +361,13 @@
             <p>Inference Manager</p>
         </hgroup>
         <ul>
-            <li><a href="/"{{if eq .Nav "home"}} aria-current="page"{{end}}>Dashboard</a></li>
+            <li><a href="/server"{{if eq .Nav "server"}} aria-current="page"{{end}}>Server</a></li>
             <li><a href="/builds"{{if eq .Nav "builds"}} aria-current="page"{{end}}>Builds</a></li>
             <li><a href="/models"{{if eq .Nav "models"}} aria-current="page"{{end}}>Models</a></li>
             <li><a href="/models/browse"{{if eq .Nav "browse"}} aria-current="page"{{end}}>Search HF</a></li>
             <li><a href="/benchmarks"{{if eq .Nav "benchmarks"}} aria-current="page"{{end}}>Benchmarks</a></li>
-            <li><a href="/server"{{if eq .Nav "server"}} aria-current="page"{{end}}>Server</a></li>
             <li><a href="/settings"{{if eq .Nav "settings"}} aria-current="page"{{end}}>Settings</a></li>
+            <li><a href="/help"{{if eq .Nav "help"}} aria-current="page"{{end}}>Help</a></li>
         </ul>
         <div id="monitor-bar"
              hx-get="/api/monitor"

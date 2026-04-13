@@ -1,0 +1,286 @@
+{{define "content"}}
+<style>
+    .help-page { font-size: 0.9rem; line-height: 1.55; }
+    .help-page h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+    .help-page h2 {
+        font-size: 1.1rem;
+        margin-top: 1.5rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--pico-muted-border-color);
+    }
+    .help-page h3 { font-size: 0.95rem; margin-top: 1rem; margin-bottom: 0.35rem; }
+    .help-page p { margin: 0 0 0.5rem 0; }
+    .help-page ul, .help-page ol { margin: 0 0 0.6rem 1.2rem; padding: 0; }
+    .help-page li { margin-bottom: 0.2rem; }
+    .help-page dl { margin: 0.25rem 0 0.75rem 0; }
+    .help-page dt {
+        font-weight: 600;
+        margin-top: 0.35rem;
+        color: var(--pico-color);
+    }
+    .help-page dd {
+        margin: 0 0 0.35rem 1rem;
+        color: var(--pico-muted-color);
+    }
+    .help-page code,
+    .help-page kbd {
+        font-size: 0.82rem;
+        padding: 0.05rem 0.3rem;
+    }
+    .help-page pre {
+        font-size: 0.78rem;
+        padding: 0.6rem 0.8rem;
+        margin: 0.4rem 0 0.75rem 0;
+        background: var(--pico-card-background-color);
+    }
+    .help-toc {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem 0.75rem;
+        font-size: 0.82rem;
+        margin: 0.4rem 0 1rem 0;
+        padding: 0.5rem 0.75rem;
+        background: var(--pico-card-background-color);
+        border-radius: 0.3rem;
+    }
+    .help-toc a { text-decoration: none; }
+    .help-page .callout {
+        border-left: 3px solid var(--pico-primary);
+        padding: 0.35rem 0.75rem;
+        margin: 0.5rem 0 0.75rem 0;
+        background: rgba(0, 128, 255, 0.06);
+        font-size: 0.85rem;
+    }
+    .help-page .callout.warn {
+        border-left-color: var(--pico-del-color);
+        background: rgba(220, 53, 69, 0.06);
+    }
+    .help-page .inline-icon {
+        display: inline-block;
+        vertical-align: -0.15em;
+        color: var(--pico-muted-color);
+    }
+</style>
+
+<div class="help-page">
+    <h1>Llama Toolchest — Help</h1>
+    <p style="color: var(--pico-muted-color);">A product manual for running local LLMs with the llama.cpp inference server, wrapped in a web UI.</p>
+
+    <nav class="help-toc">
+        <a href="#quickstart">Quickstart</a>
+        <a href="#concepts">Core concepts</a>
+        <a href="#server">Server tab</a>
+        <a href="#builds">Builds</a>
+        <a href="#models">Models</a>
+        <a href="#model-config">Model config</a>
+        <a href="#search-hf">Search HF</a>
+        <a href="#benchmarks">Benchmarks</a>
+        <a href="#settings">Settings</a>
+        <a href="#api">Using the API</a>
+        <a href="#troubleshooting">Troubleshooting</a>
+    </nav>
+
+    <h2 id="quickstart">Quickstart</h2>
+    <ol>
+        <li><strong>Build llama.cpp.</strong> Go to <a href="/builds">Builds</a>, pick a profile that matches your hardware (CUDA, ROCm, CPU), and start a build. Builds are cached and reused.</li>
+        <li><strong>Download a model.</strong> On <a href="/models/browse">Search HF</a>, search for a GGUF repo (e.g. <code>unsloth/Qwen3.5-4B-GGUF</code>) and download a quant (<code>Q4_K_M</code> is a good balance for most).</li>
+        <li><strong>Enable it.</strong> On <a href="/models">Models</a>, flip the "On" switch for the model(s) you want the server to serve.</li>
+        <li><strong>Tune for VRAM.</strong> Click <em>Configure</em> on a model to adjust what matters most: <em>Context Size</em> (smaller = less KV cache = less VRAM) and <em>KV Cache Quant</em> (<code>q8_0</code> roughly halves KV memory with little quality cost). Watch the <em>VRAM Est.</em> column update so you can see the model fit.</li>
+        <li><strong>Start the server.</strong> Go to <a href="/server">Server</a> and click <em>Start</em>. Use the <span class="inline-icon"><svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M4 3l9 5-9 5z"/></svg></span> icon in the Available Models card to force-load a model into VRAM, or let the router load it on the first request.</li>
+        <li><strong>Send a request.</strong> Use the OpenAI-compatible endpoint listed in the <em>API Endpoint</em> card, passing a model's <em>public name</em> (e.g. <code>unsloth-Qwen3.5-4B.Q4_K_M</code>) in the <code>model</code> field.</li>
+    </ol>
+
+    <h2 id="concepts">Core concepts</h2>
+
+    <h3>Enabled vs loaded</h3>
+    <p>These are two different things:</p>
+    <dl>
+        <dt>Enabled</dt>
+        <dd>The model is included in the llama.cpp preset file and advertised via <code>/v1/models</code>. The router knows it exists and can load it on demand. You can enable as many models as you like. Enabling does not use any VRAM.</dd>
+        <dt>Loaded</dt>
+        <dd>The model's weights are actually resident in GPU VRAM and ready to serve a request. Only a limited number can be loaded at once (<em>Max Loaded</em> on the Server card). The router loads a model when the first request arrives or when you click the <span class="inline-icon"><svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M4 3l9 5-9 5z"/></svg></span> icon in the Server tab's Available Models card.</dd>
+    </dl>
+    <p>So: "enabled" means "<em>available</em> to serve"; "loaded" means "<em>actively</em> in VRAM now".</p>
+
+    <h3>Max Loaded</h3>
+    <p>Caps how many models can be simultaneously resident. When the cap is hit and a request comes in for another enabled model, the router unloads the least-recently-used one to make room. Set to <code>0</code> for unlimited (not recommended unless you really do have the VRAM).</p>
+
+    <h3>Public model names</h3>
+    <p>The <code>id</code> returned by <code>/v1/models</code> is a short name derived from the HuggingFace repo and quant — e.g. <code>unsloth-Qwen3-Coder-Next.UD_Q8_K_XL</code>. The long registry ID still works as an alias. Use the copy icon in the Server tab to grab the name for your client.</p>
+
+    <h3>Presets &amp; aliases</h3>
+    <p>Each enabled model's flags and aliases are handed to llama-server when it starts. User-defined aliases (set in <em>Configure → Aliases</em>) are added alongside the auto-generated ones, so you can refer to a model by any of: public name, registry ID, or your own alias.</p>
+
+    <h2 id="server">Server tab</h2>
+    <p>The single page you'll spend the most time on. It combines live status, server controls, and logs.</p>
+
+    <h3>Server card</h3>
+    <ul>
+        <li><strong>State badge</strong> — Stopped / Starting / Running / Failed.</li>
+        <li><strong>Build</strong> — which compiled llama.cpp to run. <em>Auto (newest ref)</em> picks the successful build with the highest <code>b<em>N</em></code> tag.</li>
+        <li><strong>Max Loaded</strong> — see above.</li>
+        <li><strong>Start / Stop / Restart</strong> — control the llama-server process.</li>
+    </ul>
+
+    <h3>Available Models card</h3>
+    <p>Lists every enabled chat model by public name. Each row has:</p>
+    <ul>
+        <li>A <strong><span class="inline-icon"><svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M4 3l9 5-9 5z"/></svg></span> load</strong> icon — force-loads the model into VRAM. Only appears when the model is not yet loaded.</li>
+        <li>A <strong><span class="inline-icon"><svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3.5A.5.5 0 0 1 3.5 3H10"/></svg></span> copy</strong> icon — copies the public name to the clipboard.</li>
+        <li>A <code>loaded</code> / <code>loading</code> tag when the router has it resident.</li>
+    </ul>
+
+    <h3>Inventory &amp; API Endpoint cards</h3>
+    <p>Build/model counts and the OpenAI-compatible base URL for your clients.</p>
+
+    <h3>Live Performance</h3>
+    <p>Passive timing summary collected from every <code>/v1/chat/completions</code> request that flows through the proxy — no explicit benchmark needed. Shows rolling averages of generation and prompt-processing speed per model, so you can see real-world performance as you use the server. Both streaming and non-streaming requests are captured.</p>
+
+    <h3>Server Logs</h3>
+    <p>Live-tailing stdout/stderr from llama-server. <em>Live tail</em> auto-scrolls. <em>Copy</em> dumps to clipboard; <em>Clear</em> wipes the pane (does not clear backend history).</p>
+
+    <h2 id="builds">Builds</h2>
+    <p>llama.cpp must be compiled against your hardware. The Builds tab checks out a ref from <code>ggml-org/llama.cpp</code>, configures cmake for a backend profile, builds, and keeps the resulting <code>llama-server</code> binary. Multiple builds can coexist — you pick the active one on the Server tab.</p>
+
+    <h3>Profiles</h3>
+    <dl>
+        <dt>CPU</dt><dd>Portable build with no GPU acceleration.</dd>
+        <dt>CUDA</dt><dd>NVIDIA GPUs. Requires the CUDA toolkit in the container.</dd>
+        <dt>ROCm</dt><dd>AMD GPUs. Requires ROCm. Pick an arch that matches your card (e.g. <code>gfx1201</code> for Radeon R9700).</dd>
+    </dl>
+
+    <h3>Ref selection</h3>
+    <p>Choose a specific llama.cpp release tag (<code>b*</code>) or <code>latest</code> to auto-pick the newest. Some features (like experimental tensor parallelism) only exist after a certain ref.</p>
+
+    <h2 id="models">Models</h2>
+    <p>Every downloaded GGUF shows up here. The list is grouped by HuggingFace <strong>org</strong>, then by <strong>base model name</strong> (the repo minus <code>-GGUF</code>), with all quants of a base model shown together.</p>
+
+    <h3>Controls</h3>
+    <dl>
+        <dt>Filter box</dt><dd>Substring match across org, base name, quant, public name, and architecture. Matching rows auto-expand their group.</dd>
+        <dt>Collapse / Expand All</dt><dd>Toggle every org group at once. Per-base-model collapse state is preserved across org toggles.</dd>
+        <dt>On switch</dt><dd>Enable/disable the model. Disabled models are not served; restart the server to fully remove from its registry.</dd>
+        <dt>Configure</dt><dd>Expands an inline form to edit per-model flags (see below).</dd>
+        <dt>Remove</dt><dd>Removes the model from the UI. Choose "Keep Files" to leave GGUFs on disk, or "Delete Files" to also remove them.</dd>
+    </dl>
+
+    <h3>VRAM Est. column</h3>
+    <p>Shows <em>base</em> (weights + small overhead) and <em>peak</em> (weights + full KV cache at configured context size). The dashboard's GPU allocation map uses the base number because the router only ever loads a subset at once.</p>
+
+    <h2 id="model-config">Model config (Configure dialog)</h2>
+
+    <h3>GPU Assignment</h3>
+    <p>A single dropdown that chooses how the model is spread across your GPUs:</p>
+    <dl>
+        <dt>GPU <em>N</em></dt><dd>Pin to a single GPU.</dd>
+        <dt>GPUs <em>i-j</em></dt><dd>Contiguous range, layer split — each GPU holds a sequential slice of layers.</dd>
+        <dt>All GPUs (layer split)</dt><dd>Layer split across every GPU.</dd>
+        <dt>Tensor Parallelism (<em>N</em> GPUs)</dt><dd>Experimental. Splits individual tensors across N GPUs simultaneously — needs a fast GPU interconnect. Upstream support is still rough for some architectures.</dd>
+        <dt>Custom</dt><dd>You provide a raw <code>--tensor-split</code> ratio string.</dd>
+    </dl>
+
+    <h3>Key flags</h3>
+    <dl>
+        <dt>GPU Layers</dt><dd>How many layers to offload. 999 means "all"; lower values keep some on CPU.</dd>
+        <dt>Context Size</dt><dd>Token context window. Larger = more VRAM for the KV cache. "Model Default" uses the training context length.</dd>
+        <dt>Flash Attention</dt><dd>Usually safe on, faster and lower VRAM.</dd>
+        <dt>Jinja Templates</dt><dd>Required for most modern chat models to render their prompt format.</dd>
+        <dt>KV Cache Quant</dt><dd>Quantize the KV cache. <code>q8_0</code> is a ~50% VRAM win with almost no quality cost; <code>q4_0</code> saves more but can affect quality.</dd>
+        <dt>Direct I/O</dt><dd>Load model weights straight to VRAM, bypassing the OS page cache. Useful when VRAM &gt; system RAM.</dd>
+        <dt>Vision Projector (mmproj)</dt><dd>Multimodal projector path. Auto-detected from the model directory for most vision models.</dd>
+    </dl>
+
+    <h3>Speculative Decoding</h3>
+    <p>Predict multiple tokens per step for a speedup with no quality change. <em>Draft Model</em> uses a smaller same-architecture model as the drafter (largest and most consistent speedup). N-gram modes use pattern matching with no extra model — best for repetitive workloads. Click the <strong>?</strong> button in the Configure dialog for per-mode details.</p>
+
+    <h3>Sampling</h3>
+    <p>Temperature, top-p, top-k, min-p, penalties — applied per-request with no restart needed. Leave blank to use server defaults.</p>
+
+    <h3>Extra Flags</h3>
+    <p>Free-form llama-server flags appended verbatim. Use for anything not exposed in the UI.</p>
+
+    <div class="callout">
+        Most config changes require a <strong>server restart</strong> to take effect (the flags are baked into the preset file that llama-server reads at startup). Sampling params apply per-request with no restart.
+    </div>
+
+    <h2 id="search-hf">Search HF</h2>
+    <p>Search HuggingFace for GGUF repos, browse files, and download specific quants. Downloads resume on interruption. Large models are shown with their total size so you know what you're committing to.</p>
+    <p>Gated models require a HuggingFace token — set it under <a href="/settings">Settings</a>.</p>
+
+    <h3>Vision models &amp; projector files</h3>
+    <p>Some vision-capable LLMs ship as two files: the main GGUF (text+vision weights) and a separate <strong>mmproj</strong> file (the vision projector — maps image embeddings into the model's text space). On HuggingFace these usually live in the same repo, with names like <code>mmproj-<em>model</em>.gguf</code>.</p>
+    <ul>
+        <li><strong>Downloading the main GGUF does not automatically fetch the mmproj.</strong> You need to click it in the file list to download it too.</li>
+        <li>Once the mmproj is downloaded into the same model directory, it's <strong>auto-associated</strong> with its LLM — the Configure dialog's <em>Vision Projector (mmproj)</em> field fills in automatically.</li>
+        <li>If the LLM has vision baked in (no separate projector needed), the Configure dialog shows <em>Vision: Built-in</em> and there's nothing to download.</li>
+        <li>mmproj files show up in the file list with a small badge but are not registered as standalone models.</li>
+    </ul>
+    <p>If an mmproj ends up in an unexpected location, you can paste its path into the Configure dialog's <em>Vision Projector</em> field manually.</p>
+
+    <h2 id="benchmarks">Benchmarks</h2>
+    <p>Runs either the llama.cpp <code>llama-bench</code> microbenchmark or real end-to-end requests through the router against a loaded model. Results persist and can be compared across runs.</p>
+
+    <h3>Presets</h3>
+    <dl>
+        <dt>Quick (~10s)</dt>
+        <dd>One end-to-end request with a 256-token prompt and 128 generated tokens. Fast sanity check that a model loads and responds; does not run llama-bench.</dd>
+        <dt>Standard (~2 min)</dt>
+        <dd>Three repetitions of end-to-end requests at <strong>128</strong>, <strong>512</strong>, and <strong>2048</strong>-token prompts (128 generated tokens each). Also runs <code>llama-bench</code> for raw prompt-processing and token-generation throughput, independent of HTTP overhead.</dd>
+        <dt>Thorough (~10 min)</dt>
+        <dd>Five repetitions at <strong>128 / 512 / 2048 / 8192</strong>-token prompts with 256 generated tokens each, plus <code>llama-bench</code>. Use this when you care about long-context performance or need tight variance bounds.</dd>
+    </dl>
+
+    <h3>What gets measured</h3>
+    <ul>
+        <li><strong>PP t/s</strong> — prompt processing speed: how fast the model ingests your input. This is what determines "time waiting before streaming starts".</li>
+        <li><strong>TG t/s</strong> — token generation speed: the streaming rate users actually feel.</li>
+        <li><strong>TTFT</strong> — time to first token, including prompt processing. Lower = snappier perceived response.</li>
+    </ul>
+
+    <h3>Actions</h3>
+    <ul>
+        <li><strong>Detail</strong> — expands per-run results with all data points and hardware snapshot.</li>
+        <li><strong>Compare</strong> — check multiple rows and hit Compare to see them side by side.</li>
+        <li><strong>Export</strong> — CSV dump of every data point for external analysis.</li>
+    </ul>
+
+    <div class="callout">
+        <strong>Note:</strong> <code>llama-bench</code> does not support multi-file (sharded) GGUFs. For large models split into multiple files, only the end-to-end portion of the benchmark runs; the <em>llama-bench</em> badge won't appear on the row.
+    </div>
+    <p>A failed benchmark still appears in the list and can be deleted like any other.</p>
+
+    <h2 id="settings">Settings</h2>
+    <dl>
+        <dt>Auto-start</dt><dd>Start the llama-server automatically when the container boots.</dd>
+        <dt>Server URL</dt><dd>The externally-reachable base URL of this web UI — used for the clickable API endpoint and Chat UI links. Change this if you access the UI from another host.</dd>
+        <dt>OpenAI-Compatible Proxy</dt><dd>The <code>/v1</code> endpoint exposed to clients. <em>Test Connection</em> verifies the llama-server is reachable.</dd>
+        <dt>API Key</dt><dd>Optional Bearer token required for <code>/v1/*</code> requests. Leave blank for an open proxy.</dd>
+        <dt>HF Token</dt><dd>Required to download gated models.</dd>
+        <dt>Theme</dt><dd>UI color scheme. Saved per-browser in localStorage.</dd>
+    </dl>
+
+    <h2 id="api">Using the API</h2>
+    <p>The server speaks the OpenAI <code>/v1/*</code> dialect. Point any OpenAI-compatible client at the proxy endpoint.</p>
+    <pre>curl $BASE/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "unsloth-Qwen3.5-4B.Q4_K_M",
+    "messages": [{"role": "user", "content": "hello"}]
+  }'</pre>
+    <p>Pass any of these in the <code>model</code> field: public name, registry ID, auto-discovery name, or a user-defined alias. The router loads the model on first request (may take a few seconds).</p>
+
+    <h2 id="troubleshooting">Troubleshooting</h2>
+    <dl>
+        <dt>Start button does nothing</dt><dd>No successful build exists. Go to Builds and build llama.cpp first.</dd>
+        <dt>"no compiled build available"</dt><dd>Same — the selected build failed or none exist.</dd>
+        <dt>Model won't load / crashes llama-server</dt><dd>Check the Server Logs. Tensor parallelism is experimental and may fail on some architectures. Try switching GPU Assignment to a layer-split option.</dd>
+        <dt>Model doesn't appear in <code>/v1/models</code></dt><dd>Verify the "On" switch is flipped, then restart the server so the preset file regenerates.</dd>
+        <dt>Model still shows as "loading" forever</dt><dd>It likely failed at startup — check Server Logs for the error.</dd>
+        <dt>Out of VRAM</dt><dd>Lower GPU Layers, reduce Context Size, enable KV Cache Quant, or lower Max Loaded. The GPU allocation map on the Models page shows where your VRAM is going.</dd>
+    </dl>
+
+    <p style="margin-top: 2rem; text-align: center; color: var(--pico-muted-color); font-size: 0.8rem;">
+        llama.cpp: <a href="https://github.com/ggml-org/llama.cpp" target="_blank">github.com/ggml-org/llama.cpp</a>
+    </p>
+</div>
+{{end}}

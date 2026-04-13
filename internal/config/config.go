@@ -16,6 +16,7 @@ type Config struct {
 	LogLevel    string `yaml:"log_level"`    // default "info"
 	ActiveBuild string `yaml:"active_build"` // which llama.cpp build to use
 	ModelsMax   int    `yaml:"models_max"`   // max loaded models, 0 = unlimited
+	AutoStart   bool   `yaml:"auto_start"`   // start the llama-server on container startup
 }
 
 func Load(path string) (*Config, error) {
@@ -25,6 +26,7 @@ func Load(path string) (*Config, error) {
 		LlamaPort:   8080,
 		ExternalURL: "http://localhost:3000",
 		LogLevel:    "info",
+		ModelsMax:   1,
 	}
 
 	data, err := os.ReadFile(path)

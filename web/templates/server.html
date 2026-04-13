@@ -4,13 +4,14 @@
         display: flex;
         flex-direction: column;
         height: calc(100vh - 3rem);
+        overflow-y: auto;
     }
-    .server-controls {
+    .server-top {
         flex-shrink: 0;
     }
     .server-page .log-section {
         flex: 1;
-        min-height: 80px;
+        min-height: 300px;
         overflow: hidden;
     }
     .server-page .log-section .log-panel {
@@ -26,24 +27,64 @@
         font-size: 0.85rem;
         margin: 0;
     }
+    .server-action-error {
+        color: var(--pico-del-color);
+        font-size: 0.8rem;
+        margin: 0.25rem 0;
+        padding: 0.3rem 0.5rem;
+        background: rgba(220, 53, 69, 0.08);
+        border-left: 3px solid var(--pico-del-color);
+        display: none;
+        white-space: pre-wrap;
+    }
+
+    /* Compact controls inside the Server card */
+    .server-card header { margin-bottom: 0.4rem; }
+    .server-card label {
+        font-size: 0.75rem;
+        margin-bottom: 0.5rem;
+    }
+    .server-card select,
+    .server-card input[type="number"] {
+        padding: 0.25rem 0.4rem;
+        font-size: 0.8rem;
+        height: auto;
+        margin-top: 0.15rem;
+        --pico-form-element-spacing-vertical: 0.25rem;
+        --pico-form-element-spacing-horizontal: 0.4rem;
+    }
+    .server-card [role="group"] button {
+        padding: 0.25rem 0.6rem;
+        font-size: 0.8rem;
+        margin: 0;
+    }
+    .server-card .grid {
+        gap: 0.5rem;
+        grid-template-columns: minmax(0, 3fr) minmax(6rem, 1fr);
+    }
+    .server-card select {
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        overflow: hidden;
+    }
+    #server-status-badge { font-size: 0.85rem; margin-bottom: 0.5rem; }
+    #build-save-status { font-size: 0.75rem; color: var(--pico-muted-color); min-height: 1rem; }
+    #build-save-status p { margin: 0; }
+    .server-card .action-icon svg { display: block; }
+    .live-perf header { margin-bottom: 0.3rem; font-size: 0.9rem; }
+    .live-perf { margin-bottom: 0.5rem; padding-top: 0.75rem; padding-bottom: 0.75rem; }
+    .live-perf table { margin: 0; }
 </style>
 
 <div class="server-page">
-    <div class="server-controls">
+    <div class="server-top">
         <div class="grid">
-            <article>
-                <header>
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span>Inference Server</span>
-                        <div id="server-status"
-                             hx-get="/api/service/status"
-                             hx-trigger="load, every 5s"
-                             hx-swap="innerHTML"
-                             hx-on::before-swap="if(event.detail.xhr.responseText===this.innerHTML){event.detail.shouldSwap=false;}">
-                        </div>
-                    </div>
-                </header>
-
+            <article class="server-card">
+                <header>Server</header>
+                <div id="server-status-badge"
+                     hx-get="/api/service/status"
+                     hx-trigger="load, every 5s"
+                     hx-swap="innerHTML"></div>
                 <form id="server-settings-form"
                       hx-put="/api/settings"
                       hx-target="#build-save-status"
@@ -62,40 +103,51 @@
                             </select>
                         </label>
                         <label>
-                            Max Loaded Models
+                            Max Loaded
                             <input type="number" name="models_max" value="{{.ModelsMax}}" min="0"
                                    placeholder="0 = unlimited">
                         </label>
                     </div>
                 </form>
                 <div id="build-save-status"></div>
-
+                <div id="server-action-error" class="server-action-error"></div>
                 <div role="group">
                     <button type="button"
                             hx-post="/api/service/start"
-                            hx-target="#server-status"
-                            hx-swap="innerHTML">
+                            hx-swap="none"
+                            hx-on::after-request="onServerAction(event)">
                         Start
                     </button>
                     <button type="button" class="secondary"
                             hx-post="/api/service/stop"
-                            hx-target="#server-status"
-                            hx-swap="innerHTML">
+                            hx-swap="none"
+                            hx-on::after-request="onServerAction(event)">
                         Stop
                     </button>
                     <button type="button" class="outline"
-                            onclick="htmx.ajax('PUT','/api/settings',{source:document.getElementById('server-settings-form')}).then(function(){htmx.ajax('POST','/api/service/restart',{target:'#server-status',swap:'innerHTML'});});">
+                            onclick="htmx.ajax('PUT','/api/settings',{source:document.getElementById('server-settings-form')}).then(function(){htmx.ajax('POST','/api/service/restart',{swap:'none'});});">
                         Restart
                     </button>
                 </div>
-
-                <div id="loaded-models"
-                     hx-get="/api/service/loaded-models"
-                     hx-trigger="load, every 5s"
-                     hx-swap="innerHTML">
-                </div>
             </article>
+            <div id="dashboard-cards" style="display:contents;"
+                 hx-get="/api/dashboard"
+                 hx-trigger="load, every 5s"
+                 hx-swap="innerHTML">
+                <article><header>Available Models</header><p aria-busy="true">Loading...</p></article>
+                <article><header>Inventory</header><p>—</p></article>
+                <article><header>API Endpoint</header><p>—</p></article>
+            </div>
         </div>
+
+        <article class="live-perf">
+            <header>Live Performance</header>
+            <div id="timings-summary"
+                 hx-get="/api/timings"
+                 hx-trigger="load, every 10s"
+                 hx-swap="innerHTML">
+            </div>
+        </article>
     </div>
 
     <div class="log-section">
@@ -126,6 +178,35 @@
 </div>
 
 <script>
+// --- Copy model name to clipboard (flash checkmark briefly) ---
+function copyModelName(btn) {
+    navigator.clipboard.writeText(btn.dataset.copy || '');
+    btn.innerHTML = btn.dataset.iconCheck;
+    setTimeout(function(){ btn.innerHTML = btn.dataset.icon; }, 900);
+}
+
+// --- Clear "Settings saved." confirmation after a moment ---
+document.body.addEventListener('htmx:afterSwap', function(e) {
+    var t = e.detail && e.detail.target;
+    if (t && t.id === 'build-save-status') {
+        setTimeout(function(){ t.innerHTML = ''; }, 1500);
+    }
+});
+
+// --- Server action button feedback ---
+function onServerAction(e) {
+    var box = document.getElementById('server-action-error');
+    if (e.detail && e.detail.successful) {
+        if (box) { box.style.display = 'none'; box.textContent = ''; }
+        htmx.trigger('#dashboard-cards', 'load');
+        htmx.trigger('#server-status-badge', 'load');
+    } else if (box) {
+        var msg = (e.detail && e.detail.xhr && e.detail.xhr.responseText) || 'Request failed';
+        box.textContent = msg.trim();
+        box.style.display = 'block';
+    }
+}
+
 (function() {
     // --- Server log stream ---
     var logSSE = new EventSource('/api/service/logs');

@@ -74,6 +74,20 @@ func NewServer(cfg *config.Config) *Server {
 	}
 	s.pages = s.parseTemplates()
 	s.router = s.buildRouter()
+
+	if cfg.AutoStart {
+		go func() {
+			// Small delay so the HTTP listener is up and log subscribers
+			// can attach before the router spews its startup output.
+			time.Sleep(500 * time.Millisecond)
+			if err := s.startRouter(); err != nil {
+				slog.Warn("auto-start failed", "error", err)
+			} else {
+				slog.Info("auto-started inference server")
+			}
+		}()
+	}
+
 	return s
 }
 
@@ -116,7 +130,6 @@ func (s *Server) parseTemplates() map[string]*template.Template {
 
 	pages := map[string]*template.Template{}
 	pageFiles := []string{
-		"index.html",
 		"builds.html",
 		"models.html",
 		"models_browse.html",
@@ -124,6 +137,7 @@ func (s *Server) parseTemplates() map[string]*template.Template {
 		"service.html",
 		"server.html",
 		"settings.html",
+		"help.html",
 	}
 	for _, pf := range pageFiles {
 		clone := template.Must(base.Clone())
@@ -148,13 +162,14 @@ func (s *Server) buildRouter() chi.Router {
 		http.FileServer(http.FS(staticFS))))
 
 	// Page routes (server-rendered HTML)
-	r.Get("/", s.handleIndex)
+	r.Get("/", s.handleIndex) // redirects to /server
 	r.Get("/builds", s.handleBuildsPage)
 	r.Get("/models", s.handleModelsPage)
 	r.Get("/models/browse", s.handleModelsBrowsePage)
 	r.Get("/benchmarks", s.handleBenchmarksPage)
 	r.Get("/server", s.handleServerPage)
 	r.Get("/settings", s.handleSettingsPage)
+	r.Get("/help", s.handleHelpPage)
 
 	// Dashboard API (outside /api group, htmx-only)
 	r.Get("/api/dashboard", s.handleDashboard)
@@ -251,7 +266,7 @@ type pageData struct {
 
 // Page handlers — render full HTML pages
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	s.render(w, "index.html", pageData{Nav: "home"})
+	http.Redirect(w, r, "/server", http.StatusFound)
 }
 
 func (s *Server) handleBuildsPage(w http.ResponseWriter, r *http.Request) {
@@ -296,6 +311,10 @@ func (s *Server) handleServerPage(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "server.html", data)
 }
 
+func (s *Server) handleHelpPage(w http.ResponseWriter, r *http.Request) {
+	s.render(w, "help.html", pageData{Title: "Help", Nav: "help"})
+}
+
 func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	proxyEndpoint := strings.TrimRight(s.cfg.ExternalURL, "/") + "/v1"
 	data := struct {
@@ -307,6 +326,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		HasExtURL     bool
 		ExternalURL   string
 		DataDir       string
+		AutoStart     bool
 	}{
 		pageData:      pageData{Title: "Settings", Nav: "settings"},
 		ProxyEndpoint: proxyEndpoint,
@@ -316,6 +336,7 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 		HasExtURL:     s.cfg.ExternalURL != "",
 		ExternalURL:   s.cfg.ExternalURL,
 		DataDir:       s.cfg.DataDir,
+		AutoStart:     s.cfg.AutoStart,
 	}
 	s.render(w, "settings.html", data)
 }
@@ -351,62 +372,103 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		stateBadge = `Stopped`
 	}
 
-	// List loaded models from the router
-	activeModelsHTML := "None"
+	// "Available Models" card: all enabled chat models by public name, with
+	// a load icon and a loaded/loading tag when the router has them resident.
+	availableHTML := "<p>None</p>"
 	if routerStatus.State == process.StateRunning {
+		// Build lookup: router-known name → status
+		loadedState := map[string]string{}
 		if loaded, err := s.process.ListModels(); err == nil {
-			var buf strings.Builder
-			for _, m := range loaded {
-				if m.Status.Value != "loaded" && m.Status.Value != "loading" {
+			for _, lm := range loaded {
+				if lm.Status.Value != "loaded" && lm.Status.Value != "loading" {
 					continue
 				}
-				label := m.ID
-				if len(label) > 50 {
-					label = label[:50] + "..."
+				loadedState[lm.ID] = lm.Status.Value
+				if lm.Model != "" {
+					loadedState[lm.Model] = lm.Status.Value
 				}
-				status := ""
-				if m.Status.Value == "loading" {
-					status = ` <small><mark>loading...</mark></small>`
+				for _, a := range lm.Aliases {
+					loadedState[a] = lm.Status.Value
 				}
-				buf.WriteString(fmt.Sprintf(`<div style="margin-bottom: 0.25rem;"><strong>%s</strong>%s</div>`,
-					html.EscapeString(label), status))
-			}
-			if buf.Len() > 0 {
-				activeModelsHTML = buf.String()
 			}
 		}
 
+		var buf strings.Builder
+		shown := 0
+		for _, m := range registeredModels {
+			if models.IsEmbeddingModel(m.ModelID) || models.IsEmbeddingModel(m.ID) {
+				continue
+			}
+			cfg, err := s.registry.GetConfig(m.ID)
+			if err != nil || !cfg.Enabled {
+				continue
+			}
+
+			routerName := s.registry.RouterName(m.ID)
+			state := loadedState[routerName]
+			if state == "" {
+				state = loadedState[m.ID]
+			}
+			if state == "" {
+				state = loadedState[m.PublicName()]
+			}
+
+			tag := ""
+			switch state {
+			case "loaded":
+				tag = ` <mark style="padding:0 0.3rem;font-size:0.65rem;">loaded</mark>`
+			case "loading":
+				tag = ` <mark style="padding:0 0.3rem;font-size:0.65rem;">loading</mark>`
+			}
+
+			const playSVG = `<svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M4 3l9 5-9 5z"/></svg>`
+			const copySVG = `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3.5A.5.5 0 0 1 3.5 3H10"/></svg>`
+			const checkSVG = `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 8l3 3 7-7"/></svg>`
+
+			loadIcon := `<span class="action-icon-placeholder">&nbsp;</span>`
+			if state == "" {
+				loadIcon = fmt.Sprintf(`<button type="button" class="action-icon" title="Load into VRAM" `+
+					`hx-put="/api/models/%s/activate" hx-swap="none" `+
+					`hx-on::after-request="htmx.trigger('#dashboard-cards', 'load')">%s</button>`,
+					html.EscapeString(m.ID), playSVG)
+			}
+
+			pn := m.PublicName()
+			copyBtn := fmt.Sprintf(`<button type="button" class="action-icon" title="Copy model name" `+
+				`data-icon="%s" data-icon-check="%s" data-copy="%s" `+
+				`onclick="copyModelName(this)">%s</button>`,
+				html.EscapeString(copySVG), html.EscapeString(checkSVG), html.EscapeString(pn), copySVG)
+
+			fmt.Fprintf(&buf, `<div class="available-model-row">%s%s<code>%s</code>%s</div>`,
+				loadIcon, copyBtn, html.EscapeString(pn), tag)
+			shown++
+		}
+		if shown > 0 {
+			availableHTML = buf.String()
+		}
 		if chatURL != "" {
-			activeModelsHTML += fmt.Sprintf(`<p><a href="%s" target="_blank">Open Chat UI →</a></p>`, chatURL)
+			availableHTML += fmt.Sprintf(`<p><a href="%s" target="_blank">Open Chat UI →</a></p>`, chatURL)
 		}
 	}
 
+	_ = stateBadge // server-status-badge has its own poll endpoint now
 	respondHTML(w)
-	fmt.Fprintf(w, `<div class="grid">
-    <article>
-        <header>Service</header>
-        <p>%s</p>
-        <p><a href="/server">Manage →</a></p>
-    </article>
-    <article>
-        <header>Active Models</header>
-        %s
-        <p><a href="/models">Models →</a></p>
-    </article>
-    <article>
-        <header>Inventory</header>
-        <p><strong>%d</strong> builds · <strong>%d</strong> models</p>
-        <p><a href="/builds">Builds →</a> · <a href="/models">Models →</a></p>
-        <p><a href="/models/browse">Get New Models →</a></p>
-    </article>
-    <article>
-        <header>API Endpoint</header>
-        <pre style="user-select: all; cursor: pointer;">%s</pre>
-        <p><a href="/settings">Settings →</a></p>
-    </article>
-</div>`,
-		stateBadge,
-		activeModelsHTML,
+	fmt.Fprintf(w, `<article>
+    <header>Available Models</header>
+    %s
+</article>
+<article>
+    <header>Inventory</header>
+    <p><strong>%d</strong> builds · <strong>%d</strong> models</p>
+    <p><a href="/builds">Builds →</a> · <a href="/models">Models →</a></p>
+    <p><a href="/models/browse">Get New Models →</a></p>
+</article>
+<article>
+    <header>API Endpoint</header>
+    <pre style="user-select: all; cursor: pointer;">%s</pre>
+    <p><a href="/settings">Settings →</a></p>
+</article>`,
+		availableHTML,
 		successBuilds,
 		len(registeredModels),
 		apiURL,

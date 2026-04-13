@@ -2,6 +2,25 @@
 <h1>Settings</h1>
 
 <article>
+    <header>Startup</header>
+    <p>If enabled, the inference server starts automatically when the
+       container launches, using the currently-selected build and model
+       configs.</p>
+    <form hx-put="/api/settings"
+          hx-target="#auto-start-status"
+          hx-swap="innerHTML"
+          hx-trigger="change">
+        <input type="hidden" name="auto_start_touched" value="1">
+        <label>
+            <input type="checkbox" role="switch" name="auto_start"
+                   {{if .AutoStart}}checked{{end}}>
+            Auto-start server on container startup
+        </label>
+    </form>
+    <div id="auto-start-status"></div>
+</article>
+
+<article>
     <header>Server URL</header>
     <p>Base URL used for dashboard links (Chat UI, API endpoint). Defaults to
        <code>http://localhost:3000</code>. If you access this server from other
