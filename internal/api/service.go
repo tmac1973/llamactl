@@ -510,6 +510,13 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 		// GPU assignment
 		gpuAssign := r.FormValue("gpu_assign")
 		cfg.GPUAssign = gpuAssign
+
+		// Always preserve split_mode and number_processors from form
+		cfg.SplitMode = r.FormValue("split_mode")
+		if np, err := strconv.Atoi(r.FormValue("number_processors")); err == nil && np > 0 {
+			cfg.NumberProcessors = np
+		}
+
 		if gpuAssign != "" && gpuAssign != "custom" && gpuAssign != "all" {
 			numGPUs := len(s.monitor.Current().GPU)
 			ts, sm, np, mg := models.ResolveGPUAssign(gpuAssign, numGPUs)
@@ -517,12 +524,14 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 			cfg.SplitMode = sm
 			cfg.NumberProcessors = np
 			cfg.MainGPU = mg
-		} else if gpuAssign == "tensor" {
+		} else if gpuAssign == "tensor" || (gpuAssign == "" && cfg.SplitMode == "tensor") {
 			// Tensor parallelism mode - use all GPUs
 			numGPUs := len(s.monitor.Current().GPU)
+			if cfg.NumberProcessors == 0 {
+				cfg.NumberProcessors = numGPUs
+			}
 			cfg.TensorSplit = ""
 			cfg.SplitMode = "tensor"
-			cfg.NumberProcessors = numGPUs
 			cfg.MainGPU = 0
 		} else if gpuAssign == "all" {
 			// All GPUs - uses tensor parallelism
@@ -534,8 +543,6 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 		} else {
 			// "custom" — preserve the raw tensor_split from form
 			cfg.TensorSplit = r.FormValue("tensor_split")
-			cfg.SplitMode = ""
-			cfg.NumberProcessors = 0
 			cfg.MainGPU = 0
 		}
 		cfg.ContextSize, _ = strconv.Atoi(r.FormValue("context_size"))

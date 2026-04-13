@@ -171,6 +171,21 @@ The setup script auto-detects the AMD GPU architecture and sets `HSA_OVERRIDE_GF
 
 CUDA 12.8 requires an NVIDIA driver >= 570. The llama.cpp CUDA build auto-detects the GPU architecture at compile time — no manual target configuration is needed (unlike ROCm's `AMDGPU_TARGETS`).
 
+### Multi-GPU Configuration
+
+Llama Toolchest supports two multi-GPU modes:
+
+**Layer Parallelism (default)** — Splits model layers sequentially across GPUs. For example, layers 0-24 on GPU 0, layers 25-48 on GPU 1. Best for most use cases.
+
+**Tensor Parallelism (experimental)** — Splits tensors across all GPUs simultaneously. All GPUs work on the same calculation at the same time. More memory-efficient but requires fast GPU interconnect (NVLink/PCIe 4.0+).
+
+**GPU Selection:**
+- **All GPUs (tensor mode)** — Uses all available GPUs for tensor parallelism
+- **Specific GPUs** — Select "GPU 0", "GPUs 0-1", etc. for layer parallelism (auto-calculates tensor-split ratios)
+- **Custom** — Manually enter tensor-split ratios (e.g., `1,1,0,0` for equal split on GPUs 0 and 1)
+
+In tensor parallelism mode, the `Processors` field selects which GPUs (0, 1, ..., N-1) to use.
+
 ## Architecture
 
 LlamaCtl is a single Go binary that serves a web UI and manages the llama-server subprocess.

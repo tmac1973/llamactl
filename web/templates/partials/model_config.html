@@ -59,10 +59,10 @@
 
     <div class="grid">
         {{if gt .NumGPUs 0}}
-        <label title="Assign this model to specific GPUs. Controls tensor-split, split-mode, and main-gpu automatically.">
-            GPU Assignment
+        <label title="GPU assignment mode. Layer mode splits layers sequentially; Tensor mode splits tensors across all GPUs simultaneously (experimental).">
+            GPU Assignment Mode
             <select name="gpu_assign"
-                    onchange="var c=this.closest('form').querySelector('.tensor-split-custom'); var s=this.closest('form').querySelector('.split-mode-options'); if(this.value==='custom'){c.style.display='';c.querySelector('input').name='tensor_split';}else{c.style.display='none';c.querySelector('input').removeAttribute('name');} if(this.value==='tensor'||this.value==='all'){s.style.display='';}else{s.style.display='none';}">
+                    onchange="var c=this.closest('form').querySelector('.tensor-split-custom'); var s=this.closest('form').querySelector('.number-processors-row'); if(this.value==='custom'){c.style.display='';c.querySelector('input').name='tensor_split';}else{c.style.display='none';c.querySelector('input').removeAttribute('name');} s.style.display=(this.value==='tensor' || this.value==='all' ? 'flex':'none')">
                 {{range .GPUOptions}}
                 <option value="{{.Value}}"
                         {{if eq $.Config.GPUAssign .Value}}selected{{end}}
@@ -74,20 +74,18 @@
                 {{end}}
             </select>
         </label>
-        <div class="split-mode-options" style="{{if or (eq .Config.SplitMode "tensor") (eq .Config.GPUAssign "all") (eq .Config.GPUAssign "tensor")}}display:flex;gap:0.5rem;{{else}}display:none;{{end}}">
-            <label title="Split mode: 'layer' splits layers sequentially across GPUs, 'tensor' splits tensors across all GPUs simultaneously (experimental).">
-                Split Mode
-                <select name="split_mode" onchange="this.closest('form').querySelector('.number-processors-row').style.display=(this.value==='tensor'? 'flex':'none')">
-                    <option value="layer" {{if eq .Config.SplitMode "layer"}}selected{{end}}>Layer</option>
-                    <option value="tensor" {{if eq .Config.SplitMode "tensor"}}selected{{end}}>Tensor (parallel)</option>
-                </select>
+        <label title="Split mode: 'layer' splits layers sequentially across GPUs, 'tensor' splits tensors across all GPUs simultaneously (experimental).">
+            Split Mode
+            <select name="split_mode" onchange="this.closest('form').querySelector('.number-processors-row').style.display=(this.value==='tensor'? 'flex':'none')">
+                <option value="layer" {{if eq .Config.SplitMode "layer"}}selected{{end}}>Layer</option>
+                <option value="tensor" {{if eq .Config.SplitMode "tensor"}}selected{{end}}>Tensor (parallel)</option>
+            </select>
+        </label>
+        <div class="number-processors-row" style="{{if or (eq .Config.SplitMode "tensor") (eq .Config.GPUAssign "tensor") (eq .Config.GPUAssign "all")}}display:flex;gap:0.5rem;{{else}}display:none;{{end}}">
+            <label title="Number of GPUs for tensor parallelism. Selects the first N GPUs (0, 1, ..., N-1). For layer mode, this is auto-calculated from GPU Assignment.">
+                Processors
+                <input type="number" name="number_processors" value="{{.Config.NumberProcessors}}" min="1" placeholder="All GPUs">
             </label>
-            <div class="number-processors-row" style="{{if ne .Config.SplitMode "tensor"}}display:none;{{end}}">
-                <label title="Number of GPUs for tensor parallelism. For layer mode, this is auto-calculated.">
-                    Processors
-                    <input type="number" name="number_processors" value="{{.Config.NumberProcessors}}" min="1">
-                </label>
-            </div>
         </div>
         <div class="tensor-split-custom" style="{{if ne .Config.GPUAssign "custom"}}display:none;{{end}}">
             <label title="Manual tensor-split ratios. Comma-separated values for each GPU.">
