@@ -94,6 +94,22 @@ function toggleGroup(header) {
     }
 }
 
+// --- Model list: collapse / expand all orgs ---
+function collapseAllGroups() {
+    var root = document.getElementById('model-list');
+    if (!root) return;
+    root.querySelectorAll('tbody.org-header').forEach(function(oh) {
+        if (!oh.classList.contains('collapsed')) toggleGroup(oh);
+    });
+}
+function expandAllGroups() {
+    var root = document.getElementById('model-list');
+    if (!root) return;
+    root.querySelectorAll('tbody.org-header').forEach(function(oh) {
+        if (oh.classList.contains('collapsed')) toggleGroup(oh);
+    });
+}
+
 // --- Model list: text filter ---
 function filterModels(q) {
     q = (q || '').trim().toLowerCase();

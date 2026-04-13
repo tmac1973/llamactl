@@ -360,7 +360,7 @@ func (s *Server) renderModelTable(w http.ResponseWriter, r *http.Request, modelL
 		sort.Slice(og.bases, func(i, j int) bool { return strings.ToLower(og.bases[i].name) < strings.ToLower(og.bases[j].name) })
 	}
 
-	w.Write([]byte(`<input type="search" class="model-filter" placeholder="Filter by name, quant, architecture…" oninput="filterModels(this.value)" autocomplete="off" style="margin-bottom:0.5rem;">`))
+	w.Write([]byte(`<div class="model-list-controls"><input type="search" class="model-filter" placeholder="Filter by name, quant, architecture…" oninput="filterModels(this.value)" autocomplete="off"><button type="button" class="outline secondary" onclick="collapseAllGroups()">Collapse All</button><button type="button" class="outline secondary" onclick="expandAllGroups()">Expand All</button></div>`))
 	w.Write([]byte(`<table role="grid">`))
 
 	for _, orgName := range orgs {
