@@ -179,10 +179,32 @@
 
 <script>
 // --- Copy the value from a button's data-copy to clipboard (flash a check) ---
+// Falls back to a hidden textarea + execCommand when the async clipboard API
+// is unavailable (non-secure contexts — HTTP on a LAN IP, etc).
 function copyFromButton(btn) {
-    navigator.clipboard.writeText(btn.dataset.copy || '');
-    btn.innerHTML = btn.dataset.iconCheck;
-    setTimeout(function(){ btn.innerHTML = btn.dataset.icon; }, 900);
+    var text = btn.dataset.copy || '';
+    var flashCheck = function() {
+        var originalIcon = btn.dataset.icon;
+        btn.innerHTML = btn.dataset.iconCheck;
+        setTimeout(function(){ btn.innerHTML = originalIcon; }, 900);
+    };
+    var fallback = function() {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+        flashCheck();
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(flashCheck).catch(fallback);
+    } else {
+        fallback();
+    }
 }
 
 // --- Clear "Settings saved." confirmation after a moment ---
