@@ -2,8 +2,10 @@
 <form id="model-config-form"
       hx-put="/api/models/{{.ModelID}}/config"
       hx-target="this"
-      hx-swap="outerHTML"
-      hx-trigger="submit, change delay:500ms">
+      hx-swap="outerHTML focus-scroll:false show:none"
+      hx-trigger="submit, change delay:500ms"
+      hx-on::before-request="window._cfgScrollY=window.scrollY"
+      hx-on::after-settle="window.scrollTo({top:window._cfgScrollY,behavior:'instant'})">
 
     <label title="Friendly names for this model. Clients can use these instead of the full ID. Comma-separated, e.g. qwen3:latest, my-chat-model">
         Aliases
