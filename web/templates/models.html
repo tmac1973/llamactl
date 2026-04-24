@@ -53,43 +53,45 @@
 })();
 
 // --- Model list: toggle org/base-model groups ---
+// Uses dataset string comparison rather than attribute-selector querySelector
+// so org/base names containing CSS-special chars can't break the lookup.
 function toggleGroup(header) {
     if (!header) return;
     var collapsed = header.classList.toggle('collapsed');
     var caret = header.querySelector('.caret');
     if (caret) caret.textContent = collapsed ? '▸' : '▾';
 
-    var org = header.dataset.org;
-    var base = header.dataset.base;
     var root = header.parentElement;
     if (!root) return;
 
-    var orgSel = '[data-org="' + CSS.escape(org) + '"]';
+    var headerOrg = header.dataset.org || '';
+    var headerBase = header.dataset.base || '';
 
     if (header.classList.contains('base-header')) {
-        var baseSel = orgSel + '[data-base="' + CSS.escape(base) + '"]';
-        root.querySelectorAll('tbody.base-col-header' + baseSel + ', tbody.model-row-group' + baseSel).forEach(function(tb) {
-            tb.style.display = collapsed ? 'none' : '';
+        root.querySelectorAll('tbody.base-col-header, tbody.model-row-group').forEach(function(tb) {
+            if ((tb.dataset.org || '') === headerOrg && (tb.dataset.base || '') === headerBase) {
+                tb.style.display = collapsed ? 'none' : '';
+            }
         });
         return;
     }
 
     if (header.classList.contains('org-header')) {
-        // Base headers follow the org's state directly.
-        root.querySelectorAll('tbody.base-header' + orgSel).forEach(function(bh) {
+        // Build a map of (base -> collapsed) for this org so each row in the
+        // org can derive its visibility from its base's current state.
+        var baseCollapsedMap = {};
+        root.querySelectorAll('tbody.base-header').forEach(function(bh) {
+            if ((bh.dataset.org || '') !== headerOrg) return;
+            baseCollapsedMap[bh.dataset.base || ''] = bh.classList.contains('collapsed');
             bh.style.display = collapsed ? 'none' : '';
         });
-        // Column headers + model rows: hide everything when collapsing;
-        // when expanding, only reveal those whose base-header is NOT collapsed.
-        root.querySelectorAll('tbody.base-col-header' + orgSel + ', tbody.model-row-group' + orgSel).forEach(function(tb) {
+        root.querySelectorAll('tbody.base-col-header, tbody.model-row-group').forEach(function(tb) {
+            if ((tb.dataset.org || '') !== headerOrg) return;
             if (collapsed) {
                 tb.style.display = 'none';
                 return;
             }
-            var bh = root.querySelector('tbody.base-header' + orgSel +
-                '[data-base="' + CSS.escape(tb.dataset.base) + '"]');
-            var baseCollapsed = bh && bh.classList.contains('collapsed');
-            tb.style.display = baseCollapsed ? 'none' : '';
+            tb.style.display = baseCollapsedMap[tb.dataset.base || ''] ? 'none' : '';
         });
     }
 }
