@@ -1,5 +1,7 @@
 # Llama Toolchest
 
+Click this screenshot to watch the explainer video:
+
 [![Watch the video](https://img.youtube.com/vi/PKVPg4NQ0YQ/maxresdefault.jpg)](https://www.youtube.com/watch?v=PKVPg4NQ0YQ)
 
 A web-based management interface for [llama.cpp](https://github.com/ggerganov/llama.cpp) inference servers. Build llama.cpp from source, download models from HuggingFace, configure and run inference, and expose an OpenAI-compatible API — all from a single containerized application.
