@@ -472,6 +472,17 @@ func (r *Registry) ScanModels() int {
 		return 0
 	}
 
+	// filepath.Walk treats a symlink as a single non-directory entry and
+	// does not descend into it, so a symlinked models dir would scan as
+	// empty. Resolve the symlink before walking; remap returned paths back
+	// under modelsDir so registry entries are stable across symlink-target
+	// changes.
+	walkRoot := modelsDir
+	if resolved, err := filepath.EvalSymlinks(modelsDir); err == nil && resolved != modelsDir {
+		walkRoot = resolved
+		slog.Debug("scanning via resolved symlink", "models_dir", modelsDir, "resolved", resolved)
+	}
+
 	// Build set of known file paths for fast lookup
 	r.mu.RLock()
 	knownPaths := make(map[string]bool, len(r.data.Models))
@@ -482,9 +493,16 @@ func (r *Registry) ScanModels() int {
 
 	// Walk looking for .gguf files
 	var found []*Model
-	filepath.Walk(modelsDir, func(path string, info os.FileInfo, err error) error {
+	filepath.Walk(walkRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return nil
+		}
+		// Remap path back under modelsDir so registry entries reference
+		// the user's data dir, not the resolved-symlink target.
+		if walkRoot != modelsDir {
+			if rel, relErr := filepath.Rel(walkRoot, path); relErr == nil {
+				path = filepath.Join(modelsDir, rel)
+			}
 		}
 		if !strings.HasSuffix(strings.ToLower(info.Name()), ".gguf") {
 			return nil
