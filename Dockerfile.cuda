@@ -27,6 +27,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 COPY --from=builder /app/llama-toolchest /usr/local/bin/llama-toolchest
 
+# Optional package install: see Dockerfile.cpu for the same pattern.
+# Cuda image is ubuntu24.04, so `.deb` works the same way.
+ARG INSTALL_PACKAGE=""
+RUN --mount=type=bind,target=/build_context \
+    if [ -n "${INSTALL_PACKAGE}" ]; then \
+        echo "Installing package: /build_context/${INSTALL_PACKAGE}"; \
+        apt-get install -y --no-install-recommends "/build_context/${INSTALL_PACKAGE}"; \
+    fi
+
 RUN mkdir -p /data/config /data/builds /data/models /data/llama.cpp
 
 RUN cat > /data/config/llama-toolchest.yaml <<'EOF'

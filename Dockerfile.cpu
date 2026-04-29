@@ -26,6 +26,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 COPY --from=builder /app/llama-toolchest /usr/local/bin/llama-toolchest
 
+# Optional package install: if INSTALL_PACKAGE is set (e.g. via
+# `docker build --build-arg INSTALL_PACKAGE=dist/llama-toolchest_X.Y.Z_linux_amd64.deb`),
+# install the .deb on top of the source-built binary. This switches the
+# image to consuming the same artifact host installs use. Default: unset,
+# so behavior is identical to a pure from-source build.
+ARG INSTALL_PACKAGE=""
+RUN --mount=type=bind,target=/build_context \
+    if [ -n "${INSTALL_PACKAGE}" ]; then \
+        echo "Installing package: /build_context/${INSTALL_PACKAGE}"; \
+        apt-get install -y --no-install-recommends "/build_context/${INSTALL_PACKAGE}"; \
+    fi
+
 RUN mkdir -p /data/config /data/builds /data/models /data/llama.cpp
 
 RUN cat > /data/config/llama-toolchest.yaml <<'EOF'

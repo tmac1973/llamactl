@@ -48,6 +48,16 @@ ENV ROCM_PATH=/opt/rocm \
 
 COPY --from=builder /app/llama-toolchest /usr/local/bin/llama-toolchest
 
+# Optional package install: rocm image is fedora 43 — RPM, not DEB.
+# Pass `--build-arg INSTALL_PACKAGE=dist/llama-toolchest_X.Y.Z_linux_amd64.rpm`
+# to install the prebuilt package on top of the source-built binary.
+ARG INSTALL_PACKAGE=""
+RUN --mount=type=bind,target=/build_context \
+    if [ -n "${INSTALL_PACKAGE}" ]; then \
+        echo "Installing package: /build_context/${INSTALL_PACKAGE}"; \
+        dnf install -y "/build_context/${INSTALL_PACKAGE}"; \
+    fi
+
 RUN mkdir -p /data/config /data/builds /data/models /data/llama.cpp
 
 RUN cat > /data/config/llama-toolchest.yaml <<'EOF'

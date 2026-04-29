@@ -572,12 +572,43 @@ The real meat for end users.
 
 ### Phase 6 — Containers consume the package + volume migration
 
-- Rewrite `Dockerfile.{cuda,rocm,cpu}` to install the `.deb` instead of
-  building from source. Keep the GPU base images.
-- Add a `PACKAGE_PATH` build arg that, if set, uses a local artifact instead
-  of the GH release URL — for `make package && docker build`-style dev loops.
+**Implementation note:** v1 of this phase keeps the from-source builder
+stage as the default and adds an opt-in `INSTALL_PACKAGE` build arg that, if
+set, installs a local `.deb` (cpu/cuda — debian/ubuntu) or `.rpm` (rocm —
+fedora 43) on top of the source-built binary. Switching the default to
+package-install is deferred until the first GitHub release exists; until
+then there's no published artifact for the Dockerfile to fetch via
+`ADD https://...`. The from-source path remains identical to today's
+behavior.
+
+The dev path is:
+
+```
+make package-snapshot                          # produces dist/*.deb / dist/*.rpm
+docker build --build-arg INSTALL_PACKAGE=dist/llama-toolchest_X.Y.Z_linux_amd64.deb \
+             -f Dockerfile.cuda .
+```
+
+The implementation uses BuildKit's `--mount=type=bind` so the build context
+(including `dist/`) is reachable inside the conditional `RUN`, avoiding the
+awkward "always-COPY-something" workaround that plain Docker `COPY` requires
+for optional files.
+
+Once the first release ships, follow-up: replace the builder stage with an
+`ADD https://github.com/.../releases/download/v${VERSION}/...` and drop
+the `INSTALL_PACKAGE` arg's default-empty fallback. Do that as a separate
+commit when the release tag exists.
+
+- ~~Rewrite `Dockerfile.{cuda,rocm,cpu}` to install the `.deb` instead of
+  building from source.~~ Deferred per above.
+- Add a build arg that, if set, uses a local artifact — for
+  `make package-snapshot && docker build`-style dev loops. ✅ Done as
+  `INSTALL_PACKAGE`. Note: rocm uses .rpm, cpu/cuda use .deb.
 - `./setup.sh install --container --from-source` runs `make package` first.
+  Deferred — needs a wrapper change in container_install/rebuild that
+  checks for `--from-source` flag and pre-builds via `make package-snapshot`.
 - Verify image sizes drop (no Go toolchain layer) and rebuilds are faster.
+  Deferred to the eventual default switch.
 - **Volume migration**: in `setup.sh install --container`, detect a
   pre-rename `llamactl-data` named volume:
   - If `llama-toolchest-data` does not yet exist and `llamactl-data` does,
