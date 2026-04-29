@@ -27,6 +27,7 @@ CONTAINER_VERSION=""
 COMPOSE_VERSION=""
 
 INSTALL_MODE="${INSTALL_MODE:-container}"  # host or container; default container preserves existing behavior
+HOST_INSTALL_MODE="${HOST_INSTALL_MODE:-package}"  # for --host: "package" (download released .deb/.rpm) or "source" (go build locally)
 
 DISTRO_ID=""            # debian, ubuntu, fedora, arch, cachyos, opensuse-leap, etc.
 DISTRO_NAME=""          # Pretty name from os-release
@@ -1140,12 +1141,21 @@ llama-toolchest setup — auto-detect GPU + container runtime, build & run
 Usage: ./setup.sh <command> [--host|--container]
 
 Install modes:
-  --container   (default) Run llama-toolchest inside a Docker/Podman
-                container. Isolates the GPU SDK install; works with the
-                existing flow.
-  --host        Run llama-toolchest directly on the host system. Builds
-                from source today; future tagged releases will switch
-                to fetching prebuilt packages.
+  --container     (default) Run llama-toolchest inside a Docker/Podman
+                  container. Isolates the GPU SDK install; works with the
+                  existing flow.
+  --host          Run llama-toolchest directly on the host system. By
+                  default, downloads and installs the latest released
+                  .deb/.rpm package (use --from-source to opt out).
+  --from-package  Implies --host. Download the latest GitHub release
+                  for this distro+arch and install via dnf/apt. This is
+                  the default for --host.
+  --from-source   Implies --host. Build the binary from the local source
+                  via `go build` instead of installing a release package.
+                  Useful for testing uncommitted changes.
+
+Pin a specific released version with `LT_VERSION=1.0.0 ./setup.sh
+install --host` to avoid hitting the GH API for the latest tag.
 
 Lifecycle:
   install     Detect, install prerequisites, build, and start
@@ -1183,12 +1193,14 @@ You can edit .env directly instead of using the interactive setup.
 
 Examples:
   ./setup.sh install                    # detect, install prereqs, build & run (container)
-  ./setup.sh install --host             # build from source, install on host
+  ./setup.sh install --host             # install latest released package on the host
+  ./setup.sh install --from-source      # host install, build from local source
   ./setup.sh status --host              # show host install status
   ./setup.sh uninstall --host           # remove host install
   ./setup.sh status                     # container dry run
   ./setup.sh quick                      # fast container rebuild
   GPU=cpu ./setup.sh install            # force CPU-only backend (container)
+  LT_VERSION=1.0.0 ./setup.sh install --host  # pin a specific package version
 USAGE
 }
 
@@ -1201,9 +1213,11 @@ main() {
     # ── Parse flags after the command ──
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --host)      INSTALL_MODE="host" ;;
-            --container) INSTALL_MODE="container" ;;
-            -h|--help)   usage; exit 0 ;;
+            --host)         INSTALL_MODE="host" ;;
+            --container)    INSTALL_MODE="container" ;;
+            --from-source)  INSTALL_MODE="host"; HOST_INSTALL_MODE="source" ;;
+            --from-package) INSTALL_MODE="host"; HOST_INSTALL_MODE="package" ;;
+            -h|--help)      usage; exit 0 ;;
             *)
                 err "Unknown flag: $1"
                 echo ""

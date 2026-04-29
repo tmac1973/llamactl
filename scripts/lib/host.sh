@@ -210,6 +210,107 @@ host_build_binary() {
     ok "Installed binary: $out"
 }
 
+# Repo coordinates for fetching released packages. Adjust if the project
+# moves; everything else in this file derives from these.
+readonly HOST_RELEASE_REPO="tmac1973/llama-toolchest"
+readonly HOST_RELEASE_API="https://api.github.com/repos/${HOST_RELEASE_REPO}/releases/latest"
+readonly HOST_RELEASE_DOWNLOAD="https://github.com/${HOST_RELEASE_REPO}/releases/download"
+
+# Map host architecture to the suffix used in goreleaser asset names.
+host_pkg_arch() {
+    case "$(uname -m)" in
+        x86_64)  echo "amd64" ;;
+        aarch64|arm64) echo "arm64" ;;
+        *) return 1 ;;
+    esac
+}
+
+# Map distro family to the package extension shipped for it.
+host_pkg_ext() {
+    case "$DISTRO_FAMILY" in
+        fedora) echo "rpm" ;;
+        debian) echo "deb" ;;
+        *) return 1 ;;
+    esac
+}
+
+# Fetch the latest release tag from GitHub. Echoes the version (without the
+# leading "v"). Honors GITHUB_TOKEN for higher rate limits.
+host_latest_release_version() {
+    local auth_args=()
+    [[ -n "${GITHUB_TOKEN:-}" ]] && auth_args=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+    local json
+    json="$(curl -fsSL "${auth_args[@]}" "$HOST_RELEASE_API")" || return 1
+    # Cheap JSON parse: tag_name is on its own line with the value quoted.
+    echo "$json" | grep -m1 '"tag_name":' | sed 's/.*"v\?\([^"]*\)".*/\1/'
+}
+
+# Install llama-toolchest from a published release. Default version is
+# whatever GitHub considers latest; can be overridden via the LT_VERSION
+# env var (useful for pinning a known-good release).
+host_install_from_package() {
+    local arch ext
+    arch="$(host_pkg_arch)" || { err "Unsupported architecture: $(uname -m)"; return 1; }
+    ext="$(host_pkg_ext)"   || { err "Package install isn't supported on distro family '$DISTRO_FAMILY'. Use --from-source."; return 1; }
+
+    local version="${LT_VERSION:-}"
+    if [[ -z "$version" ]]; then
+        log "Looking up latest release of $HOST_RELEASE_REPO..."
+        version="$(host_latest_release_version)" || { err "Failed to query GitHub releases API. Check network or set LT_VERSION=X.Y.Z to skip the lookup."; return 1; }
+        [[ -z "$version" ]] && { err "Couldn't parse a version from the release JSON."; return 1; }
+    fi
+    log "Installing version v$version (${arch}, .${ext})"
+
+    local asset="llama-toolchest_${version}_linux_${arch}.${ext}"
+    local pkg_url="${HOST_RELEASE_DOWNLOAD}/v${version}/${asset}"
+    local sums_url="${HOST_RELEASE_DOWNLOAD}/v${version}/checksums.txt"
+
+    local tmpdir
+    tmpdir="$(mktemp -d)"
+    # Best-effort cleanup; even if the function returns early we don't want
+    # leftover packages eating /tmp.
+    trap "rm -rf '$tmpdir'" RETURN
+
+    log "Downloading $asset..."
+    if ! curl -fsSL --output "$tmpdir/$asset" "$pkg_url"; then
+        err "Download failed: $pkg_url"
+        return 1
+    fi
+
+    if curl -fsSL --output "$tmpdir/checksums.txt" "$sums_url" 2>/dev/null; then
+        local expected actual
+        expected="$(grep " ${asset}\$" "$tmpdir/checksums.txt" | awk '{print $1}')"
+        actual="$(sha256sum "$tmpdir/$asset" | awk '{print $1}')"
+        if [[ -z "$expected" ]]; then
+            warn "$asset not found in checksums.txt; skipping verification."
+        elif [[ "$expected" != "$actual" ]]; then
+            err "Checksum mismatch for $asset"
+            err "  expected: $expected"
+            err "  actual:   $actual"
+            return 1
+        else
+            ok "Checksum verified"
+        fi
+    else
+        warn "Couldn't fetch checksums.txt; skipping verification."
+    fi
+
+    # Clean up a previous from-source binary if one exists, so PATH
+    # resolution doesn't keep pointing at the old user-local copy.
+    if [[ -f "$HOME/.local/bin/llama-toolchest" ]]; then
+        log "Removing previous from-source binary at $HOME/.local/bin/llama-toolchest"
+        rm -f "$HOME/.local/bin/llama-toolchest"
+    fi
+
+    log "Installing $asset (sudo)..."
+    case "$DISTRO_FAMILY" in
+        fedora) sudo dnf install -y "$tmpdir/$asset" || return 1 ;;
+        debian) sudo apt-get install -y "$tmpdir/$asset" || return 1 ;;
+    esac
+
+    ok "Installed: $(/usr/bin/llama-toolchest --version 2>/dev/null || echo "v$version")"
+}
+
 # Write the example config to the user's config dir if it doesn't exist.
 # Existing configs are left alone — we don't overwrite the user's settings.
 host_write_config() {
@@ -240,8 +341,14 @@ EOF
 }
 
 # Write a systemd drop-in override carrying GPU env vars (e.g.
-# HSA_OVERRIDE_GFX_VERSION) and the explicit --config path. This way the
-# packaged unit file stays generic and per-machine knobs go in the override.
+# HSA_OVERRIDE_GFX_VERSION) and, when needed, an ExecStart pointing at a
+# non-standard binary path. The packaged unit file stays generic;
+# per-machine knobs live in the override.
+#
+# For from-package installs we only write the override if there's
+# something non-default to record (e.g., HSA_OVERRIDE_GFX_VERSION). The
+# package's unit already invokes /usr/bin/llama-toolchest with the right
+# defaults, so an empty override is just noise.
 host_write_unit_override() {
     local scope; scope="$(service_scope)"
     local override_dir
@@ -251,14 +358,29 @@ host_write_unit_override() {
         override_dir="${HOME}/.config/systemd/user/llama-toolchest.service.d"
     fi
 
+    local need_execstart=false
+    [[ "${HOST_INSTALL_MODE:-package}" == "source" ]] && need_execstart=true
+
+    local need_env=false
+    [[ -n "${AMD_GFX_VERSION:-}" ]] && need_env=true
+
+    if [[ "$need_execstart" == false ]] && [[ "$need_env" == false ]]; then
+        # Clean up any stale override left from a previous from-source install.
+        local stale="$override_dir/override.conf"
+        [[ -f "$stale" ]] && rm -f "$stale" && log "Removed stale unit override"
+        return 0
+    fi
+
     mkdir -p "$override_dir"
     local override_file="$override_dir/override.conf"
 
     {
         echo "[Service]"
-        echo "ExecStart="
-        echo "ExecStart=$(host_binary_path) --config $(host_config_path)"
-        if [[ -n "${AMD_GFX_VERSION:-}" ]]; then
+        if [[ "$need_execstart" == true ]]; then
+            echo "ExecStart="
+            echo "ExecStart=$(host_binary_path) --config $(host_config_path)"
+        fi
+        if [[ "$need_env" == true ]]; then
             echo "Environment=HSA_OVERRIDE_GFX_VERSION=${AMD_GFX_VERSION}"
         fi
     } > "$override_file"
@@ -267,50 +389,72 @@ host_write_unit_override() {
 }
 
 host_install() {
-    log "Host install — scope: $(host_scope)"
+    local mode="${HOST_INSTALL_MODE:-package}"
+    log "Host install — scope: $(host_scope), mode: $mode"
     log "GPU backend: ${GPU_VENDOR:-unknown} (${GPU_INFO:-no description})"
     echo ""
 
-    if ! host_check_build_toolchain; then
-        err "Resolve missing build prerequisites and re-run."
-        return 1
-    fi
-
-    # Offer to install GPU SDK packages for the detected backend so the
-    # first llama.cpp build doesn't fail with a missing-cmake-config error.
+    # GPU SDK packages so llama.cpp builds from the UI succeed first try.
+    # Same step for both install modes.
     if [[ -n "${GPU_VENDOR:-}" ]]; then
         host_install_gpu_sdk "$GPU_VENDOR" || \
             warn "GPU SDK install reported issues; continuing with binary install."
     fi
 
-    # Build + install the binary.
-    host_build_binary
+    case "$mode" in
+        package)
+            host_install_from_package || return 1
+            ;;
+        source)
+            if ! host_check_build_toolchain; then
+                err "Resolve missing build prerequisites and re-run."
+                return 1
+            fi
+            host_build_binary
+            # Verify the bin dir is on PATH (user install only).
+            if [[ "$(host_scope)" == "user" ]] && ! echo ":$PATH:" | grep -q ":$(host_bin_dir):"; then
+                warn "$(host_bin_dir) is not on your PATH."
+                log "Add it to your shell rc (e.g. ~/.bashrc or ~/.zshrc):"
+                echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
+                echo ""
+            fi
+            ;;
+        *)
+            err "Unknown HOST_INSTALL_MODE: $mode (expected 'package' or 'source')"
+            return 1
+            ;;
+    esac
 
-    # Verify the bin dir is on PATH (user install only — system /usr/local/bin
-    # is always on PATH).
-    if [[ "$(host_scope)" == "user" ]] && ! echo ":$PATH:" | grep -q ":$(host_bin_dir):"; then
-        warn "$(host_bin_dir) is not on your PATH."
-        log "Add it to your shell rc (e.g. ~/.bashrc or ~/.zshrc):"
-        echo "    export PATH=\"\$HOME/.local/bin:\$PATH\""
-        echo ""
-    fi
-
-    # Config skeleton.
-    host_write_config
-
-    # Systemd unit + override.
-    local unit_src="$SCRIPT_DIR/packaging/systemd/llama-toolchest.service"
+    # Config skeleton — only matters for user-scope; system installs that
+    # want a /etc config can copy from the .yaml.example shipped in the package.
     if [[ "$(host_scope)" == "user" ]]; then
-        unit_src="$SCRIPT_DIR/packaging/systemd/llama-toolchest.user.service"
+        host_write_config
     fi
-    service_install "$unit_src"
+
+    # Install the systemd unit. For from-package installs the package
+    # already shipped a unit at /usr/lib/systemd/{system,user}/, so we
+    # skip the copy and just rely on the packaged one. For from-source
+    # we copy our local copy to the user's config dir.
+    if [[ "$mode" == "source" ]]; then
+        local unit_src="$SCRIPT_DIR/packaging/systemd/llama-toolchest.service"
+        if [[ "$(host_scope)" == "user" ]]; then
+            unit_src="$SCRIPT_DIR/packaging/systemd/llama-toolchest.user.service"
+        fi
+        service_install "$unit_src"
+    else
+        # Package's postinstall already ran daemon-reload, but a re-install
+        # with new unit content benefits from another reload to be sure.
+        if [[ "$(service_scope)" == "user" ]]; then
+            systemctl --user daemon-reload >/dev/null 2>&1 || true
+        else
+            systemctl daemon-reload >/dev/null 2>&1 || true
+        fi
+    fi
+
     host_write_unit_override
 
     # If the service is already running, restart so the new binary takes
-    # effect — running install --host is a clear signal that the user wants
-    # the just-built binary to be the live one. We don't prompt: a stray
-    # keystroke or buffered Enter from the previous step's output can flip a
-    # Y/n prompt's meaning silently.
+    # effect.
     if service_is_active; then
         log "Service is running; restarting to pick up the new binary..."
         service_restart
@@ -330,7 +474,10 @@ host_install() {
     echo ""
     ok "Host install complete."
     echo ""
-    echo "  Binary:      $(host_binary_path)"
+    case "$mode" in
+        package) echo "  Binary:      /usr/bin/llama-toolchest (system, from package)" ;;
+        source)  echo "  Binary:      $(host_binary_path)" ;;
+    esac
     echo "  Config:      $(host_config_path)"
     echo "  Data dir:    $(host_data_dir)"
     echo "  Web UI:      http://localhost:${LLAMA_TOOLCHEST_PORT:-3000}"
@@ -350,6 +497,19 @@ host_uninstall() {
     fi
     [[ -d "$override_dir" ]] && rm -rf "$override_dir"
 
+    # Remove the binary. Two cases:
+    #  (a) Installed via package — uninstall via dnf/apt so the system
+    #      unit, /usr/bin binary, and the example config all go cleanly.
+    #  (b) Installed from source — just rm the user-local binary.
+    if rpm -q llama-toolchest >/dev/null 2>&1; then
+        log "Removing llama-toolchest package (dnf, sudo)..."
+        sudo dnf remove -y llama-toolchest || warn "Package removal returned non-zero; continuing."
+    elif dpkg -s llama-toolchest >/dev/null 2>&1; then
+        log "Removing llama-toolchest package (apt-get, sudo)..."
+        sudo apt-get remove -y llama-toolchest || warn "Package removal returned non-zero; continuing."
+    fi
+    # Always check the user-local path too — we might have both if the user
+    # switched modes without uninstalling first.
     local bin; bin="$(host_binary_path)"
     if [[ -f "$bin" ]]; then
         rm -f "$bin"
@@ -369,7 +529,26 @@ host_uninstall() {
 
 host_status() {
     echo "Scope:       $(host_scope)"
-    echo "Binary:      $(host_binary_path)$( [[ -x "$(host_binary_path)" ]] && echo "" || echo "  (not installed)")"
+
+    # Show whichever binary is actually present. Package install lives at
+    # /usr/bin; from-source lives in the user's bin dir.
+    local pkg_marker="" src_marker=""
+    if rpm -q llama-toolchest >/dev/null 2>&1; then
+        pkg_marker="  (package: $(rpm -q --qf '%{VERSION}' llama-toolchest))"
+    elif dpkg -s llama-toolchest >/dev/null 2>&1; then
+        pkg_marker="  (package: $(dpkg-query -W -f='${Version}' llama-toolchest))"
+    fi
+    if [[ -x /usr/bin/llama-toolchest ]]; then
+        echo "Binary:      /usr/bin/llama-toolchest${pkg_marker}"
+    fi
+    if [[ -x "$(host_binary_path)" ]]; then
+        src_marker="  (from-source)"
+        echo "Binary:      $(host_binary_path)${src_marker}"
+    fi
+    if [[ ! -x /usr/bin/llama-toolchest ]] && [[ ! -x "$(host_binary_path)" ]]; then
+        echo "Binary:      (not installed)"
+    fi
+
     echo "Config:      $(host_config_path)$( [[ -f "$(host_config_path)" ]] && echo "" || echo "  (missing)")"
     echo "Data dir:    $(host_data_dir)"
     echo "Service:     $(service_unit_path)"
