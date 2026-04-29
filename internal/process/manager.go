@@ -12,8 +12,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -119,9 +120,11 @@ func (m *Manager) Start(cfg RouterConfig) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, cfg.BinaryPath, args...)
 
-	// Set LD_LIBRARY_PATH for co-located shared libs
+	// Tell the child process where to find co-located shared libraries.
+	// The variable name differs per OS; on Windows we prepend to PATH instead
+	// of setting a separate var, since that's how Windows resolves DLLs.
 	binDir := filepath.Dir(cfg.BinaryPath)
-	cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+binDir)
+	cmd.Env = appendLibraryPath(os.Environ(), binDir)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -174,12 +177,14 @@ func (m *Manager) Stop() error {
 	done := m.done
 	m.mu.Unlock()
 
-	cmd.Process.Signal(syscall.SIGTERM)
+	if err := terminate(cmd.Process); err != nil {
+		slog.Debug("terminate failed", "error", err)
+	}
 
 	select {
 	case <-done:
 	case <-time.After(30 * time.Second):
-		cmd.Process.Signal(syscall.SIGKILL)
+		cmd.Process.Kill()
 		<-done
 	}
 
@@ -433,4 +438,25 @@ func (m *Manager) CheckHealth() bool {
 	m.mu.Unlock()
 
 	return healthy
+}
+
+// appendLibraryPath returns env with the appropriate library-search variable
+// set so the child process can find shared libraries co-located with the
+// binary. On Linux this is LD_LIBRARY_PATH, on macOS DYLD_LIBRARY_PATH, on
+// Windows we prepend to PATH (since that's how the loader finds DLLs).
+func appendLibraryPath(env []string, dir string) []string {
+	switch runtime.GOOS {
+	case "darwin":
+		return append(env, "DYLD_LIBRARY_PATH="+dir)
+	case "windows":
+		for i, e := range env {
+			if upper := strings.ToUpper(e); strings.HasPrefix(upper, "PATH=") {
+				env[i] = e[:5] + dir + string(os.PathListSeparator) + e[5:]
+				return env
+			}
+		}
+		return append(env, "PATH="+dir)
+	default:
+		return append(env, "LD_LIBRARY_PATH="+dir)
+	}
 }
