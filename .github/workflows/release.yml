@@ -1,5 +1,11 @@
 name: release
 
+# Fires on tag push. The tag is normally created by release-please when its
+# release PR is merged (.github/workflows/release-please.yml), so the typical
+# flow is: merge release PR → release-please creates v* tag + GitHub Release
+# → this workflow runs goreleaser → goreleaser uploads .deb/.rpm/tarballs
+# as assets on the existing release. Manual `git tag v* && git push --tags`
+# also works as a fallback.
 on:
   push:
     tags:

@@ -113,14 +113,14 @@ checksum:
 snapshot:
   version_template: "{{ .Version }}-snapshot+{{ .ShortCommit }}"
 
+# release-please owns the changelog (CHANGELOG.md + GitHub Release body),
+# so we tell GoReleaser to skip its own changelog generation and to leave
+# the existing release alone — just attach artifacts.
 changelog:
-  use: github
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^chore:"
-      - "^test:"
+  disable: true
+
+release:
+  mode: keep-existing
 
 # Homebrew tap — disabled until the tap repo
 # (github.com/tmac1973/homebrew-llama-toolchest) is created. To enable:
