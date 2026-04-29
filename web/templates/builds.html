@@ -40,7 +40,9 @@
                             hx-get="/api/builds/refs?refresh=1"
                             hx-target="#git-ref-select"
                             hx-swap="innerHTML"
-                            title="Fetch available tags from llama.cpp repo">
+                            hx-disabled-elt="this"
+                            hx-indicator="this"
+                            title="Pull latest tags from the llama.cpp remote">
                         Refresh Tags
                     </button>
                 </div>
