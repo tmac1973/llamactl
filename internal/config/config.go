@@ -22,7 +22,7 @@ type Config struct {
 func Load(path string) (*Config, error) {
 	cfg := &Config{
 		ListenAddr:  ":3000",
-		DataDir:     "/data",
+		DataDir:     DefaultDataDir(),
 		LlamaPort:   8080,
 		ExternalURL: "http://localhost:3000",
 		LogLevel:    "info",

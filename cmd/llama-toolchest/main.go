@@ -16,7 +16,7 @@ import (
 )
 
 func main() {
-	configPath := flag.String("config", "/data/config/llama-toolchest.yaml", "config file path")
+	configPath := flag.String("config", config.DefaultConfigPath(), "config file path")
 	flag.Parse()
 
 	cfg, err := config.Load(*configPath)

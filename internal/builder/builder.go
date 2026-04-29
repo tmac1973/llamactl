@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -421,7 +422,7 @@ func (b *Builder) runBuild(ctx context.Context, prof BuildProfile, srcDir string
 
 	// ninja — build all targets (target names vary across llama.cpp versions)
 	sendLog("==> Running ninja...")
-	if err := b.runCmd(ctx, buildDir, logCh, result.ID, "ninja", "-j", fmt.Sprintf("%d", numCPU())); err != nil {
+	if err := b.runCmd(ctx, buildDir, logCh, result.ID, "ninja", "-j", fmt.Sprintf("%d", runtime.NumCPU())); err != nil {
 		b.finishBuild(result, BuildStatusFailed, fmt.Sprintf("ninja failed: %v", err))
 		sendLog(fmt.Sprintf("==> ninja FAILED: %v", err))
 		return
@@ -748,16 +749,3 @@ func copyFile(src, dst string) error {
 	return err
 }
 
-func numCPU() int {
-	// Use nproc if available, fallback to 4
-	out, err := exec.Command("nproc").Output()
-	if err != nil {
-		return 4
-	}
-	var n int
-	fmt.Sscanf(strings.TrimSpace(string(out)), "%d", &n)
-	if n < 1 {
-		return 4
-	}
-	return n
-}
