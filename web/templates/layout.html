@@ -381,7 +381,7 @@
     </main>
 <script>
 (function() {
-    var saved = localStorage.getItem('llamactl-theme');
+    var saved = localStorage.getItem('llama-toolchest-theme');
     if (saved) setTheme(saved);
 })();
 function setTheme(theme) {
@@ -393,7 +393,7 @@ function setTheme(theme) {
         el.setAttribute('data-theme', 'dark');
         el.setAttribute('data-custom-theme', theme);
     }
-    localStorage.setItem('llamactl-theme', theme);
+    localStorage.setItem('llama-toolchest-theme', theme);
 }
 </script>
 </body>

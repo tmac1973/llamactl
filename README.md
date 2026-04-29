@@ -100,7 +100,7 @@ Runtime:
   logs        Follow container logs
 
 Auto-start:
-  enable      Start llamactl on boot
+  enable      Start llama-toolchest on boot
   disable     Stop starting on boot
 
 Info:
@@ -127,7 +127,7 @@ RUNTIME=podman ./setup.sh install   # force Podman runtime
 
 ## Configuration
 
-Llama Toolchest uses a YAML config file at `/data/config/llamactl.yaml` inside the container. Settings can also be changed from the Settings page in the UI.
+Llama Toolchest uses a YAML config file at `/data/config/llama-toolchest.yaml` inside the container. Settings can also be changed from the Settings page in the UI.
 
 ```yaml
 listen_addr: ":3000"       # Management UI listen address
@@ -141,18 +141,18 @@ log_level: "info"
 
 ### Model Storage
 
-By default, models are stored in the Docker volume (`llamactl-data`). To persist models on the host filesystem (so they survive volume removal):
+By default, models are stored in the Docker volume (`llama-toolchest-data`). To persist models on the host filesystem (so they survive volume removal):
 
 ```bash
 # Add to .env (or set before running setup.sh)
-LLAMACTL_MODELS_DIR=/path/to/your/models
+LLAMA_TOOLCHEST_MODELS_DIR=/path/to/your/models
 ```
 
 The host directory is bind-mounted to `/data/models` inside the container. Existing models in the volume will not be visible when a host directory is mounted — move them first if needed.
 
 ### External URL
 
-Set `external_url` when accessing LlamaCtl from a remote machine. This configures the displayed API endpoint URL and Chat UI link on the dashboard. Can be set from the Settings page.
+Set `external_url` when accessing Llama Toolchest from a remote machine. This configures the displayed API endpoint URL and Chat UI link on the dashboard. Can be set from the Settings page.
 
 ### API Key Authentication
 
@@ -162,7 +162,7 @@ When `api_key` is set, all requests to `/v1/*` require a `Authorization: Bearer 
 
 | Port | Service |
 |------|---------|
-| 3000 | LlamaCtl management UI + OpenAI proxy (`/v1`) |
+| 3000 | Llama Toolchest management UI + OpenAI proxy (`/v1`) |
 | 8080 | llama.cpp router + built-in chat UI with model dropdown |
 
 ## GPU Backend Notes
@@ -192,11 +192,11 @@ In tensor parallelism mode, the `Processors` field selects which GPUs (0, 1, ...
 
 ## Architecture
 
-LlamaCtl is a single Go binary that serves a web UI and manages the llama-server subprocess.
+Llama Toolchest is a single Go binary that serves a web UI and manages the llama-server subprocess.
 
 ```
 cmd/
-  llamactl/            Server entry point
+  llama-toolchest/     Server entry point
   agent/               Terminal chat client with tool use
 internal/
   api/                 HTTP handlers, SSE streaming, routing proxy
@@ -238,7 +238,7 @@ The UI uses server-rendered HTML with [htmx](https://htmx.org/) for interactivit
 
 ```bash
 make dev          # go run with hot reload
-make build        # compile bin/llamactl + bin/agent
+make build        # compile bin/llama-toolchest + bin/agent
 make run          # build and run
 make agent        # compile just the agent CLI
 ```

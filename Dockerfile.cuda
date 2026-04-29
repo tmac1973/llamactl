@@ -8,7 +8,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -o llamactl ./cmd/llamactl
+    CGO_ENABLED=0 go build -o llama-toolchest ./cmd/llama-toolchest
 
 # Stage 2: Runtime — NVIDIA CUDA 12.8
 # Using dev image because llama.cpp builds happen inside
@@ -25,11 +25,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     build-essential \
     libssl-dev
 
-COPY --from=builder /app/llamactl /usr/local/bin/llamactl
+COPY --from=builder /app/llama-toolchest /usr/local/bin/llama-toolchest
 
 RUN mkdir -p /data/config /data/builds /data/models /data/llama.cpp
 
-RUN cat > /data/config/llamactl.yaml <<'EOF'
+RUN cat > /data/config/llama-toolchest.yaml <<'EOF'
 listen_addr: ":3000"
 data_dir: "/data"
 llama_port: 8080
@@ -38,9 +38,9 @@ EOF
 
 VOLUME ["/data"]
 
-# LlamaCtl web UI
+# llama-toolchest web UI
 EXPOSE 3000
 # llama-server instances (chat UI + inference)
 EXPOSE 8080
 
-ENTRYPOINT ["llamactl", "--config", "/data/config/llamactl.yaml"]
+ENTRYPOINT ["llama-toolchest", "--config", "/data/config/llama-toolchest.yaml"]

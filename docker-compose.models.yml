@@ -1,5 +1,5 @@
 # Optional override: mount a host directory for model storage.
-# Used automatically by setup.sh when LLAMACTL_MODELS_DIR is set in .env.
+# Used automatically by setup.sh when LLAMA_TOOLCHEST_MODELS_DIR is set in .env.
 #
 # Manual usage:
 #   docker compose -f docker-compose.rocm.yml -f docker-compose.models.yml up -d
@@ -9,4 +9,4 @@
 services:
   llama-toolchest:
     volumes:
-      - ${LLAMACTL_MODELS_DIR}:/data/models:z
+      - ${LLAMA_TOOLCHEST_MODELS_DIR}:/data/models:z

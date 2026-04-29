@@ -5,10 +5,10 @@ services:
       dockerfile: Dockerfile.cuda
     container_name: llama-toolchest
     ports:
-      - "${LLAMACTL_PORT:-3000}:3000"   # Llama Toolchest management UI
-      - "${LLAMACTL_INFERENCE_PORT:-8080}:8080"   # llama-server router (chat UI + inference)
+      - "${LLAMA_TOOLCHEST_PORT:-3000}:3000"   # llama-toolchest management UI
+      - "${LLAMA_TOOLCHEST_INFERENCE_PORT:-8080}:8080"   # llama-server router (chat UI + inference)
     volumes:
-      - llamactl-data:/data:z
+      - llama-toolchest-data:/data:z
     env_file:
       - path: .env
         required: false
@@ -26,6 +26,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  llamactl-data:
-    name: llamactl-data
+  llama-toolchest-data:
+    name: llama-toolchest-data
     driver: local

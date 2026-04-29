@@ -46,7 +46,7 @@ func (s *Server) openAIModel(m *models.Model, cfg *models.ModelConfig) map[strin
 		"id":       m.PublicName(),
 		"object":   "model",
 		"created":  m.DownloadedAt.Unix(),
-		"owned_by": "llamactl",
+		"owned_by": "llama-toolchest",
 		"meta":     meta,
 	}
 	if cfg != nil && len(cfg.Aliases) > 0 {

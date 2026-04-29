@@ -1,7 +1,7 @@
 .PHONY: build agent run dev start stop restart clean \
        docker docker-rebuild docker-compose-up docker-compose-down docker-compose-logs
 
-PID_FILE = bin/llamactl.pid
+PID_FILE = bin/llama-toolchest.pid
 
 # Auto-detect GPU vendor (override with: make docker-rebuild GPU=cuda)
 GPU ?= $(shell ./setup.sh detect 2>/dev/null || echo "rocm")
@@ -9,21 +9,21 @@ COMPOSE_FILE = docker-compose.$(GPU).yml
 
 # Local development
 build:
-	go build -o bin/llamactl ./cmd/llamactl
+	go build -o bin/llama-toolchest ./cmd/llama-toolchest
 	go build -o bin/agent ./cmd/agent
 
 agent:
 	go build -o bin/agent ./cmd/agent
 
 run: build
-	./bin/llamactl --config config.yaml
+	./bin/llama-toolchest --config config.yaml
 
 dev:
-	go run ./cmd/llamactl --config config.yaml
+	go run ./cmd/llama-toolchest --config config.yaml
 
 start: build
-	@echo "Starting llamactl..."
-	@./bin/llamactl --config config.yaml & echo $$! > $(PID_FILE)
+	@echo "Starting llama-toolchest..."
+	@./bin/llama-toolchest --config config.yaml & echo $$! > $(PID_FILE)
 	@echo "PID $$(cat $(PID_FILE)) written to $(PID_FILE)"
 
 stop:

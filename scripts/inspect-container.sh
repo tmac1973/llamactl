@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Compare container config between compose-started and expected values
-NAME="${1:-llamactl}"
+NAME="${1:-llama-toolchest}"
 echo "=== Container: $NAME ==="
 echo ""
 echo "IpcMode:     $(docker inspect "$NAME" --format '{{.HostConfig.IpcMode}}')"

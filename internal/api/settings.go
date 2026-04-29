@@ -138,7 +138,7 @@ func (s *Server) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) saveConfig() {
-	configPath := filepath.Join(s.cfg.DataDir, "config", "llamactl.yaml")
+	configPath := filepath.Join(s.cfg.DataDir, "config", "llama-toolchest.yaml")
 	os.MkdirAll(filepath.Dir(configPath), 0o755)
 
 	data, err := yaml.Marshal(s.cfg)

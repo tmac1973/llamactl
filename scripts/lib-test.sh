@@ -9,8 +9,8 @@
 #   ./scripts/test-tools.sh --host myserver --port 4000 my-model-name
 
 ARGS=()
-_HOST="${LLAMACTL_HOST:-localhost}"
-_PORT="${LLAMACTL_PORT:-3000}"
+_HOST="${LLAMA_TOOLCHEST_HOST:-localhost}"
+_PORT="${LLAMA_TOOLCHEST_PORT:-3000}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
