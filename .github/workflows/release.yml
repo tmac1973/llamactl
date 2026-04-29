@@ -1,44 +1,66 @@
 name: release
 
-# Fires when a GitHub Release is published. The typical path:
-#   merge release-please PR → release-please creates the tag + GitHub
-#   Release → this workflow runs goreleaser → goreleaser uploads
-#   .deb/.rpm/tarballs as assets to the existing release.
+# One workflow for the full release pipeline:
+#   1. release-please-action manages an open "release" PR on main with a
+#      generated CHANGELOG.md. Merging that PR creates a tag and a GitHub
+#      Release.
+#   2. If release-please created a release on this run, goreleaser builds
+#      the .deb/.rpm/tarballs and attaches them as assets.
 #
-# We intentionally do NOT trigger on `push: tags: v*`. The default
-# GITHUB_TOKEN can't trigger other workflows when it pushes a tag, so
-# release-please's tag push wouldn't fire goreleaser without a PAT.
-# Triggering on the release event sidesteps that — release-please
-# publishing the release fires this workflow under the release-please
-# action's own credentials, which works.
+# The two steps live in the same workflow because GitHub does NOT fire
+# downstream workflows from events created by the default GITHUB_TOKEN
+# (so a separate release-event-triggered workflow wouldn't run without
+# a Personal Access Token). Keeping both jobs here uses release-please's
+# action outputs to gate the build job, which works without a PAT.
 #
-# Manual fallback: if you need to ship outside release-please, create a
-# release manually (`gh release create vX.Y.Z`) and this workflow runs.
-# Or use the workflow_dispatch button in the Actions UI for a re-run.
+# A workflow_dispatch input lets you (re)build a specific tag manually
+# from the Actions UI — useful if a goreleaser job ever fails and you
+# need to retry without waiting for another release PR.
+
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to build (e.g. v0.1.0)"
+        description: "Tag to (re)build (e.g. v1.0.0)"
         required: true
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
-  goreleaser:
-    name: GoReleaser
+  release-please:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  goreleaser:
+    runs-on: ubuntu-latest
+    needs: [release-please]
+    # Run when:
+    #   - push event AND release-please just created a release
+    #   - manual dispatch (regardless of release-please's status)
+    if: |
+      always() && (
+        (github.event_name == 'push' && needs.release-please.outputs.release_created == 'true') ||
+        github.event_name == 'workflow_dispatch'
+      )
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # On a release event, GITHUB_REF is refs/tags/<tag>. On manual
-          # dispatch, check out the tag the user supplied.
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ github.event.inputs.tag || needs.release-please.outputs.tag_name }}
 
       - name: Set up Go
         uses: actions/setup-go@v5
