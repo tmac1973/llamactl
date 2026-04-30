@@ -43,6 +43,7 @@ func main() {
 	}
 
 	srv := api.NewServer(cfg)
+	srv.SetVersion(version)
 
 	httpSrv := &http.Server{
 		Addr:    cfg.ListenAddr,

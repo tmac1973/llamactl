@@ -27,6 +27,7 @@ import (
 
 type Server struct {
 	cfg             *config.Config
+	version         string // injected by main via SetVersion; "" = dev build
 	pages           map[string]*template.Template
 	router          chi.Router
 	builder         *builder.Builder
@@ -40,6 +41,12 @@ type Server struct {
 	benchProgressMu sync.RWMutex
 	dirtyModels     map[string]bool // models whose config changed since last load
 }
+
+// SetVersion records the build's version string. main.go calls this with
+// the ldflags-injected `version` package var so the sidebar can display
+// "v1.2.3" or "dev-<sha>" depending on the build. Must be called before
+// the first page render.
+func (s *Server) SetVersion(v string) { s.version = v }
 
 func NewServer(cfg *config.Config) *Server {
 	mon := monitor.New(3 * time.Second)
@@ -121,6 +128,20 @@ func (s *Server) parseTemplates() map[string]*template.Template {
 			}
 			// Default to layer mode (no tensor parallelism) for rough estimates
 			return models.VRAMFitLabel(estimatedGB, perGPU, numGPUs, 0)
+		},
+		"version": func() string {
+			v := s.version
+			if v == "" || v == "dev" {
+				return "dev"
+			}
+			// Released versions (e.g. "1.2.3") get a "v" prefix; dev builds
+			// from goreleaser's --snapshot or the host_build_binary path
+			// already include the marker (e.g. "dev-abc1234" or
+			// "1.2.3-snapshot+abc1234") and read fine without one.
+			if strings.HasPrefix(v, "dev") || strings.Contains(v, "snapshot") {
+				return v
+			}
+			return "v" + v
 		},
 	}
 
