@@ -478,6 +478,27 @@ is_port_available() {
     fi
 }
 
+# Returns 0 if the host port is bound by one of our own containers — i.e.,
+# a llamactl (pre-rename) or llama-toolchest container that the install
+# flow is going to stop and replace anyway. Lets prompt_ports treat such
+# bindings as "not really a conflict" instead of asking the user to pick
+# different ports.
+is_port_held_by_our_container() {
+    local port="$1"
+    [[ -z "$CONTAINER_CMD" ]] && return 1
+    for cname in llamactl llama-toolchest; do
+        $CONTAINER_CMD container exists "$cname" 2>/dev/null || continue
+        # `docker/podman port <c>` outputs lines like "3000/tcp -> 0.0.0.0:3001".
+        # Match the trailing :PORT to confirm this container is the binder.
+        local mappings
+        mappings="$($CONTAINER_CMD port "$cname" 2>/dev/null)" || continue
+        if echo "$mappings" | grep -qE ":${port}(\s|$)"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 prompt_ports() {
     echo ""
     echo -e "${BOLD}Port configuration${NC}"
@@ -487,16 +508,23 @@ prompt_ports() {
     echo "    Inference API:  ${LLAMA_TOOLCHEST_INFERENCE_PORT}"
     echo ""
 
-    # Check if current ports are available
+    # Check if current ports are available. If a port is bound by an existing
+    # llama-toolchest (or pre-rename llamactl) container, that container is
+    # going to be stopped+removed during install, so it's not a real conflict.
     local ports_ok=true
-    if ! is_port_available "$LLAMA_TOOLCHEST_PORT"; then
-        warn "Port ${LLAMA_TOOLCHEST_PORT} is already in use"
-        ports_ok=false
-    fi
-    if ! is_port_available "$LLAMA_TOOLCHEST_INFERENCE_PORT"; then
-        warn "Port ${LLAMA_TOOLCHEST_INFERENCE_PORT} is already in use"
-        ports_ok=false
-    fi
+    for cfg in "UI:$LLAMA_TOOLCHEST_PORT" "Inference:$LLAMA_TOOLCHEST_INFERENCE_PORT"; do
+        local label="${cfg%%:*}"
+        local p="${cfg##*:}"
+        if is_port_available "$p"; then
+            continue
+        fi
+        if is_port_held_by_our_container "$p"; then
+            log "Port ${p} is held by an existing llama-toolchest container; it'll be replaced during install."
+        else
+            warn "Port ${p} (${label}) is already in use by another process"
+            ports_ok=false
+        fi
+    done
 
     if [[ "$ports_ok" == true ]]; then
         if prompt_confirm "Use these ports?"; then
@@ -504,7 +532,8 @@ prompt_ports() {
         fi
     else
         echo ""
-        echo "  One or more ports are in use. Please choose alternative ports."
+        echo "  One or more ports are in use by something other than llama-toolchest."
+        echo "  Pick alternative ports, or stop the offending process and re-run."
     fi
 
     echo ""
