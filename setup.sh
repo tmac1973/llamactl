@@ -639,10 +639,39 @@ migrate_legacy_volume() {
         exit 1
     fi
 
-    # Stop any container that may be holding the volume open.
-    if $CONTAINER_CMD container exists llama-toolchest 2>/dev/null; then
-        $CONTAINER_CMD stop llama-toolchest >/dev/null 2>&1 || true
-    fi
+    # Stop and remove any container that may be holding the volume open OR
+    # binding the inference port. We handle three legacy container names:
+    #   - llamactl: original pre-rename container
+    #   - llama-toolchest: post-rename container that may be running an old
+    #     image (binary inside still calls itself llamactl) against the
+    #     pre-rename volume. Common state for users who rebuilt their
+    #     container partway through the rename.
+    # Also strip any pre-rename podman Quadlet unit so systemd doesn't
+    # bring the old container back on next boot to fight the new one.
+    local old_quadlet_user="${HOME}/.config/containers/systemd/llamactl.container"
+    local old_quadlet_sys="/etc/containers/systemd/llamactl.container"
+    for unit in "$old_quadlet_user" "$old_quadlet_sys"; do
+        if [[ -f "$unit" ]]; then
+            log "Removing legacy Quadlet unit: $unit"
+            if [[ "$unit" == "$old_quadlet_sys" ]]; then
+                sudo systemctl stop llamactl.service 2>/dev/null || true
+                sudo rm -f "$unit"
+                sudo systemctl daemon-reload 2>/dev/null || true
+            else
+                systemctl --user stop llamactl.service 2>/dev/null || true
+                rm -f "$unit"
+                systemctl --user daemon-reload 2>/dev/null || true
+            fi
+        fi
+    done
+
+    for cname in llamactl llama-toolchest; do
+        if $CONTAINER_CMD container exists "$cname" 2>/dev/null; then
+            log "Stopping and removing existing container '$cname'..."
+            $CONTAINER_CMD stop "$cname" >/dev/null 2>&1 || true
+            $CONTAINER_CMD rm "$cname" >/dev/null 2>&1 || true
+        fi
+    done
 
     log "Creating new volume $new_vol..."
     $CONTAINER_CMD volume create "$new_vol" >/dev/null
