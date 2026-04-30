@@ -14,7 +14,7 @@
                     title="Show cmake flags used for this build">
                 Info
             </button>
-            <button class="outline secondary"
+            <button type="button" class="outline secondary"
                     hx-delete="/api/builds/{{.ID}}"
                     hx-confirm="Delete this build?"
                     hx-target="closest tr"
