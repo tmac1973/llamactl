@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -187,7 +188,7 @@ func (s *Server) handleHFDownloadCancel(w http.ResponseWriter, r *http.Request) 
 // onDownloadComplete is called by the downloader when a file finishes.
 func (s *Server) onDownloadComplete(downloadID, modelID, filename string, sizeBytes int64) {
 	safeName := strings.ReplaceAll(modelID, "/", "--")
-	filePath := fmt.Sprintf("%s/models/%s/%s", s.cfg.DataDir, safeName, filename)
+	filePath := filepath.Join(s.cfg.ModelsPath(), safeName, filename)
 
 	// mmproj files are vision projectors — don't register as models.
 	// Instead, auto-associate with sibling models in the same directory.

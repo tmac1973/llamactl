@@ -222,15 +222,19 @@ type registryData struct {
 
 // Registry manages local model storage and metadata.
 type Registry struct {
-	mu      sync.RWMutex
-	dataDir string
-	data    registryData
+	mu        sync.RWMutex
+	dataDir   string
+	modelsDir string
+	data      registryData
 }
 
-// NewRegistry creates a registry and loads persisted state.
-func NewRegistry(dataDir string) *Registry {
+// NewRegistry creates a registry and loads persisted state. modelsDir is
+// where GGUF files live; this can be inside dataDir (default) or somewhere
+// else entirely (config.ModelsDir override).
+func NewRegistry(dataDir, modelsDir string) *Registry {
 	r := &Registry{
-		dataDir: dataDir,
+		dataDir:   dataDir,
+		modelsDir: modelsDir,
 		data: registryData{
 			Models:  make(map[string]*Model),
 			Configs: make(map[string]*ModelConfig),
@@ -467,7 +471,7 @@ func (r *Registry) FindOrphans() []*Model {
 // ScanModels walks the models directory for GGUF files not already in the
 // registry and adds them. Returns the number of new models found.
 func (r *Registry) ScanModels() int {
-	modelsDir := filepath.Join(r.dataDir, "models")
+	modelsDir := r.modelsDir
 	if _, err := os.Stat(modelsDir); err != nil {
 		return 0
 	}

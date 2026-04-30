@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -48,8 +49,8 @@ func NewServer(cfg *config.Config) *Server {
 		cfg:           cfg,
 		builder:       builder.NewBuilder(cfg.DataDir),
 		hfClient:      huggingface.NewClient(cfg.HFToken),
-		downloader:    huggingface.NewDownloader(cfg.DataDir, cfg.HFToken),
-		registry:      models.NewRegistry(cfg.DataDir),
+		downloader:    huggingface.NewDownloader(cfg.DataDir, cfg.ModelsPath(), cfg.HFToken),
+		registry:      models.NewRegistry(cfg.DataDir, cfg.ModelsPath()),
 		process:       process.NewManager(),
 		monitor:       mon,
 		bench:         benchmark.NewStore(cfg.DataDir),
@@ -320,24 +321,28 @@ func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
 	proxyEndpoint := strings.TrimRight(s.cfg.ExternalURL, "/") + "/v1"
 	data := struct {
 		pageData
-		ProxyEndpoint string
-		LlamaPort     int
-		HasAPIKey     bool
-		HasHFToken    bool
-		HasExtURL     bool
-		ExternalURL   string
-		DataDir       string
-		AutoStart     bool
+		ProxyEndpoint    string
+		LlamaPort        int
+		HasAPIKey        bool
+		HasHFToken       bool
+		HasExtURL        bool
+		ExternalURL      string
+		DataDir          string
+		ModelsDir        string
+		DefaultModelsDir string
+		AutoStart        bool
 	}{
-		pageData:      pageData{Title: "Settings", Nav: "settings"},
-		ProxyEndpoint: proxyEndpoint,
-		LlamaPort:     s.cfg.LlamaPort,
-		HasAPIKey:     s.cfg.APIKey != "",
-		HasHFToken:    s.cfg.HFToken != "",
-		HasExtURL:     s.cfg.ExternalURL != "",
-		ExternalURL:   s.cfg.ExternalURL,
-		DataDir:       s.cfg.DataDir,
-		AutoStart:     s.cfg.AutoStart,
+		pageData:         pageData{Title: "Settings", Nav: "settings"},
+		ProxyEndpoint:    proxyEndpoint,
+		LlamaPort:        s.cfg.LlamaPort,
+		HasAPIKey:        s.cfg.APIKey != "",
+		HasHFToken:       s.cfg.HFToken != "",
+		HasExtURL:        s.cfg.ExternalURL != "",
+		ExternalURL:      s.cfg.ExternalURL,
+		DataDir:          s.cfg.DataDir,
+		ModelsDir:        s.cfg.ModelsDir,
+		DefaultModelsDir: filepath.Join(s.cfg.DataDir, "models"),
+		AutoStart:        s.cfg.AutoStart,
 	}
 	s.render(w, "settings.html", data)
 }

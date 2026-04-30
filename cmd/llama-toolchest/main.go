@@ -38,7 +38,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := initDataDir(cfg.DataDir); err != nil {
+	if err := initDataDir(cfg); err != nil {
 		slog.Warn("could not init data dir (expected in local dev)", "error", err)
 	}
 
@@ -66,11 +66,11 @@ func main() {
 	httpSrv.Shutdown(context.Background())
 }
 
-func initDataDir(dataDir string) error {
+func initDataDir(cfg *config.Config) error {
 	dirs := []string{
-		filepath.Join(dataDir, "config"),
-		filepath.Join(dataDir, "builds"),
-		filepath.Join(dataDir, "models"),
+		filepath.Join(cfg.DataDir, "config"),
+		filepath.Join(cfg.DataDir, "builds"),
+		cfg.ModelsPath(),
 	}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {

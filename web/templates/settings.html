@@ -98,7 +98,24 @@
 </article>
 
 <article>
-    <header>Data Directory</header>
-    <p><code>{{.DataDir}}</code></p>
+    <header>Storage</header>
+
+    <p>
+        <strong>Data directory:</strong> <code>{{.DataDir}}</code><br>
+        <small>Holds llama.cpp builds, registry state, and (by default) models. Set at install time and not editable here — to relocate it, stop the service, edit the config YAML, move the directory, and restart.</small>
+    </p>
+
+    <form hx-post="/api/settings" hx-target="#models-dir-result" hx-swap="innerHTML">
+        <label>
+            <strong>Models directory</strong>
+            <input type="text" name="models_dir" value="{{.ModelsDir}}"
+                   placeholder="(default: {{.DefaultModelsDir}})"
+                   pattern="(/.*)?"
+                   autocomplete="off">
+            <small>Override where GGUF files live and where new HuggingFace downloads land. Leave blank to use the default <code>{{.DefaultModelsDir}}</code>. Must be an absolute path to an existing directory. <strong>Restart the service after changing this</strong> so in-memory state picks up the new path.</small>
+        </label>
+        <button type="submit" class="outline">Save Models Directory</button>
+        <span id="models-dir-result"></span>
+    </form>
 </article>
 {{end}}

@@ -89,6 +89,16 @@ func (s *Server) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		if r.Form.Has("auto_start_touched") {
 			s.cfg.AutoStart = r.FormValue("auto_start") == "on"
 		}
+		if r.Form.Has("models_dir") {
+			newDir := strings.TrimSpace(r.FormValue("models_dir"))
+			if newDir != s.cfg.ModelsDir {
+				if err := validateModelsDir(newDir); err != nil {
+					http.Error(w, fmt.Sprintf("models_dir: %s", err), http.StatusBadRequest)
+					return
+				}
+				s.cfg.ModelsDir = newDir
+			}
+		}
 	}
 
 	// Persist config
@@ -146,4 +156,33 @@ func (s *Server) saveConfig() {
 		return
 	}
 	os.WriteFile(configPath, data, 0o644)
+}
+
+// validateModelsDir checks that a user-supplied models directory path is
+// usable. Empty is allowed — that means "use the default <DataDir>/models".
+// Otherwise the path must exist, be a directory, and be readable by us.
+func validateModelsDir(path string) error {
+	if path == "" {
+		return nil
+	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("must be an absolute path")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("path does not exist")
+		}
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("not a directory")
+	}
+	// Check readability — opening the dir is a cheap proxy.
+	dh, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("not readable: %w", err)
+	}
+	dh.Close()
+	return nil
 }

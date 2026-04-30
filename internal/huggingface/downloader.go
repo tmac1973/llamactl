@@ -73,6 +73,7 @@ type CompletionFunc func(downloadID, modelID, filename string, sizeBytes int64)
 // Downloader manages resumable GGUF downloads from HuggingFace.
 type Downloader struct {
 	dataDir    string
+	modelsDir  string
 	token      string
 	onComplete CompletionFunc
 
@@ -80,11 +81,12 @@ type Downloader struct {
 	active map[string]*download
 }
 
-func NewDownloader(dataDir, token string) *Downloader {
+func NewDownloader(dataDir, modelsDir, token string) *Downloader {
 	return &Downloader{
-		dataDir: dataDir,
-		token:   token,
-		active:  make(map[string]*download),
+		dataDir:   dataDir,
+		modelsDir: modelsDir,
+		token:     token,
+		active:    make(map[string]*download),
 	}
 }
 
@@ -188,9 +190,10 @@ func (d *Downloader) run(ctx context.Context, downloadID, modelID, filename stri
 	// Expand sharded files: "model-00001-of-00005.gguf" → all 5 parts
 	filenames := ExpandShards(filename)
 
-	// Setup directory
+	// Setup directory under the configured models dir (which may live
+	// outside dataDir if ModelsDir is set).
 	safeName := strings.ReplaceAll(modelID, "/", "--")
-	modelDir := filepath.Join(d.dataDir, "models", safeName)
+	modelDir := filepath.Join(d.modelsDir, safeName)
 	os.MkdirAll(modelDir, 0o755)
 
 	// Get combined total size via HEAD requests for accurate progress
