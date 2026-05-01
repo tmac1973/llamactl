@@ -244,7 +244,19 @@ func (s *Server) routerKnownStates() map[string]string {
 // updates after a state change, pass false so the new row keeps its current
 // visibility instead of snapping back to hidden.
 func (s *Server) renderModelCard(w http.ResponseWriter, m *models.Model, org, base string, routerKnown map[string]string, isOrphan, initial bool) {
-	state := routerKnown[m.ID]
+	// Look up router state under any of the names the router might know this
+	// model by. The router's primary ID is the auto-discovery section name
+	// (RouterName), but it may also surface m.ID or PublicName via aliases.
+	// Falling back through all three avoids a false-positive "restart needed"
+	// indicator when the router does know about the model under a different key.
+	routerName := s.registry.RouterName(m.ID)
+	state := routerKnown[routerName]
+	if state == "" {
+		state = routerKnown[m.ID]
+	}
+	if state == "" {
+		state = routerKnown[m.PublicName()]
+	}
 
 	weightsGB := models.BytesToGB(m.SizeBytes) + 0.2
 	peakVRAM := weightsGB

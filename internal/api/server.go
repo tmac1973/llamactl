@@ -473,9 +473,6 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		if shown > 0 {
 			availableHTML = buf.String()
 		}
-		if chatURL != "" {
-			availableHTML += fmt.Sprintf(`<p><a href="%s" target="_blank">Open Chat UI →</a></p>`, chatURL)
-		}
 	}
 
 	_ = stateBadge // server-status-badge has its own poll endpoint now
@@ -487,10 +484,15 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		`onclick="copyFromButton(this)">%s</button>`,
 		html.EscapeString(copySVG), html.EscapeString(checkSVG), html.EscapeString(apiURL), copySVG)
 
+	chatLinkHTML := ""
+	if chatURL != "" {
+		chatLinkHTML = fmt.Sprintf(`<p><a href="%s" target="_blank">Open Chat UI →</a></p>`, chatURL)
+	}
+
 	respondHTML(w)
 	fmt.Fprintf(w, `<article>
     <header>Available Models</header>
-    %s
+    <div class="available-models-scroll">%s</div>
 </article>
 <article>
     <header>Inventory</header>
@@ -504,6 +506,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
         <pre style="user-select: all; cursor: pointer; margin:0; flex:1; overflow-x:auto;">%s</pre>
         %s
     </div>
+    %s
     <p><a href="/settings">Settings →</a></p>
 </article>`,
 		availableHTML,
@@ -511,6 +514,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		len(registeredModels),
 		apiURL,
 		apiCopyBtn,
+		chatLinkHTML,
 	)
 }
 

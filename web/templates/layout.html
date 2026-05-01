@@ -208,7 +208,13 @@
         [data-custom-theme="cyberpunk"] progress::-webkit-progress-value { background-color: #ff00ff; }
         [data-custom-theme="cyberpunk"] progress::-moz-progress-bar { background-color: #ff00ff; }
 
-        /* Available Models card (on Server page) */
+        /* Available Models card (on Server page) — cap the list height so a
+           large enabled set scrolls inside the card instead of stretching
+           the whole dashboard row. */
+        .available-models-scroll {
+            max-height: 14rem;
+            overflow-y: auto;
+        }
         .available-model-row {
             display: flex;
             align-items: center;
