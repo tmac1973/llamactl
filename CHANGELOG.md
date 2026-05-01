@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/tmac1973/llama-toolchest/compare/v1.4.0...v1.4.1) (2026-05-01)
+
+
+### Bug Fixes
+
+* dashboard "restart needed" false-positive and Available Models layout ([47bccff](https://github.com/tmac1973/llama-toolchest/commit/47bccffa78c4b76e33534580308cc00b163967b4))
+
 ## [1.4.0](https://github.com/tmac1973/llama-toolchest/compare/v1.3.0...v1.4.0) (2026-04-30)
 
 
