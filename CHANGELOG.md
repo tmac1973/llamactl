@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.2](https://github.com/tmac1973/llama-toolchest/compare/v1.4.1...v1.4.2) (2026-05-01)
+
+
+### Bug Fixes
+
+* server log Clear button now drops the buffered history ([280d3b4](https://github.com/tmac1973/llama-toolchest/commit/280d3b49ff57efedd32c001a509d398be13427b5))
+
 ## [1.4.1](https://github.com/tmac1973/llama-toolchest/compare/v1.4.0...v1.4.1) (2026-05-01)
 
 
