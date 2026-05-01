@@ -336,6 +336,13 @@ func (m *Manager) Unsubscribe(ch chan string) {
 	m.logMu.Unlock()
 }
 
+// ClearLogs discards the buffered log history so it won't be replayed to new subscribers.
+func (m *Manager) ClearLogs() {
+	m.logMu.Lock()
+	m.logHistory = nil
+	m.logMu.Unlock()
+}
+
 func (m *Manager) broadcast(line string) {
 	m.logMu.Lock()
 	defer m.logMu.Unlock()

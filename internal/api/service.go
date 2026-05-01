@@ -198,6 +198,11 @@ func (s *Server) handleServiceLogs(w http.ResponseWriter, r *http.Request) {
 	StreamLines(w, r.Context(), ch, "Router exited")
 }
 
+func (s *Server) handleServiceLogsClear(w http.ResponseWriter, r *http.Request) {
+	s.process.ClearLogs()
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleLoadedModels returns a list of models known to the router for the server page.
 func (s *Server) handleLoadedModels(w http.ResponseWriter, r *http.Request) {
 	respondHTML(w)

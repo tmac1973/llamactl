@@ -49,9 +49,13 @@ function initLogPanels() {
             });
         }
 
-        // Clear log contents
+        // Clear log contents (and the server-side buffer if data-clear-url is set)
         if (clearBtn) {
+            const clearUrl = panel.dataset.clearUrl;
             clearBtn.addEventListener('click', () => {
+                if (clearUrl) {
+                    fetch(clearUrl, { method: 'DELETE' }).catch(() => {});
+                }
                 pre.textContent = '';
             });
         }
