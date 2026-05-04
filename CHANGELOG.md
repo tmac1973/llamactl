@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/tmac1973/llama-toolchest/compare/v1.5.0...v1.5.1) (2026-05-04)
+
+
+### Bug Fixes
+
+* auto-refresh model and build lists after state changes ([e7e9859](https://github.com/tmac1973/llama-toolchest/commit/e7e9859daa61d3f0d00980041c3b8d361e30f2b5))
+
 ## [1.5.0](https://github.com/tmac1973/llama-toolchest/compare/v1.4.2...v1.5.0) (2026-05-01)
 
 
