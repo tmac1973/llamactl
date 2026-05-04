@@ -70,7 +70,7 @@
 
 <article>
     <header>Compiled Builds</header>
-    <div id="build-list" hx-get="/api/builds" hx-trigger="load" hx-swap="innerHTML">
+    <div id="build-list" hx-get="/api/builds" hx-trigger="load, buildsChanged from:body" hx-swap="innerHTML">
         Loading...
     </div>
 </article>

@@ -19,8 +19,9 @@
     <pre id="log-output"
          hx-ext="sse"
          sse-connect="/api/builds/{{.ID}}/logs"
-         sse-swap="message"
+         sse-swap="message,done"
          hx-swap="beforeend"
+         hx-on::sse-message="if(event.detail.type==='done')htmx.trigger(document.body,'buildsChanged')"
          style="max-height: 400px; overflow-y: auto; font-size: 0.85rem;">
     </pre>
 </article>
