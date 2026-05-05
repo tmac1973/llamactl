@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.1](https://github.com/tmac1973/llama-toolchest/compare/v1.7.0...v1.7.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* **benchmarks:** reattach progress UI when returning to the tab ([3df3f4f](https://github.com/tmac1973/llama-toolchest/commit/3df3f4fec28cc88143b8a7542c219c193f6840de))
+* **monitor:** strip card/GPU prefix from rocm-smi device field ([0e701e7](https://github.com/tmac1973/llama-toolchest/commit/0e701e796f41f068a8cf72b442ea1729589ce77b))
+
 ## [1.7.0](https://github.com/tmac1973/llama-toolchest/compare/v1.6.0...v1.7.0) (2026-05-05)
 
 
