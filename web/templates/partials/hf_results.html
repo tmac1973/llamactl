@@ -5,6 +5,7 @@
     <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
             <strong>{{$m.ID}}</strong>
+            {{if hasHFRepo $m.ID}}<a href="https://huggingface.co/{{$m.ID}}" target="_blank" rel="noopener" title="Open on HuggingFace" style="text-decoration:none;color:var(--pico-muted-color);font-size:0.85em;margin-left:0.15rem;">&#x2197;</a>{{end}}
             {{if $m.License}}<small> — {{$m.License}}</small>{{end}}
             <br>
             <small>{{$m.Downloads}} downloads · {{$m.Likes}} likes</small>
