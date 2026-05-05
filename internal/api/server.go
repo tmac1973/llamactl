@@ -142,6 +142,13 @@ func (s *Server) parseTemplates() map[string]*template.Template {
 			// Default to layer mode (no tensor parallelism) for rough estimates
 			return models.VRAMFitLabel(estimatedGB, perGPU, numGPUs, 0)
 		},
+		// hasHFRepo reports whether a model_id looks like an org/repo
+		// pair we can deep-link to on huggingface.co — i.e. it has at
+		// least one slash and isn't an absolute path. Scanned local
+		// models without that shape don't get a link.
+		"hasHFRepo": func(modelID string) bool {
+			return strings.Contains(modelID, "/") && !strings.HasPrefix(modelID, "/")
+		},
 		"version": func() string {
 			v := s.version
 			if v == "" || v == "dev" {
