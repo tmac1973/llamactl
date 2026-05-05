@@ -122,10 +122,27 @@ host_missing_gpu_sdk_packages() {
             command -v nvcc >/dev/null 2>&1 || need+=("cuda-toolkit")
             ;;
         vulkan)
-            # The shader compiler is the only build-time piece we strictly
-            # need; the Vulkan headers + loader are usually already
-            # installed by the GPU driver package.
-            command -v glslc >/dev/null 2>&1 || need+=("glslc")
+            # llama.cpp's Vulkan backend pulls in the Vulkan loader/headers
+            # AND the SPIR-V C++ headers (spirv/unified1/spirv.hpp). The GPU
+            # driver typically lays down the runtime loader, but the dev
+            # headers and shader compiler need to be requested explicitly.
+            case "$DISTRO_FAMILY" in
+                fedora)
+                    for pkg in glslc vulkan-headers vulkan-loader-devel spirv-headers-devel; do
+                        rpm -q "$pkg" >/dev/null 2>&1 || need+=("$pkg")
+                    done
+                    ;;
+                debian)
+                    for pkg in glslang-tools libvulkan-dev spirv-headers; do
+                        dpkg -s "$pkg" >/dev/null 2>&1 || need+=("$pkg")
+                    done
+                    ;;
+                *)
+                    # Best-effort fallback for unknown distros: at least flag
+                    # the shader compiler if it's missing.
+                    command -v glslc >/dev/null 2>&1 || need+=("glslc")
+                    ;;
+            esac
             ;;
         cpu|metal)
             : # nothing extra

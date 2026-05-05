@@ -1,10 +1,25 @@
 package builder
 
 import (
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 )
+
+// RunningInContainer reports whether the current process is running inside a
+// Docker- or Podman-style container. Docker creates /.dockerenv at the
+// container root; Podman/CRI-O create /run/.containerenv. Either marker is
+// sufficient; we don't fall back to /proc/1/cgroup parsing because cgroup v2
+// no longer reliably names the runtime.
+func RunningInContainer() bool {
+	for _, p := range []string{"/.dockerenv", "/run/.containerenv"} {
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
+}
 
 // Backend represents a detected GPU compute backend.
 type Backend struct {
@@ -86,6 +101,13 @@ func detectCUDA() Backend {
 
 func detectVulkan() Backend {
 	b := Backend{Name: "vulkan"}
+
+	// Vulkan in containers requires careful host driver/ICD passthrough that
+	// we don't manage; restrict the profile to host-mode installs.
+	if RunningInContainer() {
+		b.Info = "vulkan builds are only supported in host mode"
+		return b
+	}
 
 	if _, err := exec.LookPath("vulkaninfo"); err != nil {
 		b.Info = "vulkaninfo not found"

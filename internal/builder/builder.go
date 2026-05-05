@@ -240,6 +240,10 @@ func (b *Builder) Build(ctx context.Context, profile string, gitRef string, tag 
 		return nil, fmt.Errorf("unknown profile: %s", profile)
 	}
 
+	if prof.Backend == "vulkan" && RunningInContainer() {
+		return nil, fmt.Errorf("vulkan builds are only supported in host mode, not inside containers")
+	}
+
 	tag = strings.ToLower(strings.TrimSpace(tag))
 	if tag != "" && !validTagRE.MatchString(tag) {
 		return nil, fmt.Errorf("invalid tag %q: only lowercase letters, digits, and hyphens are allowed", tag)
