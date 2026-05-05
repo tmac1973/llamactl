@@ -29,6 +29,7 @@ COMPOSE_VERSION=""
 INSTALL_MODE="${INSTALL_MODE:-container}"  # host or container; default container preserves existing behavior
 HOST_INSTALL_MODE="${HOST_INSTALL_MODE:-package}"  # for --host: "package" (download released .deb/.rpm) or "source" (go build locally)
 HOST_SDK_BACKENDS=()    # backends to install host SDKs for (--cuda/--rocm/--vulkan); empty means autodetect+prompt
+MIGRATE_DIRECTION=""    # "to-host" or "to-container" when command=migrate
 
 DISTRO_ID=""            # debian, ubuntu, fedora, arch, cachyos, opensuse-leap, etc.
 DISTRO_NAME=""          # Pretty name from os-release
@@ -1238,6 +1239,8 @@ prompt_confirm() {
 source "${SCRIPT_DIR}/scripts/lib/service.sh"
 # shellcheck source=scripts/lib/host.sh
 source "${SCRIPT_DIR}/scripts/lib/host.sh"
+# shellcheck source=scripts/lib/migrate.sh
+source "${SCRIPT_DIR}/scripts/lib/migrate.sh"
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
@@ -1278,6 +1281,13 @@ install --host` to avoid hitting the GH API for the latest tag.
 Lifecycle:
   install     Detect, install prerequisites, build, and start
   uninstall   Stop and remove (container or host install)
+  migrate     Move state between container and host installs. Takes
+              one of --to-host / --to-container. Snapshots the
+              registry, brings up the destination, restores the
+              registry. Refuses if the destination side already
+              exists. builds.json is wiped — llama.cpp must be
+              rebuilt on the new side (binaries don't cross the
+              container/host boundary).
   quick       Container only: pull the latest released package and
               reinstall it inside the existing image. Reuses the GPU
               SDK / base-OS layers — only the package-install layer
@@ -1321,6 +1331,8 @@ Examples:
   ./setup.sh install --rocm --vulkan    # host install, install both ROCm and Vulkan SDKs
   ./setup.sh install --vulkan           # host install, Vulkan SDK only (cross-vendor)
   ./setup.sh install --from-source      # host install, build from local source
+  ./setup.sh migrate --to-host          # snapshot container state, install on host
+  ./setup.sh migrate --to-container     # opposite direction
   ./setup.sh status --host              # show host install status
   ./setup.sh uninstall --host           # remove host install
   ./setup.sh status                     # container dry run
@@ -1350,6 +1362,15 @@ main() {
             --cuda)         INSTALL_MODE="host"; HOST_SDK_BACKENDS+=("cuda") ;;
             --rocm)         INSTALL_MODE="host"; HOST_SDK_BACKENDS+=("rocm") ;;
             --vulkan)       INSTALL_MODE="host"; HOST_SDK_BACKENDS+=("vulkan") ;;
+            # Direction flags for the `migrate` command. Mutually exclusive
+            # — passing both is an error. Each implies its target mode for
+            # the purpose of post-flag dispatch.
+            --to-host)
+                [[ -n "$MIGRATE_DIRECTION" ]] && { err "--to-host and --to-container are mutually exclusive"; exit 1; }
+                MIGRATE_DIRECTION="to-host" ;;
+            --to-container)
+                [[ -n "$MIGRATE_DIRECTION" ]] && { err "--to-host and --to-container are mutually exclusive"; exit 1; }
+                MIGRATE_DIRECTION="to-container" ;;
             -h|--help)      usage; exit 0 ;;
             *)
                 err "Unknown flag: $1"
@@ -1361,9 +1382,15 @@ main() {
         shift
     done
 
+    # ── Validate flag/command combinations ──
+    if [[ -n "$MIGRATE_DIRECTION" && "$command" != "migrate" ]]; then
+        err "--to-host / --to-container are only valid with the 'migrate' command"
+        exit 1
+    fi
+
     # ── Validate command ──
     case "$command" in
-        install|uninstall|up|down|rebuild|quick|logs|detect|status|enable|disable) ;;
+        install|uninstall|up|down|rebuild|quick|logs|detect|status|enable|disable|migrate) ;;
         -h|--help|help)
             usage
             exit 0
@@ -1375,6 +1402,48 @@ main() {
             exit 1
             ;;
     esac
+
+    # ── migrate: hybrid command, needs both container and host context ──
+    if [[ "$command" == "migrate" ]]; then
+        if [[ -z "$MIGRATE_DIRECTION" ]]; then
+            err "migrate requires --to-host or --to-container"
+            echo ""
+            usage
+            exit 1
+        fi
+        detect_distro
+        detect_container_runtime
+        if [[ -n "${GPU:-}" ]]; then
+            GPU_VENDOR="$GPU"
+            GPU_INFO="(manually set: $GPU)"
+        else
+            detect_gpu
+        fi
+        case "$MIGRATE_DIRECTION" in
+            to-host)
+                # Resolve SDK backends the same way `install --host` does:
+                # explicit flags win; otherwise auto-detect + prompt for vulkan.
+                if [[ ${#HOST_SDK_BACKENDS[@]} -eq 0 ]]; then
+                    HOST_SDK_BACKENDS=("$GPU_VENDOR")
+                    if [[ -z "${GPU:-}" ]] && [[ "$GPU_VENDOR" == "cuda" || "$GPU_VENDOR" == "rocm" ]]; then
+                        if prompt_confirm "Also install the Vulkan SDK on the host?"; then
+                            HOST_SDK_BACKENDS+=("vulkan")
+                        fi
+                    fi
+                fi
+                for _b in "${HOST_SDK_BACKENDS[@]:-}"; do
+                    if [[ "$_b" != "vulkan" ]]; then GPU_VENDOR="$_b"; break; fi
+                done
+                unset _b
+                migrate_to_host
+                ;;
+            to-container)
+                load_env_ports
+                migrate_to_container
+                ;;
+        esac
+        exit 0
+    fi
 
     # ── Host mode: short circuit before any container detection ──
     if [[ "$INSTALL_MODE" == "host" ]]; then

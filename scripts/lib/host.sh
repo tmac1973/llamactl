@@ -489,9 +489,13 @@ host_install() {
 
     host_write_unit_override
 
-    # If the service is already running, restart so the new binary takes
-    # effect.
-    if service_is_active; then
+    # MIGRATE_SKIP_START: when set, the migrate command takes ownership of
+    # service start/stop sequencing (it needs to write the translated
+    # config + restored registry before first start). Don't prompt and
+    # don't restart here — the caller will handle it.
+    if [[ "${MIGRATE_SKIP_START:-0}" == "1" ]]; then
+        log "Skipping service start (caller will handle)."
+    elif service_is_active; then
         log "Service is running; restarting to pick up the new binary..."
         service_restart
         ok "llama-toolchest service restarted"

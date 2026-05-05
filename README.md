@@ -61,6 +61,19 @@ The management UI will be available at `http://localhost:3000`.
 
 Host mode is managed via `systemctl --user start|stop|status llama-toolchest` (user install) or `sudo systemctl ...` (system install). The container `up`/`down`/`logs`/`enable`/`disable` commands are container-mode-only.
 
+### Switching modes
+
+If you change your mind after install, `./setup.sh migrate` moves your model registry, per-model configs, benchmarks, and main settings between sides:
+
+```bash
+./setup.sh migrate --to-host         # container → host
+./setup.sh migrate --to-container    # host → container
+```
+
+Migration refuses to run if the destination side is already populated — uninstall the unwanted side first (`./setup.sh uninstall` or `./setup.sh uninstall --host`). The source's snapshot is kept at `~/llt-migrate-<timestamp>` and the source install is left in place as a safety net (`docker volume rm llama-toolchest-data` once you're confident; or `./setup.sh uninstall --host` for the reverse).
+
+`builds.json` is wiped during migration: container-built `llama-server` binaries don't run on the host (different glibc/CUDA/ROCm runtime) and vice versa, so a fresh llama.cpp build is required after switching. Open the **Builds** page after the migration finishes and rebuild.
+
 ### Backend SDK selection (host mode)
 
 By default `--host` auto-detects your primary GPU and asks whether to also install the Vulkan SDK as a portable fallback. To pick explicitly — including stacking multiple SDKs in one install — pass any combination of `--cuda`, `--rocm`, `--vulkan`. Each implies `--host`. Examples:
@@ -161,6 +174,8 @@ Both Docker and Podman (including rootless) are supported on all distros.
 Lifecycle:
   install     Detect environment, install prerequisites, build & start
   uninstall   Stop container, disable auto-start, remove container + image
+  migrate     Move state between container and host installs
+              (--to-host or --to-container required)
   quick       Fast rebuild (recompile Go code only, reuse cached base)
   rebuild     Full rebuild with no cache, then start
 
