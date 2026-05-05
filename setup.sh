@@ -330,6 +330,100 @@ selinux_device_bool_set() {
     need_cmd getsebool && getsebool container_use_devices 2>/dev/null | grep -q "on"
 }
 
+# Container-mode dependency report. Verifies the prereqs needed to run
+# `setup.sh install` in container mode and prints remediation commands
+# for anything missing. Returns 0 if everything's present, 1 otherwise.
+container_deps() {
+    local rc=0
+    local inst_cmd
+    case "$DISTRO_FAMILY" in
+        debian) inst_cmd="sudo apt-get install -y" ;;
+        fedora) inst_cmd="sudo dnf install -y" ;;
+        arch)   inst_cmd="sudo pacman -S --needed" ;;
+        suse)   inst_cmd="sudo zypper install -y" ;;
+        *)      inst_cmd="<distro ${DISTRO_FAMILY:-unknown}>" ;;
+    esac
+
+    echo "Container install dependencies (distro: ${DISTRO_FAMILY:-unknown}, GPU: ${GPU_VENDOR:-unknown}):"
+    echo ""
+    echo "  Container runtime:"
+    if [[ -n "$CONTAINER_CMD" ]]; then
+        printf "    %-25s %s\n" "$CONTAINER_CMD" "OK ($CONTAINER_VERSION)"
+    else
+        printf "    %-25s %s\n" "docker or podman" "not installed"
+        case "$DISTRO_FAMILY" in
+            debian) echo "            $inst_cmd docker.io  (or follow https://docs.docker.com/engine/install/)" ;;
+            fedora) echo "            $inst_cmd podman      (or docker-ce from Docker's repo)" ;;
+            arch)   echo "            $inst_cmd docker      (or podman)" ;;
+            *)      echo "            install Docker or Podman from your distro" ;;
+        esac
+        rc=1
+    fi
+
+    if [[ -n "$COMPOSE_CMD" ]]; then
+        printf "    %-25s %s\n" "compose" "OK ($COMPOSE_VERSION)"
+    else
+        printf "    %-25s %s\n" "compose" "not installed"
+        case "$CONTAINER_CMD" in
+            docker) echo "            $inst_cmd docker-compose-plugin" ;;
+            podman) echo "            $inst_cmd podman-compose" ;;
+            *)      echo "            install docker-compose-plugin or podman-compose" ;;
+        esac
+        rc=1
+    fi
+    echo ""
+
+    # GPU-specific integration. Only flag what's relevant for this host.
+    if [[ "$GPU_VENDOR" == "cuda" ]]; then
+        echo "  NVIDIA GPU integration:"
+        if has_nvidia_toolkit; then
+            printf "    %-25s %s\n" "NVIDIA Container Toolkit" "OK"
+        else
+            printf "    %-25s %s\n" "NVIDIA Container Toolkit" "not installed"
+            echo "            ./setup.sh install   # this script auto-installs the toolkit"
+            rc=1
+        fi
+        if [[ "$CONTAINER_CMD" == "docker" ]]; then
+            if has_nvidia_toolkit && docker_has_nvidia_runtime; then
+                printf "    %-25s %s\n" "Docker NVIDIA runtime" "OK"
+            else
+                printf "    %-25s %s\n" "Docker NVIDIA runtime" "not configured"
+                echo "            sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker"
+                rc=1
+            fi
+        fi
+        if [[ "$CONTAINER_CMD" == "podman" ]]; then
+            if has_cdi_spec; then
+                printf "    %-25s %s\n" "Podman CDI spec" "OK"
+            else
+                printf "    %-25s %s\n" "Podman CDI spec" "missing"
+                echo "            sudo nvidia-ctk cdi generate --output=$CDI_SYSTEM_DIR/nvidia.yaml"
+                rc=1
+            fi
+        fi
+        echo ""
+    fi
+
+    if [[ "$GPU_VENDOR" == "rocm" && "$DISTRO_FAMILY" == "fedora" ]] && selinux_enforcing; then
+        echo "  SELinux (rocm on Fedora/RHEL):"
+        if selinux_device_bool_set; then
+            printf "    %-25s %s\n" "container_use_devices" "OK"
+        else
+            printf "    %-25s %s\n" "container_use_devices" "off"
+            echo "            sudo setsebool -P container_use_devices on"
+            rc=1
+        fi
+        echo ""
+    fi
+
+    if [[ $rc -eq 0 ]]; then
+        ok "All container dependencies satisfied."
+    else
+        warn "One or more dependencies are missing — see commands above."
+    fi
+    return $rc
+}
+
 check_prerequisites() {
     PREREQS=()
     ACTIONS=()
@@ -1307,7 +1401,14 @@ Auto-start (container only):
 
 Info:
   status      Show detected environment and planned actions, then exit
-              (works for both modes)
+              (works for both modes; --host adds backend SDK report)
+  deps        Verify all packages needed to build and run, with copy-
+              paste install commands for anything missing. --host
+              checks the host package, llama.cpp build toolchain
+              (cmake/ninja/git/gcc), and per-backend GPU SDKs (cuda/
+              rocm/vulkan). Without --host, checks container runtime,
+              compose, and GPU integration (NVIDIA toolkit / SELinux).
+              Exits non-zero if anything is missing.
   detect      Print detected GPU backend (cuda/rocm/cpu/vulkan/metal) and exit
   help        Show this help message
 
@@ -1390,7 +1491,7 @@ main() {
 
     # ── Validate command ──
     case "$command" in
-        install|uninstall|up|down|rebuild|quick|logs|detect|status|enable|disable|migrate) ;;
+        install|uninstall|up|down|rebuild|quick|logs|detect|status|enable|disable|migrate|deps) ;;
         -h|--help|help)
             usage
             exit 0
@@ -1490,6 +1591,7 @@ main() {
             install)   host_install ;;
             uninstall) host_uninstall ;;
             status)    host_status ;;
+            deps)      host_deps ;;
             detect)    echo "$GPU_VENDOR" ;;
             up|down|logs|enable|disable|rebuild|quick)
                 err "'$command' is not supported in --host mode."
@@ -1561,6 +1663,10 @@ main() {
             echo "  Web UI:     http://localhost:${LLAMA_TOOLCHEST_PORT}"
             echo ""
             exit 0
+            ;;
+        deps)
+            container_deps
+            exit $?
             ;;
     esac
 

@@ -190,6 +190,9 @@ Auto-start:
 
 Info:
   status      Show detected environment and planned actions
+  deps        Verify all packages needed to build and run; print
+              copy-paste install commands for anything missing
+              (--host for host install, default container)
   detect      Print detected GPU backend (cuda/rocm/vulkan/cpu)
   help        Show full help with details
 ```

@@ -567,6 +567,115 @@ host_uninstall() {
     ok "Host uninstall complete."
 }
 
+# Whether a backend is applicable to this host. Used by deps/status to
+# avoid reporting "missing cuda-toolkit" on a machine that has no NVIDIA
+# GPU. Vulkan is always applicable — it's the cross-vendor fallback.
+host_backend_applicable() {
+    case "$1" in
+        cuda)   command -v nvidia-smi >/dev/null 2>&1 || [[ -e /dev/nvidia0 ]] ;;
+        rocm)   [[ -e /dev/kfd ]] ;;
+        vulkan) return 0 ;;
+        *)      return 1 ;;
+    esac
+}
+
+# Per-backend SDK report. Echoes one line per backend with state +
+# remediation command. Skips backends that aren't applicable on this
+# host (e.g. cuda when there's no NVIDIA GPU). Returns non-zero if any
+# applicable backend has missing packages.
+host_report_sdk_deps() {
+    local exit_code=0
+    local backend missing inst_cmd
+    case "$DISTRO_FAMILY" in
+        debian) inst_cmd="sudo apt-get install -y" ;;
+        fedora) inst_cmd="sudo dnf install -y" ;;
+        *)      inst_cmd="<distro $DISTRO_FAMILY: install manually>" ;;
+    esac
+    for backend in cuda rocm vulkan; do
+        if ! host_backend_applicable "$backend"; then
+            printf "    %-7s %s\n" "$backend" "n/a (no matching GPU detected)"
+            continue
+        fi
+        missing="$(host_missing_gpu_sdk_packages "$backend")"
+        if [[ -z "$missing" ]]; then
+            printf "    %-7s %s\n" "$backend" "OK"
+        else
+            printf "    %-7s missing: %s\n" "$backend" "$missing"
+            printf "            %s %s\n" "$inst_cmd" "$missing"
+            exit_code=1
+        fi
+    done
+    return $exit_code
+}
+
+# Build/runtime toolchain verification. cmake/ninja/git are pulled in as
+# package depends by the .deb/.rpm so they should always be present after
+# a from-package install; we still re-check because users on from-source
+# may have skipped the install dance.
+host_report_toolchain_deps() {
+    local exit_code=0
+    local item bin pkgs_debian pkgs_fedora
+    # name | binary | debian package | fedora package
+    local -a checks=(
+        "cmake|cmake|cmake|cmake"
+        "ninja|ninja|ninja-build|ninja-build"
+        "git|git|git|git"
+        "gcc|cc|build-essential|gcc-c++ make"
+    )
+    local inst_cmd
+    case "$DISTRO_FAMILY" in
+        debian) inst_cmd="sudo apt-get install -y" ;;
+        fedora) inst_cmd="sudo dnf install -y" ;;
+        *)      inst_cmd="<distro $DISTRO_FAMILY>" ;;
+    esac
+    for c in "${checks[@]}"; do
+        IFS='|' read -r name bin pkg_d pkg_f <<<"$c"
+        if command -v "$bin" >/dev/null 2>&1; then
+            printf "    %-7s %s\n" "$name" "OK"
+        else
+            local pkg="$pkg_d"
+            [[ "$DISTRO_FAMILY" == "fedora" ]] && pkg="$pkg_f"
+            printf "    %-7s missing\n" "$name"
+            printf "            %s %s\n" "$inst_cmd" "$pkg"
+            exit_code=1
+        fi
+    done
+    return $exit_code
+}
+
+# Top-level `deps --host` entry point. Returns 0 if everything's healthy,
+# 1 if anything's missing.
+host_deps() {
+    local rc=0
+    echo "Host install dependencies (scope: $(host_scope), distro: ${DISTRO_FAMILY:-unknown}):"
+    echo ""
+    echo "  Package:"
+    if dpkg -s llama-toolchest >/dev/null 2>&1; then
+        printf "    %-20s %s\n" "llama-toolchest" "OK ($(dpkg-query -W -f='${Version}' llama-toolchest))"
+    elif rpm -q llama-toolchest >/dev/null 2>&1; then
+        printf "    %-20s %s\n" "llama-toolchest" "OK ($(rpm -q --qf '%{VERSION}' llama-toolchest))"
+    elif [[ -x "$(host_binary_path)" ]]; then
+        printf "    %-20s %s\n" "llama-toolchest" "OK (from-source: $(host_binary_path))"
+    else
+        printf "    %-20s %s\n" "llama-toolchest" "not installed"
+        echo "            ./setup.sh install --host"
+        rc=1
+    fi
+    echo ""
+    echo "  Build toolchain (for compiling llama.cpp from the UI):"
+    host_report_toolchain_deps || rc=1
+    echo ""
+    echo "  Backend SDKs:"
+    host_report_sdk_deps || rc=1
+    echo ""
+    if [[ $rc -eq 0 ]]; then
+        ok "All host dependencies satisfied."
+    else
+        warn "One or more dependencies are missing — see commands above."
+    fi
+    return $rc
+}
+
 host_status() {
     echo "Scope:       $(host_scope)"
 
@@ -592,6 +701,9 @@ host_status() {
     echo "Config:      $(host_config_path)$( [[ -f "$(host_config_path)" ]] && echo "" || echo "  (missing)")"
     echo "Data dir:    $(host_data_dir)"
     echo "Service:     $(service_unit_path)"
+    echo ""
+    echo "Backend SDKs:"
+    host_report_sdk_deps || true
     echo ""
     service_status
 }
