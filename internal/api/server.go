@@ -104,6 +104,19 @@ func NewServer(cfg *config.Config) *Server {
 func (s *Server) parseTemplates() map[string]*template.Template {
 	funcMap := template.FuncMap{
 		"divGB": models.BytesToGB,
+		// cssID sanitizes a string so it's safe to use as both an HTML id
+		// attribute and a CSS selector. Model IDs can contain '.' (e.g.
+		// "Qwen3.6"), which CSS parses as a class separator and errors on.
+		"cssID": func(s string) string {
+			return strings.Map(func(r rune) rune {
+				switch {
+				case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+					return r
+				default:
+					return '_'
+				}
+			}, s)
+		},
 		"divf": func(a, b interface{}) float64 {
 			af, bf := toFloat64(a), toFloat64(b)
 			if bf == 0 {

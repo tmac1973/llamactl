@@ -1,8 +1,6 @@
 package api
 
 import (
-	"fmt"
-	"html"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -26,7 +24,7 @@ func (s *Server) handleListEmbeddingModels(w http.ResponseWriter, r *http.Reques
 		if len(embeddingModels) == 0 {
 			return
 		}
-		s.renderModelTable(w, r, embeddingModels, false)
+		s.renderModelList(w, r, embeddingModels, false)
 		return
 	}
 
@@ -50,7 +48,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		s.renderModelTable(w, r, modelList, true)
+		s.renderModelList(w, r, modelList, true)
 		return
 	}
 
@@ -239,11 +237,8 @@ func (s *Server) routerKnownStates() map[string]string {
 	return routerKnown
 }
 
-// renderModelCard writes one model_card partial. initial=true emits the
-// style="display:none" used to start grouped rows collapsed; for in-place row
-// updates after a state change, pass false so the new row keeps its current
-// visibility instead of snapping back to hidden.
-func (s *Server) renderModelCard(w http.ResponseWriter, m *models.Model, org, base string, routerKnown map[string]string, isOrphan, initial bool) {
+// renderModelCard writes one model_card partial.
+func (s *Server) renderModelCard(w http.ResponseWriter, m *models.Model, routerKnown map[string]string, isOrphan bool) {
 	// Look up router state under any of the names the router might know this
 	// model by. The router's primary ID is the auto-discovery section name
 	// (RouterName), but it may also surface m.ID or PublicName via aliases.
@@ -258,14 +253,13 @@ func (s *Server) renderModelCard(w http.ResponseWriter, m *models.Model, org, ba
 		state = routerKnown[m.PublicName()]
 	}
 
-	weightsGB := models.BytesToGB(m.SizeBytes) + 0.2
-	peakVRAM := weightsGB
+	vramGB := models.BytesToGB(m.SizeBytes) + 0.2
 	enabled := true
 	hasVision := m.HasBuiltinVision
 	gpuLabel := ""
 	var aliases []string
 	if cfg, err := s.registry.GetConfig(m.ID); err == nil {
-		peakVRAM = models.VRAMEstimateForConfig(m, cfg)
+		vramGB = models.VRAMEstimateForConfig(m, cfg)
 		enabled = cfg.Enabled
 		if cfg.MmprojPath != "" {
 			hasVision = true
@@ -275,12 +269,12 @@ func (s *Server) renderModelCard(w http.ResponseWriter, m *models.Model, org, ba
 		}
 		aliases = cfg.Aliases
 	}
-	baseVRAM := weightsGB
 
 	pendingEnable := enabled && state == "" && s.process.IsRunning()
 	pendingDisable := !enabled && state != "" && s.process.IsRunning()
 	configChanged := s.dirtyModels[m.ID] && state != "" && s.process.IsRunning()
 
+	org, base := m.OrgAndBase()
 	searchText := strings.ToLower(strings.Join([]string{
 		org, base, m.Quant, m.PublicName(), m.ModelID, m.Arch,
 		strings.Join(aliases, " "),
@@ -296,13 +290,9 @@ func (s *Server) renderModelCard(w http.ResponseWriter, m *models.Model, org, ba
 		HasVision      bool
 		GPULabel       string
 		ServiceState   string
-		BaseVRAMGB     float64
-		PeakVRAMGB     float64
+		VRAMGB         float64
 		IsOrphan       bool
-		Org            string
-		BaseName       string
 		SearchText     string
-		Initial        bool
 	}{
 		Model:          *m,
 		IsActive:       state == "loaded" || state == "loading",
@@ -313,21 +303,17 @@ func (s *Server) renderModelCard(w http.ResponseWriter, m *models.Model, org, ba
 		HasVision:      hasVision,
 		GPULabel:       gpuLabel,
 		ServiceState:   state,
-		BaseVRAMGB:     baseVRAM,
-		PeakVRAMGB:     peakVRAM,
+		VRAMGB:         vramGB,
 		IsOrphan:       isOrphan,
-		Org:            org,
-		BaseName:       base,
 		SearchText:     searchText,
-		Initial:        initial,
 	}
 	s.renderPartial(w, "model_card", data)
 }
 
-// renderModelTable renders the shared model table used by both chat and embedding
-// lists. When grouped is true, a filter input and collapsible org/base-model
-// sections are emitted around the table.
-func (s *Server) renderModelTable(w http.ResponseWriter, r *http.Request, modelList []*models.Model, grouped bool) {
+// renderModelList renders the shared model list used by both chat and embedding
+// sections as a flat list of cards, sorted by base name then quant. When
+// withFilter is true, a filter input is emitted above the list.
+func (s *Server) renderModelList(w http.ResponseWriter, r *http.Request, modelList []*models.Model, withFilter bool) {
 	routerKnown := s.routerKnownStates()
 
 	orphanSet := make(map[string]bool)
@@ -335,86 +321,26 @@ func (s *Server) renderModelTable(w http.ResponseWriter, r *http.Request, modelL
 		orphanSet[m.ID] = true
 	}
 
-	renderOne := func(m *models.Model, org, base string) {
-		s.renderModelCard(w, m, org, base, routerKnown, orphanSet[m.ID], true)
-	}
-
-	if !grouped {
-		w.Write([]byte(`<table role="grid"><thead><tr><th title="Enable model for the inference server">On</th><th>Model</th><th>Quant</th><th title="Base (weights) - Peak (full KV cache)">VRAM Est.</th><th>Size</th><th></th></tr></thead>`))
-		for _, m := range modelList {
-			renderOne(m, "", "")
+	sorted := make([]*models.Model, len(modelList))
+	copy(sorted, modelList)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		_, bi := sorted[i].OrgAndBase()
+		_, bj := sorted[j].OrgAndBase()
+		bi, bj = strings.ToLower(bi), strings.ToLower(bj)
+		if bi != bj {
+			return bi < bj
 		}
-		w.Write([]byte(`</table>`))
-		return
+		return strings.ToLower(sorted[i].Quant) < strings.ToLower(sorted[j].Quant)
+	})
+
+	if withFilter {
+		w.Write([]byte(`<div class="model-list-controls"><input type="search" class="model-filter" placeholder="Filter by name, quant, architecture…" oninput="filterModels(this.value)" autocomplete="off"></div>`))
 	}
 
-	// Group by org → base model.
-	type baseGroup struct {
-		name   string
-		models []*models.Model
+	w.Write([]byte(`<div class="model-card-list">`))
+	w.Write([]byte(`<div class="model-card-header"><span></span><span>Model</span><span>Quant</span><span title="Estimated VRAM at the configured context size">VRAM Est.</span><span>Size</span><span></span></div>`))
+	for _, m := range sorted {
+		s.renderModelCard(w, m, routerKnown, orphanSet[m.ID])
 	}
-	type orgGroup struct {
-		name  string
-		bases []*baseGroup
-		total int
-	}
-	orgIdx := map[string]*orgGroup{}
-	var orgs []string
-	for _, m := range modelList {
-		org, base := m.OrgAndBase()
-		if org == "" {
-			org = "(local)"
-		}
-		og, ok := orgIdx[org]
-		if !ok {
-			og = &orgGroup{name: org}
-			orgIdx[org] = og
-			orgs = append(orgs, org)
-		}
-		var bg *baseGroup
-		for _, b := range og.bases {
-			if b.name == base {
-				bg = b
-				break
-			}
-		}
-		if bg == nil {
-			bg = &baseGroup{name: base}
-			og.bases = append(og.bases, bg)
-		}
-		bg.models = append(bg.models, m)
-		og.total++
-	}
-	sort.Slice(orgs, func(i, j int) bool { return strings.ToLower(orgs[i]) < strings.ToLower(orgs[j]) })
-	for _, og := range orgIdx {
-		sort.Slice(og.bases, func(i, j int) bool { return strings.ToLower(og.bases[i].name) < strings.ToLower(og.bases[j].name) })
-	}
-
-	w.Write([]byte(`<div class="model-list-controls"><input type="search" class="model-filter" placeholder="Filter by name, quant, architecture…" oninput="filterModels(this.value)" autocomplete="off"><button type="button" class="outline secondary" onclick="collapseAllGroups()">Collapse All</button><button type="button" class="outline secondary" onclick="expandAllGroups()">Expand All</button></div>`))
-	w.Write([]byte(`<table role="grid">`))
-
-	for _, orgName := range orgs {
-		og := orgIdx[orgName]
-		fmt.Fprintf(w,
-			`<tbody class="group-header org-header collapsed" data-org="%s"><tr onclick="toggleGroup(this.parentElement)"><td colspan="6" class="org-cell"><span class="caret">▸</span> <strong>%s</strong> <small>(%d)</small></td></tr></tbody>`,
-			html.EscapeString(orgName), html.EscapeString(orgName), og.total)
-
-		for _, bg := range og.bases {
-			fmt.Fprintf(w,
-				`<tbody class="group-header base-header collapsed" data-org="%s" data-base="%s" style="display:none;"><tr onclick="toggleGroup(this.parentElement)"><td colspan="6" class="base-cell"><span class="caret">▸</span> %s <small>(%d)</small></td></tr></tbody>`,
-				html.EscapeString(orgName), html.EscapeString(bg.name), html.EscapeString(bg.name), len(bg.models))
-
-			// Column header row scoped to this base group — visibility
-			// follows the base group's collapse state.
-			fmt.Fprintf(w,
-				`<tbody class="base-col-header" data-org="%s" data-base="%s" style="display:none;"><tr><th title="Enable model for the inference server">On</th><th>Model</th><th>Quant</th><th title="Base (weights) - Peak (full KV cache)">VRAM Est.</th><th>Size</th><th></th></tr></tbody>`,
-				html.EscapeString(orgName), html.EscapeString(bg.name))
-
-			for _, m := range bg.models {
-				renderOne(m, orgName, bg.name)
-			}
-		}
-	}
-
-	w.Write([]byte(`</table>`))
+	w.Write([]byte(`</div>`))
 }
