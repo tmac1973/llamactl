@@ -378,13 +378,6 @@ func (s *Server) handleModelEnable(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
-		org, base := "", ""
-		if !models.IsEmbeddingModel(m.ModelID) && !models.IsEmbeddingModel(m.ID) {
-			org, base = m.OrgAndBase()
-			if org == "" {
-				org = "(local)"
-			}
-		}
 		isOrphan := false
 		for _, om := range s.registry.FindOrphans() {
 			if om.ID == id {
@@ -394,7 +387,7 @@ func (s *Server) handleModelEnable(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("HX-Trigger-After-Swap", `{"gpuMapChanged":true}`)
 		respondHTML(w)
-		s.renderModelCard(w, m, org, base, s.routerKnownStates(), isOrphan, false)
+		s.renderModelCard(w, m, s.routerKnownStates(), isOrphan)
 		return
 	}
 
@@ -670,11 +663,10 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 	// Update VRAM estimate in model list
 	if isHTMX(r) {
 		if model, err := s.registry.Get(id); err == nil {
-			baseVRAM := models.BytesToGB(model.SizeBytes) + 0.2
-			peakVRAM := models.VRAMEstimateForConfig(model, cfg)
+			vramGB := models.VRAMEstimateForConfig(model, cfg)
 			w.Header().Set("HX-Trigger", fmt.Sprintf(
-				`{"vramUpdated":{"id":%q,"vram":"%.1f - %.1f GB"},"gpuMapChanged":true}`,
-				id, baseVRAM, peakVRAM))
+				`{"vramUpdated":{"id":%q,"vram":"%.1f GB"},"gpuMapChanged":true}`,
+				id, vramGB))
 		}
 	}
 

@@ -1,92 +1,89 @@
 {{define "model_card"}}
-<tbody class="model-row-group"
-       {{if .Org}}data-org="{{.Org}}"{{end}}
-       {{if .BaseName}}data-base="{{.BaseName}}"{{end}}
-       data-search="{{.SearchText}}"
-       {{if and .BaseName .Initial}}style="display:none;"{{end}}>
-<tr{{if .IsOrphan}} style="opacity: 0.6;"{{end}}>
-    <td style="width: 3rem; text-align: center;">
-        {{if not .IsOrphan}}
-        <span style="display: inline-flex; align-items: center; gap: 0.25rem;">
-            <input type="checkbox" role="switch" style="margin: 0;"
-                   {{if .IsEnabled}}checked{{end}}
-                   title="Enable this model for the inference server"
-                   hx-put="/api/models/{{.ID}}/enable"
-                   hx-target="closest .model-row-group"
-                   hx-swap="outerHTML"
-                   hx-vals='js:{"enabled": event.target.checked ? "true" : "false"}'>
-            {{if .PendingEnable}}<span title="Restart server to make this model available" style="cursor: help; color: var(--pico-primary);">&#x21bb;</span>{{end}}
-            {{if .PendingDisable}}<span title="Restart server to remove this model" style="cursor: help; color: var(--pico-del-color);">&#x2298;</span>{{end}}
-            {{if .NeedsReload}}<span title="Restart server to apply config changes" style="cursor: help; color: var(--pico-primary);">&#x21bb;</span>{{end}}
-        </span>
-        {{end}}
-    </td>
-    <td>
-        {{.ModelID}}
-        {{if .HasVision}} <mark style="padding:0 0.3rem;font-size:0.75rem;">vision</mark>{{end}}
-        {{if .SupportsTools}} <mark style="padding:0 0.3rem;font-size:0.75rem;">tools</mark>{{end}}
-        {{if .GPULabel}} <mark style="padding:0 0.3rem;font-size:0.75rem;background:var(--pico-muted-border-color);color:var(--pico-color);">{{.GPULabel}}</mark>{{end}}
-        {{if .IsOrphan}} <del>missing</del>{{end}}
-    </td>
-    <td><kbd>{{.Quant}}</kbd></td>
-    <td id="vram-{{.ID}}" title="Base (weights + overhead) - Peak (full KV cache)">{{printf "%.1f" .BaseVRAMGB}} - {{printf "%.1f" .PeakVRAMGB}} GB</td>
-    <td>{{printf "%.1f" (divGB .SizeBytes)}} GB</td>
-    <td>
-        {{if .IsOrphan}}
-        <div role="group">
+<article class="model-card{{if .IsOrphan}} model-card-orphan{{end}}"
+         id="model-card-{{cssID .ID}}"
+         data-search="{{.SearchText}}">
+    <div class="model-card-row">
+        <div class="model-card-toggle">
+            <span style="display: inline-flex; align-items: center; gap: 0.25rem;">
+                <input type="checkbox" role="switch" style="margin: 0;"
+                       {{if .IsEnabled}}checked{{end}}
+                       {{if .IsOrphan}}disabled{{end}}
+                       title="{{if .IsOrphan}}Model file is missing — cannot be enabled{{else}}Enable this model for the inference server{{end}}"
+                       {{if not .IsOrphan}}
+                       hx-put="/api/models/{{.ID}}/enable"
+                       hx-target="closest .model-card"
+                       hx-swap="outerHTML"
+                       hx-vals='js:{"enabled": event.target.checked ? "true" : "false"}'
+                       {{end}}>
+                {{if .PendingEnable}}<span title="Restart server to make this model available" style="cursor: help; color: var(--pico-primary);">&#x21bb;</span>{{end}}
+                {{if .PendingDisable}}<span title="Restart server to remove this model" style="cursor: help; color: var(--pico-del-color);">&#x2298;</span>{{end}}
+                {{if .NeedsReload}}<span title="Restart server to apply config changes" style="cursor: help; color: var(--pico-primary);">&#x21bb;</span>{{end}}
+            </span>
+        </div>
+        <div class="model-card-name">
+            {{.ModelID}}
+            {{if .HasVision}} <mark style="padding:0 0.3rem;font-size:0.75rem;">vision</mark>{{end}}
+            {{if .SupportsTools}} <mark style="padding:0 0.3rem;font-size:0.75rem;">tools</mark>{{end}}
+            {{if .GPULabel}} <mark style="padding:0 0.3rem;font-size:0.75rem;background:var(--pico-muted-border-color);color:var(--pico-color);">{{.GPULabel}}</mark>{{end}}
+            {{if .IsOrphan}} <del>missing</del>{{end}}
+        </div>
+        <div class="model-card-quant"><kbd>{{.Quant}}</kbd></div>
+        <div class="model-card-vram" id="vram-{{.ID}}" title="Estimated VRAM at the configured context size — llama.cpp pre-allocates the full KV cache at load time, so this is what the model actually needs to load">{{printf "%.1f" .VRAMGB}} GB</div>
+        <div class="model-card-size">{{printf "%.1f" (divGB .SizeBytes)}} GB</div>
+        <div class="model-card-actions">
+            {{if .IsOrphan}}
             <button type="button" class="outline secondary"
                     hx-delete="/api/models/{{.ID}}?keep_files=true"
                     hx-confirm="Remove this entry? (files are already missing)"
-                    hx-target="closest .model-row-group"
+                    hx-target="closest .model-card"
                     hx-swap="outerHTML">
                 Remove
             </button>
+            {{else}}
+            <div role="group">
+                <button type="button" class="outline"
+                        hx-get="/api/models/{{.ID}}/config"
+                        hx-target="#model-config-{{cssID .ID}}"
+                        hx-swap="innerHTML"
+                        hx-on::before-request="let t=document.getElementById('model-config-{{cssID .ID}}'); if(t.innerHTML.trim()){t.innerHTML=''; event.preventDefault();}">
+                    Configure
+                </button>
+                <button type="button" class="outline secondary"
+                        onclick="this.closest('.model-card').querySelector('.remove-dialog').showModal();">
+                    Remove
+                </button>
+                <dialog class="remove-dialog" style="max-width: 400px;">
+                    <article>
+                        <header>Remove Model</header>
+                        <p>Remove <strong>{{.ModelID}}</strong> ({{.Quant}}) from the registry?</p>
+                        <footer>
+                            <div role="group">
+                                <button type="button" class="secondary"
+                                        onclick="this.closest('dialog').close();">
+                                    Cancel
+                                </button>
+                                <button type="button"
+                                        hx-delete="/api/models/{{.ID}}?keep_files=true"
+                                        hx-target="closest .model-card"
+                                        hx-swap="outerHTML"
+                                        onclick="this.closest('dialog').close();">
+                                    Keep Files
+                                </button>
+                                <button type="button" class="contrast"
+                                        hx-delete="/api/models/{{.ID}}"
+                                        hx-target="closest .model-card"
+                                        hx-swap="outerHTML"
+                                        onclick="this.closest('dialog').close();">
+                                    Delete Files
+                                </button>
+                            </div>
+                        </footer>
+                    </article>
+                </dialog>
+            </div>
+            {{end}}
         </div>
-        {{else}}
-        <div role="group">
-            <button type="button" class="outline"
-                    hx-get="/api/models/{{.ID}}/config"
-                    hx-target="next .config-cell"
-                    hx-swap="innerHTML"
-                    hx-on::before-request="let t=this.closest('tr').nextElementSibling.querySelector('td'); if(t.innerHTML.trim()){t.innerHTML=''; event.preventDefault();}">
-                Configure
-            </button>
-            <button type="button" class="outline secondary"
-                    onclick="this.closest('tr').querySelector('.remove-dialog').showModal();">
-                Remove
-            </button>
-            <dialog class="remove-dialog" style="max-width: 400px;">
-                <article>
-                    <header>Remove Model</header>
-                    <p>Remove <strong>{{.ModelID}}</strong> ({{.Quant}}) from the registry?</p>
-                    <footer>
-                        <div role="group">
-                            <button type="button" class="secondary"
-                                    onclick="this.closest('dialog').close();">
-                                Cancel
-                            </button>
-                            <button type="button"
-                                    hx-delete="/api/models/{{.ID}}?keep_files=true"
-                                    hx-target="closest .model-row-group"
-                                    hx-swap="outerHTML"
-                                    onclick="this.closest('dialog').close();">
-                                Keep Files
-                            </button>
-                            <button type="button" class="contrast"
-                                    hx-delete="/api/models/{{.ID}}"
-                                    hx-target="closest .model-row-group"
-                                    hx-swap="outerHTML"
-                                    onclick="this.closest('dialog').close();">
-                                Delete Files
-                            </button>
-                        </div>
-                    </footer>
-                </article>
-            </dialog>
-        </div>
-        {{end}}
-    </td>
-</tr>
-<tr><td colspan="6" class="config-cell"></td></tr>
-</tbody>
+    </div>
+    <div class="model-card-config" id="model-config-{{cssID .ID}}"></div>
+</article>
 {{end}}
