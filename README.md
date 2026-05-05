@@ -255,7 +255,7 @@ Vulkan is **host-install only** — container mode requires GPU driver / ICD pas
 
 | Distro | Packages |
 |--------|----------|
-| Debian / Ubuntu | `glslang-tools libvulkan-dev spirv-headers vulkan-tools` |
+| Debian / Ubuntu | `glslc libvulkan-dev spirv-headers vulkan-tools` |
 | Fedora / RHEL | `glslc vulkan-headers vulkan-loader-devel spirv-headers-devel vulkan-tools` |
 
 `vulkan-tools` provides `vulkaninfo`, which the backend probe uses to enumerate hardware Vulkan devices — without it the UI marks the backend unavailable. The runtime loader (`libvulkan1` on Debian, `vulkan-loader` on Fedora) is typically already laid down by your GPU driver.

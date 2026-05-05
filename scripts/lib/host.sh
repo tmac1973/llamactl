@@ -137,7 +137,10 @@ host_missing_gpu_sdk_packages() {
                     done
                     ;;
                 debian)
-                    for pkg in glslang-tools libvulkan-dev spirv-headers vulkan-tools; do
+                    # glslc is its own package on Debian (frontend to
+                    # shaderc); glslang-tools ships glslangValidator
+                    # which find_package(Vulkan) does not use.
+                    for pkg in glslc libvulkan-dev spirv-headers vulkan-tools; do
                         dpkg -s "$pkg" >/dev/null 2>&1 || need+=("$pkg")
                     done
                     ;;
