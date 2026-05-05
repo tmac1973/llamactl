@@ -35,4 +35,13 @@
     </form>
     {{end}}
 </article>
+{{if .ActiveID}}
+<script>
+// A benchmark was already running when we loaded this tab. Reattach
+// the progress UI by firing the same event the form submit fires.
+document.body.dispatchEvent(new CustomEvent('benchmarkStarted', {
+    detail: {id: {{.ActiveID}}}
+}));
+</script>
+{{end}}
 {{end}}

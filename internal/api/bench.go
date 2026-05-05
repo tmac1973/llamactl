@@ -487,14 +487,29 @@ func (s *Server) handleBenchmarkForm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// If a benchmark is currently running, surface its ID so the page
+	// can reattach the progress UI when the user navigates back to
+	// this tab. The runner uses the most-recent run, so pick the
+	// newest by CreatedAt.
+	var activeID string
+	var activeAt time.Time
+	for _, run := range s.bench.List() {
+		if run.Status == benchmark.StatusRunning && run.CreatedAt.After(activeAt) {
+			activeID = run.ID
+			activeAt = run.CreatedAt
+		}
+	}
+
 	data := struct {
-		Models  []*models.Model
-		Presets []benchmark.Preset
-		Running bool
+		Models   []*models.Model
+		Presets  []benchmark.Preset
+		Running  bool
+		ActiveID string
 	}{
-		Models:  enabledModels,
-		Presets: benchmark.Presets(),
-		Running: s.process.IsRunning(),
+		Models:   enabledModels,
+		Presets:  benchmark.Presets(),
+		Running:  s.process.IsRunning(),
+		ActiveID: activeID,
 	}
 	s.renderPartial(w, "benchmark_form", data)
 }
