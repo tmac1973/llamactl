@@ -61,7 +61,15 @@ func (r *rocmBackend) collectROCmSMI() ([]GPUInfo, error) {
 
 		gpu := GPUInfo{}
 		if i, ok := colIdx["device"]; ok && i < len(fields) {
-			gpu.Index, _ = strconv.Atoi(strings.TrimSpace(fields[i]))
+			// rocm-smi reports the device as "card0", "card1", etc.
+			// (or sometimes "GPU 0", "GPU 1"). Plain Atoi silently
+			// fails and leaves Index=0 for every GPU, which made
+			// every GPU show up as GPU0 in the sidebar.
+			s := strings.TrimSpace(fields[i])
+			s = strings.TrimPrefix(s, "card")
+			s = strings.TrimPrefix(s, "GPU ")
+			s = strings.TrimPrefix(s, "GPU")
+			gpu.Index, _ = strconv.Atoi(s)
 		}
 		if i, ok := colIdx["GPU use (%)"]; ok && i < len(fields) {
 			gpu.UtilPercent, _ = strconv.Atoi(strings.TrimSpace(fields[i]))
