@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.0](https://github.com/tmac1973/llama-toolchest/compare/v1.5.1...v1.6.0) (2026-05-05)
+
+
+### Features
+
+* redesign models tab as flat list of cards ([d82921b](https://github.com/tmac1973/llama-toolchest/commit/d82921ba0ebab7d24460da557872e888612eb8cb))
+* restrict vulkan builds to host mode and expand vulkan deps ([b821347](https://github.com/tmac1973/llama-toolchest/commit/b82134715264e7f45488c767f62a6b1b76dfb83f))
+
 ## [1.5.1](https://github.com/tmac1973/llama-toolchest/compare/v1.5.0...v1.5.1) (2026-05-04)
 
 
