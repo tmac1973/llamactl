@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.0](https://github.com/tmac1973/llama-toolchest/compare/v1.7.1...v1.8.0) (2026-05-05)
+
+
+### Features
+
+* **browse:** add HuggingFace link icon to search results ([f686085](https://github.com/tmac1973/llama-toolchest/commit/f686085581311aef3b14f9f4fa970abf5373faf5))
+* **models:** add HuggingFace link icon next to model name ([9d462fc](https://github.com/tmac1973/llama-toolchest/commit/9d462fc2d877dc143914981c74e89f98494b2956))
+
 ## [1.7.1](https://github.com/tmac1973/llama-toolchest/compare/v1.7.0...v1.7.1) (2026-05-05)
 
 
