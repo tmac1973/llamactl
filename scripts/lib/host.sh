@@ -126,14 +126,18 @@ host_missing_gpu_sdk_packages() {
             # AND the SPIR-V C++ headers (spirv/unified1/spirv.hpp). The GPU
             # driver typically lays down the runtime loader, but the dev
             # headers and shader compiler need to be requested explicitly.
+            # vulkan-tools provides vulkaninfo, which the post-install
+            # backend probe (internal/builder/detect.go) uses to enumerate
+            # GPUs — without it the UI marks the vulkan backend unavailable
+            # even after a clean SDK install.
             case "$DISTRO_FAMILY" in
                 fedora)
-                    for pkg in glslc vulkan-headers vulkan-loader-devel spirv-headers-devel; do
+                    for pkg in glslc vulkan-headers vulkan-loader-devel spirv-headers-devel vulkan-tools; do
                         rpm -q "$pkg" >/dev/null 2>&1 || need+=("$pkg")
                     done
                     ;;
                 debian)
-                    for pkg in glslang-tools libvulkan-dev spirv-headers; do
+                    for pkg in glslang-tools libvulkan-dev spirv-headers vulkan-tools; do
                         dpkg -s "$pkg" >/dev/null 2>&1 || need+=("$pkg")
                     done
                     ;;
@@ -409,14 +413,26 @@ host_install() {
     local mode="${HOST_INSTALL_MODE:-package}"
     log "Host install — scope: $(host_scope), mode: $mode"
     log "GPU backend: ${GPU_VENDOR:-unknown} (${GPU_INFO:-no description})"
+    # HOST_SDK_BACKENDS may carry multiple entries (e.g. rocm + vulkan); fall
+    # back to GPU_VENDOR for callers that don't populate it.
+    local -a sdk_backends=("${HOST_SDK_BACKENDS[@]:-}")
+    if [[ ${#sdk_backends[@]} -eq 0 || -z "${sdk_backends[0]}" ]]; then
+        sdk_backends=()
+        [[ -n "${GPU_VENDOR:-}" ]] && sdk_backends=("$GPU_VENDOR")
+    fi
+    if [[ ${#sdk_backends[@]} -gt 1 ]]; then
+        log "Host SDKs to install: ${sdk_backends[*]}"
+    fi
     echo ""
 
     # GPU SDK packages so llama.cpp builds from the UI succeed first try.
-    # Same step for both install modes.
-    if [[ -n "${GPU_VENDOR:-}" ]]; then
-        host_install_gpu_sdk "$GPU_VENDOR" || \
-            warn "GPU SDK install reported issues; continuing with binary install."
-    fi
+    # Same step for both install modes; install each backend independently
+    # so a failure in one (e.g. vulkan headers missing from a stale repo)
+    # doesn't block the others.
+    for backend in "${sdk_backends[@]}"; do
+        host_install_gpu_sdk "$backend" || \
+            warn "GPU SDK ($backend) install reported issues; continuing."
+    done
 
     case "$mode" in
         package)

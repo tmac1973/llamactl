@@ -28,6 +28,7 @@ COMPOSE_VERSION=""
 
 INSTALL_MODE="${INSTALL_MODE:-container}"  # host or container; default container preserves existing behavior
 HOST_INSTALL_MODE="${HOST_INSTALL_MODE:-package}"  # for --host: "package" (download released .deb/.rpm) or "source" (go build locally)
+HOST_SDK_BACKENDS=()    # backends to install host SDKs for (--cuda/--rocm/--vulkan); empty means autodetect+prompt
 
 DISTRO_ID=""            # debian, ubuntu, fedora, arch, cachyos, opensuse-leap, etc.
 DISTRO_NAME=""          # Pretty name from os-release
@@ -1260,6 +1261,17 @@ Install modes:
                   via `go build` instead of installing a release package.
                   Useful for testing uncommitted changes.
 
+Backend selection (host mode, additive — stack flags to install multiple
+SDKs in a single run; each implies --host):
+  --cuda          Install the CUDA toolkit
+  --rocm          Install the ROCm SDK
+  --vulkan        Install the Vulkan SDK (loader headers, glslc, vulkaninfo)
+                  Vulkan-only is fine; combined with --cuda or --rocm gives
+                  you a portable fallback alongside the vendor backend.
+
+If no backend flag and no GPU= env is set, setup.sh auto-detects the
+primary GPU and asks whether to add Vulkan as a secondary SDK.
+
 Pin a specific released version with `LT_VERSION=1.0.0 ./setup.sh
 install --host` to avoid hitting the GH API for the latest tag.
 
@@ -1294,7 +1306,9 @@ Host-mode lifecycle is managed via systemd directly:
   sudo systemctl start|stop|status llama-toolchest      (system install, when run as root)
 
 Environment variables:
-  GPU=cuda|rocm|vulkan|cpu      Override GPU auto-detection
+  GPU=cuda|rocm|vulkan|cpu      Override GPU auto-detection (single
+                                backend; for multi-SDK host installs
+                                use --cuda/--rocm/--vulkan flags instead)
   RUNTIME=docker|podman         Override container runtime auto-detection
   INSTALL_MODE=host|container   Same as --host / --container
 
@@ -1304,6 +1318,8 @@ You can edit .env directly instead of using the interactive setup.
 Examples:
   ./setup.sh install                    # detect, install prereqs, build & run (container)
   ./setup.sh install --host             # install latest released package on the host
+  ./setup.sh install --rocm --vulkan    # host install, install both ROCm and Vulkan SDKs
+  ./setup.sh install --vulkan           # host install, Vulkan SDK only (cross-vendor)
   ./setup.sh install --from-source      # host install, build from local source
   ./setup.sh status --host              # show host install status
   ./setup.sh uninstall --host           # remove host install
@@ -1327,6 +1343,13 @@ main() {
             --container)    INSTALL_MODE="container" ;;
             --from-source)  INSTALL_MODE="host"; HOST_INSTALL_MODE="source" ;;
             --from-package) INSTALL_MODE="host"; HOST_INSTALL_MODE="package" ;;
+            # Backend flags are additive and host-mode-only (vulkan can't run
+            # in containers without driver passthrough we don't manage; for
+            # consistency cuda/rocm flags also imply --host). Stack them:
+            # `./setup.sh install --rocm --vulkan` installs both SDKs.
+            --cuda)         INSTALL_MODE="host"; HOST_SDK_BACKENDS+=("cuda") ;;
+            --rocm)         INSTALL_MODE="host"; HOST_SDK_BACKENDS+=("rocm") ;;
+            --vulkan)       INSTALL_MODE="host"; HOST_SDK_BACKENDS+=("vulkan") ;;
             -h|--help)      usage; exit 0 ;;
             *)
                 err "Unknown flag: $1"
@@ -1367,6 +1390,32 @@ main() {
         # package manager + extension to use, and host_install_gpu_sdk
         # knows which package names to install.
         detect_distro
+
+        # Resolve which backend SDKs to install on the host. Precedence:
+        #   1. Explicit --cuda/--rocm/--vulkan flags (already in HOST_SDK_BACKENDS)
+        #   2. GPU= env override (single backend, back-compat)
+        #   3. Auto-detected primary, plus an interactive prompt to also
+        #      install the Vulkan SDK (since AMD/NVIDIA users frequently
+        #      want it as a portable fallback).
+        # The first non-vulkan entry wins as GPU_VENDOR for systemd unit
+        # overrides; vulkan-only is fine, just no overrides needed.
+        if [[ "$command" == "install" && ${#HOST_SDK_BACKENDS[@]} -eq 0 ]]; then
+            if [[ -n "${GPU:-}" ]]; then
+                HOST_SDK_BACKENDS=("$GPU_VENDOR")
+            else
+                HOST_SDK_BACKENDS=("$GPU_VENDOR")
+                if [[ "$GPU_VENDOR" == "cuda" || "$GPU_VENDOR" == "rocm" ]]; then
+                    if prompt_confirm "Also install the Vulkan SDK on the host? (provides a portable backend in addition to $GPU_VENDOR)"; then
+                        HOST_SDK_BACKENDS+=("vulkan")
+                    fi
+                fi
+            fi
+        fi
+        # Pick a primary for unit overrides: first non-vulkan backend.
+        for _b in "${HOST_SDK_BACKENDS[@]:-}"; do
+            if [[ "$_b" != "vulkan" ]]; then GPU_VENDOR="$_b"; break; fi
+        done
+        unset _b
 
         case "$command" in
             install)   host_install ;;

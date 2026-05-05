@@ -6,11 +6,11 @@ Click this screenshot to watch the explainer video:
 
 A web-based management interface for [llama.cpp](https://github.com/ggerganov/llama.cpp) inference servers. Build llama.cpp from source, download models from HuggingFace, configure and run inference, and expose an OpenAI-compatible API — all from a single containerized application.
 
-**Linux only.** Supports NVIDIA CUDA, AMD ROCm, and CPU backends. Works with Docker and Podman on all major Linux distributions. GPU passthrough to containers is not available on macOS or Windows.
+**Linux only.** Supports NVIDIA CUDA, AMD ROCm, Vulkan (host install only), and CPU backends. Works with Docker and Podman on all major Linux distributions. GPU passthrough to containers is not available on macOS or Windows.
 
 ## Features
 
-- **Build Management** — Clone and compile llama.cpp inside the container with CUDA, ROCm, or CPU backends. Toggleable build options including OpenSSL for HTTPS support. View real-time build logs via SSE streaming.
+- **Build Management** — Clone and compile llama.cpp with CUDA, ROCm, Vulkan (host only), or CPU backends. Toggleable build options including OpenSSL for HTTPS support. View real-time build logs via SSE streaming.
 - **Model Management** — Download GGUF models directly from HuggingFace. Search repos, browse available quantizations, and track download progress. Configure per-model inference parameters. Scan directories for existing GGUF files.
 - **Multi-Model Loading** — Run multiple models simultaneously via llama.cpp's native router mode. Each model runs in its own isolated subprocess with per-model configuration. LRU eviction automatically unloads least-used models when VRAM limits are reached.
 - **Per-Model Configuration** — Each model can have its own context size, KV cache quantization, GPU layers, tensor split, split mode (layer/tensor parallelism), flash attention, direct I/O, sampling parameters, user-defined aliases, and speculative decoding draft model. Settings are stored in the registry and translated to llama.cpp preset INI format.
@@ -60,6 +60,16 @@ The management UI will be available at `http://localhost:3000`.
 | `--host --from-source` | You're testing uncommitted changes from the source tree. | Builds the binary via `go build` and drops it in `~/.local/bin/llama-toolchest`. Otherwise the same flow. |
 
 Host mode is managed via `systemctl --user start|stop|status llama-toolchest` (user install) or `sudo systemctl ...` (system install). The container `up`/`down`/`logs`/`enable`/`disable` commands are container-mode-only.
+
+### Backend SDK selection (host mode)
+
+By default `--host` auto-detects your primary GPU and asks whether to also install the Vulkan SDK as a portable fallback. To pick explicitly — including stacking multiple SDKs in one install — pass any combination of `--cuda`, `--rocm`, `--vulkan`. Each implies `--host`. Examples:
+
+```bash
+./setup.sh install --rocm --vulkan    # AMD GPU + Vulkan as a fallback
+./setup.sh install --vulkan           # Vulkan-only (cross-vendor)
+./setup.sh install --cuda             # NVIDIA only, skip the Vulkan prompt
+```
 
 ### Manual install (no setup.sh)
 
@@ -111,9 +121,12 @@ You can rerun `./setup.sh install --host` later if you'd rather have the script 
 
 | GPU | Backend | Build Profiles | Notes |
 |-----|---------|---------------|-------|
-| NVIDIA (Maxwell+) | CUDA 12.8 | cuda, cpu | GTX 900 series and newer. Requires driver >= 570. |
-| AMD | ROCm 7.2 | rocm, cpu | RDNA and newer. |
+| NVIDIA (Maxwell+) | CUDA 12.8 | cuda, cpu, vulkan† | GTX 900 series and newer. Requires driver >= 570. |
+| AMD | ROCm 7.2 | rocm, cpu, vulkan† | RDNA and newer. |
+| Other (Intel Arc, etc.) | Vulkan† | vulkan, cpu | Cross-vendor backend; install with `./setup.sh install --vulkan`. |
 | None | CPU-only | cpu | No GPU required. |
+
+† Vulkan is host-install only — see [GPU Backend Notes → Vulkan](#vulkan) below.
 
 **NVIDIA generation support (CUDA 12.8):**
 
@@ -127,7 +140,7 @@ You can rerun `./setup.sh install --host` later if you'd rather have the script 
 | Maxwell (900) | GTX 970–980 | Yes (driver >= 570) |
 | Kepler and older | GTX 700 and below | No (dropped in CUDA 12) |
 
-**Backend performance:** CUDA and ROCm provide native GPU compute for best performance. Each container image supports multiple build profiles — an NVIDIA user can build with CUDA or CPU from the same container.
+**Backend performance:** CUDA and ROCm provide native GPU compute for best performance; Vulkan is portable across vendors but typically slower than the vendor-specific backend on the same hardware. Each container image supports multiple build profiles — an NVIDIA user can build with CUDA or CPU from the same container.
 
 ### Supported Distros
 
@@ -162,16 +175,18 @@ Auto-start:
 
 Info:
   status      Show detected environment and planned actions
-  detect      Print detected GPU backend (cuda/rocm/cpu)
+  detect      Print detected GPU backend (cuda/rocm/vulkan/cpu)
   help        Show full help with details
 ```
 
 Override detection with environment variables:
 
 ```bash
-GPU=cpu ./setup.sh install          # force CPU-only backend
+GPU=cpu ./setup.sh install          # force CPU-only backend (single-backend)
 RUNTIME=podman ./setup.sh install   # force Podman runtime
 ```
+
+For host installs that need multiple GPU SDKs, prefer the additive flags (`--cuda`, `--rocm`, `--vulkan`) over `GPU=` — see "Backend SDK selection" above.
 
 ### First Run
 
@@ -231,6 +246,19 @@ The setup script auto-detects the AMD GPU architecture and sets `HSA_OVERRIDE_GF
 ### CUDA
 
 CUDA 12.8 requires an NVIDIA driver >= 570. The llama.cpp CUDA build auto-detects the GPU architecture at compile time — no manual target configuration is needed (unlike ROCm's `AMDGPU_TARGETS`).
+
+### Vulkan
+
+Vulkan is **host-install only** — container mode requires GPU driver / ICD passthrough that this project doesn't manage, so the `vulkan` profile is rejected at build time inside containers. Use it as a portable fallback alongside CUDA or ROCm, or as the sole backend on hardware where the vendor SDK isn't a fit.
+
+`./setup.sh install --vulkan` (or `--rocm --vulkan`) installs the SDK packages needed by llama.cpp's Vulkan backend:
+
+| Distro | Packages |
+|--------|----------|
+| Debian / Ubuntu | `glslang-tools libvulkan-dev spirv-headers vulkan-tools` |
+| Fedora / RHEL | `glslc vulkan-headers vulkan-loader-devel spirv-headers-devel vulkan-tools` |
+
+`vulkan-tools` provides `vulkaninfo`, which the backend probe uses to enumerate hardware Vulkan devices — without it the UI marks the backend unavailable. The runtime loader (`libvulkan1` on Debian, `vulkan-loader` on Fedora) is typically already laid down by your GPU driver.
 
 ### Multi-GPU Configuration
 
