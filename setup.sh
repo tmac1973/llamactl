@@ -28,6 +28,8 @@ COMPOSE_VERSION=""
 
 INSTALL_MODE="${INSTALL_MODE:-container}"  # host or container; default container preserves existing behavior
 HOST_INSTALL_MODE="${HOST_INSTALL_MODE:-package}"  # for --host: "package" (download released .deb/.rpm) or "source" (go build locally)
+HOST_SDK_BACKENDS=()    # backends to install host SDKs for (--cuda/--rocm/--vulkan); empty means autodetect+prompt
+MIGRATE_DIRECTION=""    # "to-host" or "to-container" when command=migrate
 
 DISTRO_ID=""            # debian, ubuntu, fedora, arch, cachyos, opensuse-leap, etc.
 DISTRO_NAME=""          # Pretty name from os-release
@@ -326,6 +328,100 @@ selinux_enforcing() {
 
 selinux_device_bool_set() {
     need_cmd getsebool && getsebool container_use_devices 2>/dev/null | grep -q "on"
+}
+
+# Container-mode dependency report. Verifies the prereqs needed to run
+# `setup.sh install` in container mode and prints remediation commands
+# for anything missing. Returns 0 if everything's present, 1 otherwise.
+container_deps() {
+    local rc=0
+    local inst_cmd
+    case "$DISTRO_FAMILY" in
+        debian) inst_cmd="sudo apt-get install -y" ;;
+        fedora) inst_cmd="sudo dnf install -y" ;;
+        arch)   inst_cmd="sudo pacman -S --needed" ;;
+        suse)   inst_cmd="sudo zypper install -y" ;;
+        *)      inst_cmd="<distro ${DISTRO_FAMILY:-unknown}>" ;;
+    esac
+
+    echo "Container install dependencies (distro: ${DISTRO_FAMILY:-unknown}, GPU: ${GPU_VENDOR:-unknown}):"
+    echo ""
+    echo "  Container runtime:"
+    if [[ -n "$CONTAINER_CMD" ]]; then
+        printf "    %-25s %s\n" "$CONTAINER_CMD" "OK ($CONTAINER_VERSION)"
+    else
+        printf "    %-25s %s\n" "docker or podman" "not installed"
+        case "$DISTRO_FAMILY" in
+            debian) echo "            $inst_cmd docker.io  (or follow https://docs.docker.com/engine/install/)" ;;
+            fedora) echo "            $inst_cmd podman      (or docker-ce from Docker's repo)" ;;
+            arch)   echo "            $inst_cmd docker      (or podman)" ;;
+            *)      echo "            install Docker or Podman from your distro" ;;
+        esac
+        rc=1
+    fi
+
+    if [[ -n "$COMPOSE_CMD" ]]; then
+        printf "    %-25s %s\n" "compose" "OK ($COMPOSE_VERSION)"
+    else
+        printf "    %-25s %s\n" "compose" "not installed"
+        case "$CONTAINER_CMD" in
+            docker) echo "            $inst_cmd docker-compose-plugin" ;;
+            podman) echo "            $inst_cmd podman-compose" ;;
+            *)      echo "            install docker-compose-plugin or podman-compose" ;;
+        esac
+        rc=1
+    fi
+    echo ""
+
+    # GPU-specific integration. Only flag what's relevant for this host.
+    if [[ "$GPU_VENDOR" == "cuda" ]]; then
+        echo "  NVIDIA GPU integration:"
+        if has_nvidia_toolkit; then
+            printf "    %-25s %s\n" "NVIDIA Container Toolkit" "OK"
+        else
+            printf "    %-25s %s\n" "NVIDIA Container Toolkit" "not installed"
+            echo "            ./setup.sh install   # this script auto-installs the toolkit"
+            rc=1
+        fi
+        if [[ "$CONTAINER_CMD" == "docker" ]]; then
+            if has_nvidia_toolkit && docker_has_nvidia_runtime; then
+                printf "    %-25s %s\n" "Docker NVIDIA runtime" "OK"
+            else
+                printf "    %-25s %s\n" "Docker NVIDIA runtime" "not configured"
+                echo "            sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker"
+                rc=1
+            fi
+        fi
+        if [[ "$CONTAINER_CMD" == "podman" ]]; then
+            if has_cdi_spec; then
+                printf "    %-25s %s\n" "Podman CDI spec" "OK"
+            else
+                printf "    %-25s %s\n" "Podman CDI spec" "missing"
+                echo "            sudo nvidia-ctk cdi generate --output=$CDI_SYSTEM_DIR/nvidia.yaml"
+                rc=1
+            fi
+        fi
+        echo ""
+    fi
+
+    if [[ "$GPU_VENDOR" == "rocm" && "$DISTRO_FAMILY" == "fedora" ]] && selinux_enforcing; then
+        echo "  SELinux (rocm on Fedora/RHEL):"
+        if selinux_device_bool_set; then
+            printf "    %-25s %s\n" "container_use_devices" "OK"
+        else
+            printf "    %-25s %s\n" "container_use_devices" "off"
+            echo "            sudo setsebool -P container_use_devices on"
+            rc=1
+        fi
+        echo ""
+    fi
+
+    if [[ $rc -eq 0 ]]; then
+        ok "All container dependencies satisfied."
+    else
+        warn "One or more dependencies are missing — see commands above."
+    fi
+    return $rc
 }
 
 check_prerequisites() {
@@ -1237,6 +1333,8 @@ prompt_confirm() {
 source "${SCRIPT_DIR}/scripts/lib/service.sh"
 # shellcheck source=scripts/lib/host.sh
 source "${SCRIPT_DIR}/scripts/lib/host.sh"
+# shellcheck source=scripts/lib/migrate.sh
+source "${SCRIPT_DIR}/scripts/lib/migrate.sh"
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
@@ -1260,12 +1358,30 @@ Install modes:
                   via `go build` instead of installing a release package.
                   Useful for testing uncommitted changes.
 
+Backend selection (host mode, additive — stack flags to install multiple
+SDKs in a single run; each implies --host):
+  --cuda          Install the CUDA toolkit
+  --rocm          Install the ROCm SDK
+  --vulkan        Install the Vulkan SDK (loader headers, glslc, vulkaninfo)
+                  Vulkan-only is fine; combined with --cuda or --rocm gives
+                  you a portable fallback alongside the vendor backend.
+
+If no backend flag and no GPU= env is set, setup.sh auto-detects the
+primary GPU and asks whether to add Vulkan as a secondary SDK.
+
 Pin a specific released version with `LT_VERSION=1.0.0 ./setup.sh
 install --host` to avoid hitting the GH API for the latest tag.
 
 Lifecycle:
   install     Detect, install prerequisites, build, and start
   uninstall   Stop and remove (container or host install)
+  migrate     Move state between container and host installs. Takes
+              one of --to-host / --to-container. Snapshots the
+              registry, brings up the destination, restores the
+              registry. Refuses if the destination side already
+              exists. builds.json is wiped — llama.cpp must be
+              rebuilt on the new side (binaries don't cross the
+              container/host boundary).
   quick       Container only: pull the latest released package and
               reinstall it inside the existing image. Reuses the GPU
               SDK / base-OS layers — only the package-install layer
@@ -1285,7 +1401,14 @@ Auto-start (container only):
 
 Info:
   status      Show detected environment and planned actions, then exit
-              (works for both modes)
+              (works for both modes; --host adds backend SDK report)
+  deps        Verify all packages needed to build and run, with copy-
+              paste install commands for anything missing. --host
+              checks the host package, llama.cpp build toolchain
+              (cmake/ninja/git/gcc), and per-backend GPU SDKs (cuda/
+              rocm/vulkan). Without --host, checks container runtime,
+              compose, and GPU integration (NVIDIA toolkit / SELinux).
+              Exits non-zero if anything is missing.
   detect      Print detected GPU backend (cuda/rocm/cpu/vulkan/metal) and exit
   help        Show this help message
 
@@ -1294,7 +1417,9 @@ Host-mode lifecycle is managed via systemd directly:
   sudo systemctl start|stop|status llama-toolchest      (system install, when run as root)
 
 Environment variables:
-  GPU=cuda|rocm|vulkan|cpu      Override GPU auto-detection
+  GPU=cuda|rocm|vulkan|cpu      Override GPU auto-detection (single
+                                backend; for multi-SDK host installs
+                                use --cuda/--rocm/--vulkan flags instead)
   RUNTIME=docker|podman         Override container runtime auto-detection
   INSTALL_MODE=host|container   Same as --host / --container
 
@@ -1304,7 +1429,11 @@ You can edit .env directly instead of using the interactive setup.
 Examples:
   ./setup.sh install                    # detect, install prereqs, build & run (container)
   ./setup.sh install --host             # install latest released package on the host
+  ./setup.sh install --rocm --vulkan    # host install, install both ROCm and Vulkan SDKs
+  ./setup.sh install --vulkan           # host install, Vulkan SDK only (cross-vendor)
   ./setup.sh install --from-source      # host install, build from local source
+  ./setup.sh migrate --to-host          # snapshot container state, install on host
+  ./setup.sh migrate --to-container     # opposite direction
   ./setup.sh status --host              # show host install status
   ./setup.sh uninstall --host           # remove host install
   ./setup.sh status                     # container dry run
@@ -1327,6 +1456,22 @@ main() {
             --container)    INSTALL_MODE="container" ;;
             --from-source)  INSTALL_MODE="host"; HOST_INSTALL_MODE="source" ;;
             --from-package) INSTALL_MODE="host"; HOST_INSTALL_MODE="package" ;;
+            # Backend flags are additive and host-mode-only (vulkan can't run
+            # in containers without driver passthrough we don't manage; for
+            # consistency cuda/rocm flags also imply --host). Stack them:
+            # `./setup.sh install --rocm --vulkan` installs both SDKs.
+            --cuda)         INSTALL_MODE="host"; HOST_SDK_BACKENDS+=("cuda") ;;
+            --rocm)         INSTALL_MODE="host"; HOST_SDK_BACKENDS+=("rocm") ;;
+            --vulkan)       INSTALL_MODE="host"; HOST_SDK_BACKENDS+=("vulkan") ;;
+            # Direction flags for the `migrate` command. Mutually exclusive
+            # — passing both is an error. Each implies its target mode for
+            # the purpose of post-flag dispatch.
+            --to-host)
+                [[ -n "$MIGRATE_DIRECTION" ]] && { err "--to-host and --to-container are mutually exclusive"; exit 1; }
+                MIGRATE_DIRECTION="to-host" ;;
+            --to-container)
+                [[ -n "$MIGRATE_DIRECTION" ]] && { err "--to-host and --to-container are mutually exclusive"; exit 1; }
+                MIGRATE_DIRECTION="to-container" ;;
             -h|--help)      usage; exit 0 ;;
             *)
                 err "Unknown flag: $1"
@@ -1338,9 +1483,15 @@ main() {
         shift
     done
 
+    # ── Validate flag/command combinations ──
+    if [[ -n "$MIGRATE_DIRECTION" && "$command" != "migrate" ]]; then
+        err "--to-host / --to-container are only valid with the 'migrate' command"
+        exit 1
+    fi
+
     # ── Validate command ──
     case "$command" in
-        install|uninstall|up|down|rebuild|quick|logs|detect|status|enable|disable) ;;
+        install|uninstall|up|down|rebuild|quick|logs|detect|status|enable|disable|migrate|deps) ;;
         -h|--help|help)
             usage
             exit 0
@@ -1352,6 +1503,48 @@ main() {
             exit 1
             ;;
     esac
+
+    # ── migrate: hybrid command, needs both container and host context ──
+    if [[ "$command" == "migrate" ]]; then
+        if [[ -z "$MIGRATE_DIRECTION" ]]; then
+            err "migrate requires --to-host or --to-container"
+            echo ""
+            usage
+            exit 1
+        fi
+        detect_distro
+        detect_container_runtime
+        if [[ -n "${GPU:-}" ]]; then
+            GPU_VENDOR="$GPU"
+            GPU_INFO="(manually set: $GPU)"
+        else
+            detect_gpu
+        fi
+        case "$MIGRATE_DIRECTION" in
+            to-host)
+                # Resolve SDK backends the same way `install --host` does:
+                # explicit flags win; otherwise auto-detect + prompt for vulkan.
+                if [[ ${#HOST_SDK_BACKENDS[@]} -eq 0 ]]; then
+                    HOST_SDK_BACKENDS=("$GPU_VENDOR")
+                    if [[ -z "${GPU:-}" ]] && [[ "$GPU_VENDOR" == "cuda" || "$GPU_VENDOR" == "rocm" ]]; then
+                        if prompt_confirm "Also install the Vulkan SDK on the host?"; then
+                            HOST_SDK_BACKENDS+=("vulkan")
+                        fi
+                    fi
+                fi
+                for _b in "${HOST_SDK_BACKENDS[@]:-}"; do
+                    if [[ "$_b" != "vulkan" ]]; then GPU_VENDOR="$_b"; break; fi
+                done
+                unset _b
+                migrate_to_host
+                ;;
+            to-container)
+                load_env_ports
+                migrate_to_container
+                ;;
+        esac
+        exit 0
+    fi
 
     # ── Host mode: short circuit before any container detection ──
     if [[ "$INSTALL_MODE" == "host" ]]; then
@@ -1368,10 +1561,37 @@ main() {
         # knows which package names to install.
         detect_distro
 
+        # Resolve which backend SDKs to install on the host. Precedence:
+        #   1. Explicit --cuda/--rocm/--vulkan flags (already in HOST_SDK_BACKENDS)
+        #   2. GPU= env override (single backend, back-compat)
+        #   3. Auto-detected primary, plus an interactive prompt to also
+        #      install the Vulkan SDK (since AMD/NVIDIA users frequently
+        #      want it as a portable fallback).
+        # The first non-vulkan entry wins as GPU_VENDOR for systemd unit
+        # overrides; vulkan-only is fine, just no overrides needed.
+        if [[ "$command" == "install" && ${#HOST_SDK_BACKENDS[@]} -eq 0 ]]; then
+            if [[ -n "${GPU:-}" ]]; then
+                HOST_SDK_BACKENDS=("$GPU_VENDOR")
+            else
+                HOST_SDK_BACKENDS=("$GPU_VENDOR")
+                if [[ "$GPU_VENDOR" == "cuda" || "$GPU_VENDOR" == "rocm" ]]; then
+                    if prompt_confirm "Also install the Vulkan SDK on the host? (provides a portable backend in addition to $GPU_VENDOR)"; then
+                        HOST_SDK_BACKENDS+=("vulkan")
+                    fi
+                fi
+            fi
+        fi
+        # Pick a primary for unit overrides: first non-vulkan backend.
+        for _b in "${HOST_SDK_BACKENDS[@]:-}"; do
+            if [[ "$_b" != "vulkan" ]]; then GPU_VENDOR="$_b"; break; fi
+        done
+        unset _b
+
         case "$command" in
             install)   host_install ;;
             uninstall) host_uninstall ;;
             status)    host_status ;;
+            deps)      host_deps ;;
             detect)    echo "$GPU_VENDOR" ;;
             up|down|logs|enable|disable|rebuild|quick)
                 err "'$command' is not supported in --host mode."
@@ -1443,6 +1663,10 @@ main() {
             echo "  Web UI:     http://localhost:${LLAMA_TOOLCHEST_PORT}"
             echo ""
             exit 0
+            ;;
+        deps)
+            container_deps
+            exit $?
             ;;
     esac
 

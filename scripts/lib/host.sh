@@ -126,14 +126,21 @@ host_missing_gpu_sdk_packages() {
             # AND the SPIR-V C++ headers (spirv/unified1/spirv.hpp). The GPU
             # driver typically lays down the runtime loader, but the dev
             # headers and shader compiler need to be requested explicitly.
+            # vulkan-tools provides vulkaninfo, which the post-install
+            # backend probe (internal/builder/detect.go) uses to enumerate
+            # GPUs — without it the UI marks the vulkan backend unavailable
+            # even after a clean SDK install.
             case "$DISTRO_FAMILY" in
                 fedora)
-                    for pkg in glslc vulkan-headers vulkan-loader-devel spirv-headers-devel; do
+                    for pkg in glslc vulkan-headers vulkan-loader-devel spirv-headers-devel vulkan-tools; do
                         rpm -q "$pkg" >/dev/null 2>&1 || need+=("$pkg")
                     done
                     ;;
                 debian)
-                    for pkg in glslang-tools libvulkan-dev spirv-headers; do
+                    # glslc is its own package on Debian (frontend to
+                    # shaderc); glslang-tools ships glslangValidator
+                    # which find_package(Vulkan) does not use.
+                    for pkg in glslc libvulkan-dev spirv-headers vulkan-tools; do
                         dpkg -s "$pkg" >/dev/null 2>&1 || need+=("$pkg")
                     done
                     ;;
@@ -409,14 +416,26 @@ host_install() {
     local mode="${HOST_INSTALL_MODE:-package}"
     log "Host install — scope: $(host_scope), mode: $mode"
     log "GPU backend: ${GPU_VENDOR:-unknown} (${GPU_INFO:-no description})"
+    # HOST_SDK_BACKENDS may carry multiple entries (e.g. rocm + vulkan); fall
+    # back to GPU_VENDOR for callers that don't populate it.
+    local -a sdk_backends=("${HOST_SDK_BACKENDS[@]:-}")
+    if [[ ${#sdk_backends[@]} -eq 0 || -z "${sdk_backends[0]}" ]]; then
+        sdk_backends=()
+        [[ -n "${GPU_VENDOR:-}" ]] && sdk_backends=("$GPU_VENDOR")
+    fi
+    if [[ ${#sdk_backends[@]} -gt 1 ]]; then
+        log "Host SDKs to install: ${sdk_backends[*]}"
+    fi
     echo ""
 
     # GPU SDK packages so llama.cpp builds from the UI succeed first try.
-    # Same step for both install modes.
-    if [[ -n "${GPU_VENDOR:-}" ]]; then
-        host_install_gpu_sdk "$GPU_VENDOR" || \
-            warn "GPU SDK install reported issues; continuing with binary install."
-    fi
+    # Same step for both install modes; install each backend independently
+    # so a failure in one (e.g. vulkan headers missing from a stale repo)
+    # doesn't block the others.
+    for backend in "${sdk_backends[@]}"; do
+        host_install_gpu_sdk "$backend" || \
+            warn "GPU SDK ($backend) install reported issues; continuing."
+    done
 
     case "$mode" in
         package)
@@ -470,9 +489,13 @@ host_install() {
 
     host_write_unit_override
 
-    # If the service is already running, restart so the new binary takes
-    # effect.
-    if service_is_active; then
+    # MIGRATE_SKIP_START: when set, the migrate command takes ownership of
+    # service start/stop sequencing (it needs to write the translated
+    # config + restored registry before first start). Don't prompt and
+    # don't restart here — the caller will handle it.
+    if [[ "${MIGRATE_SKIP_START:-0}" == "1" ]]; then
+        log "Skipping service start (caller will handle)."
+    elif service_is_active; then
         log "Service is running; restarting to pick up the new binary..."
         service_restart
         ok "llama-toolchest service restarted"
@@ -544,6 +567,115 @@ host_uninstall() {
     ok "Host uninstall complete."
 }
 
+# Whether a backend is applicable to this host. Used by deps/status to
+# avoid reporting "missing cuda-toolkit" on a machine that has no NVIDIA
+# GPU. Vulkan is always applicable — it's the cross-vendor fallback.
+host_backend_applicable() {
+    case "$1" in
+        cuda)   command -v nvidia-smi >/dev/null 2>&1 || [[ -e /dev/nvidia0 ]] ;;
+        rocm)   [[ -e /dev/kfd ]] ;;
+        vulkan) return 0 ;;
+        *)      return 1 ;;
+    esac
+}
+
+# Per-backend SDK report. Echoes one line per backend with state +
+# remediation command. Skips backends that aren't applicable on this
+# host (e.g. cuda when there's no NVIDIA GPU). Returns non-zero if any
+# applicable backend has missing packages.
+host_report_sdk_deps() {
+    local exit_code=0
+    local backend missing inst_cmd
+    case "$DISTRO_FAMILY" in
+        debian) inst_cmd="sudo apt-get install -y" ;;
+        fedora) inst_cmd="sudo dnf install -y" ;;
+        *)      inst_cmd="<distro $DISTRO_FAMILY: install manually>" ;;
+    esac
+    for backend in cuda rocm vulkan; do
+        if ! host_backend_applicable "$backend"; then
+            printf "    %-7s %s\n" "$backend" "n/a (no matching GPU detected)"
+            continue
+        fi
+        missing="$(host_missing_gpu_sdk_packages "$backend")"
+        if [[ -z "$missing" ]]; then
+            printf "    %-7s %s\n" "$backend" "OK"
+        else
+            printf "    %-7s missing: %s\n" "$backend" "$missing"
+            printf "            %s %s\n" "$inst_cmd" "$missing"
+            exit_code=1
+        fi
+    done
+    return $exit_code
+}
+
+# Build/runtime toolchain verification. cmake/ninja/git are pulled in as
+# package depends by the .deb/.rpm so they should always be present after
+# a from-package install; we still re-check because users on from-source
+# may have skipped the install dance.
+host_report_toolchain_deps() {
+    local exit_code=0
+    local item bin pkgs_debian pkgs_fedora
+    # name | binary | debian package | fedora package
+    local -a checks=(
+        "cmake|cmake|cmake|cmake"
+        "ninja|ninja|ninja-build|ninja-build"
+        "git|git|git|git"
+        "gcc|cc|build-essential|gcc-c++ make"
+    )
+    local inst_cmd
+    case "$DISTRO_FAMILY" in
+        debian) inst_cmd="sudo apt-get install -y" ;;
+        fedora) inst_cmd="sudo dnf install -y" ;;
+        *)      inst_cmd="<distro $DISTRO_FAMILY>" ;;
+    esac
+    for c in "${checks[@]}"; do
+        IFS='|' read -r name bin pkg_d pkg_f <<<"$c"
+        if command -v "$bin" >/dev/null 2>&1; then
+            printf "    %-7s %s\n" "$name" "OK"
+        else
+            local pkg="$pkg_d"
+            [[ "$DISTRO_FAMILY" == "fedora" ]] && pkg="$pkg_f"
+            printf "    %-7s missing\n" "$name"
+            printf "            %s %s\n" "$inst_cmd" "$pkg"
+            exit_code=1
+        fi
+    done
+    return $exit_code
+}
+
+# Top-level `deps --host` entry point. Returns 0 if everything's healthy,
+# 1 if anything's missing.
+host_deps() {
+    local rc=0
+    echo "Host install dependencies (scope: $(host_scope), distro: ${DISTRO_FAMILY:-unknown}):"
+    echo ""
+    echo "  Package:"
+    if dpkg -s llama-toolchest >/dev/null 2>&1; then
+        printf "    %-20s %s\n" "llama-toolchest" "OK ($(dpkg-query -W -f='${Version}' llama-toolchest))"
+    elif rpm -q llama-toolchest >/dev/null 2>&1; then
+        printf "    %-20s %s\n" "llama-toolchest" "OK ($(rpm -q --qf '%{VERSION}' llama-toolchest))"
+    elif [[ -x "$(host_binary_path)" ]]; then
+        printf "    %-20s %s\n" "llama-toolchest" "OK (from-source: $(host_binary_path))"
+    else
+        printf "    %-20s %s\n" "llama-toolchest" "not installed"
+        echo "            ./setup.sh install --host"
+        rc=1
+    fi
+    echo ""
+    echo "  Build toolchain (for compiling llama.cpp from the UI):"
+    host_report_toolchain_deps || rc=1
+    echo ""
+    echo "  Backend SDKs:"
+    host_report_sdk_deps || rc=1
+    echo ""
+    if [[ $rc -eq 0 ]]; then
+        ok "All host dependencies satisfied."
+    else
+        warn "One or more dependencies are missing — see commands above."
+    fi
+    return $rc
+}
+
 host_status() {
     echo "Scope:       $(host_scope)"
 
@@ -569,6 +701,9 @@ host_status() {
     echo "Config:      $(host_config_path)$( [[ -f "$(host_config_path)" ]] && echo "" || echo "  (missing)")"
     echo "Data dir:    $(host_data_dir)"
     echo "Service:     $(service_unit_path)"
+    echo ""
+    echo "Backend SDKs:"
+    host_report_sdk_deps || true
     echo ""
     service_status
 }

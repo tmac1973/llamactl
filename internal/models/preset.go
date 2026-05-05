@@ -126,28 +126,42 @@ func writeConfigParams(b *strings.Builder, cfg *ModelConfig, isEmbedding bool) {
 		if cfg.MmprojPath != "" {
 			b.WriteString(fmt.Sprintf("mmproj = %s\n", cfg.MmprojPath))
 		}
-		// Speculative decoding
-		if cfg.SpecType == "draft" && cfg.DraftModelPath != "" {
-			b.WriteString(fmt.Sprintf("model-draft = %s\n", cfg.DraftModelPath))
-		} else if cfg.SpecType != "" && cfg.SpecType != "draft" {
-			b.WriteString(fmt.Sprintf("spec-type = %s\n", cfg.SpecType))
-			if cfg.NgramSizeN > 0 {
-				b.WriteString(fmt.Sprintf("spec-ngram-size-n = %d\n", cfg.NgramSizeN))
+		// Speculative decoding. llama.cpp split the legacy mode-agnostic
+		// flags (--draft-max, --draft-min, --spec-ngram-size-n/m) into
+		// mode-specific flags. Emit the right name based on SpecType.
+		switch cfg.SpecType {
+		case "draft":
+			if cfg.DraftModelPath != "" {
+				b.WriteString(fmt.Sprintf("model-draft = %s\n", cfg.DraftModelPath))
 			}
-			if cfg.NgramSizeM > 0 {
-				b.WriteString(fmt.Sprintf("spec-ngram-size-m = %d\n", cfg.NgramSizeM))
-			}
-		}
-		if cfg.SpecType != "" {
 			if cfg.DraftMax > 0 {
-				b.WriteString(fmt.Sprintf("draft-max = %d\n", cfg.DraftMax))
+				b.WriteString(fmt.Sprintf("spec-draft-n-max = %d\n", cfg.DraftMax))
 			}
 			if cfg.DraftMin > 0 {
-				b.WriteString(fmt.Sprintf("draft-min = %d\n", cfg.DraftMin))
+				b.WriteString(fmt.Sprintf("spec-draft-n-min = %d\n", cfg.DraftMin))
 			}
 			if cfg.DraftPMin != "" {
-				b.WriteString(fmt.Sprintf("draft-p-min = %s\n", cfg.DraftPMin))
+				b.WriteString(fmt.Sprintf("spec-draft-p-min = %s\n", cfg.DraftPMin))
 			}
+		case "ngram-mod":
+			b.WriteString(fmt.Sprintf("spec-type = %s\n", cfg.SpecType))
+			if cfg.DraftMax > 0 {
+				b.WriteString(fmt.Sprintf("spec-ngram-mod-n-max = %d\n", cfg.DraftMax))
+			}
+			if cfg.DraftMin > 0 {
+				b.WriteString(fmt.Sprintf("spec-ngram-mod-n-min = %d\n", cfg.DraftMin))
+			}
+		case "ngram-simple", "ngram-map-k", "ngram-map-k4v":
+			b.WriteString(fmt.Sprintf("spec-type = %s\n", cfg.SpecType))
+			prefix := "spec-" + cfg.SpecType
+			if cfg.NgramSizeN > 0 {
+				b.WriteString(fmt.Sprintf("%s-size-n = %d\n", prefix, cfg.NgramSizeN))
+			}
+			if cfg.NgramSizeM > 0 {
+				b.WriteString(fmt.Sprintf("%s-size-m = %d\n", prefix, cfg.NgramSizeM))
+			}
+		case "ngram-cache":
+			b.WriteString(fmt.Sprintf("spec-type = %s\n", cfg.SpecType))
 		}
 	}
 
