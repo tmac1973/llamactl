@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.7.0](https://github.com/tmac1973/llama-toolchest/compare/v1.6.0...v1.7.0) (2026-05-05)
+
+
+### Features
+
+* add deps command and SDK section in status --host ([f7ec150](https://github.com/tmac1973/llama-toolchest/commit/f7ec1505e3baf63d02099d4bada89a6dfda8cf1d))
+* add migrate command for switching between container and host installs ([c090de2](https://github.com/tmac1973/llama-toolchest/commit/c090de2771c4a33c5df3a049219e839dbbcf5c87))
+* **host:** support multi-backend SDK installs (--cuda/--rocm/--vulkan) ([c8d2a76](https://github.com/tmac1973/llama-toolchest/commit/c8d2a766697a762aff508064ef89bee12a6f7f6a))
+
+
+### Bug Fixes
+
+* emit mode-specific speculative decoding flags ([b769934](https://github.com/tmac1973/llama-toolchest/commit/b769934b7a453715494faf403bc971abf72bccb1))
+* **host:** use glslc package on Debian instead of glslang-tools ([ab2d148](https://github.com/tmac1973/llama-toolchest/commit/ab2d148ace6b1cee4058c4f3ab6107080b598c99))
+* **migrate:** translate mmproj_path/draft_model_path across the boundary ([a19eade](https://github.com/tmac1973/llama-toolchest/commit/a19eade8c11f3a9298234d07a3308309a7174033))
+
 ## [1.6.0](https://github.com/tmac1973/llama-toolchest/compare/v1.5.1...v1.6.0) (2026-05-05)
 
 
