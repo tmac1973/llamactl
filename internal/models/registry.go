@@ -180,28 +180,42 @@ func (c *ModelConfig) EffectiveFlagsFor(isEmbedding bool) string {
 		if c.MmprojPath != "" {
 			parts = append(parts, "--mmproj", c.MmprojPath)
 		}
-		// Speculative decoding
-		if c.SpecType == "draft" && c.DraftModelPath != "" {
-			parts = append(parts, "--model-draft", c.DraftModelPath)
-		} else if c.SpecType != "" && c.SpecType != "draft" {
-			parts = append(parts, "--spec-type", c.SpecType)
-			if c.NgramSizeN > 0 {
-				parts = append(parts, "--spec-ngram-size-n", strconv.Itoa(c.NgramSizeN))
+		// Speculative decoding. llama.cpp split the legacy mode-agnostic
+		// flags (--draft-max, --draft-min, --spec-ngram-size-n/m) into
+		// mode-specific flags. Emit the right name based on SpecType.
+		switch c.SpecType {
+		case "draft":
+			if c.DraftModelPath != "" {
+				parts = append(parts, "--model-draft", c.DraftModelPath)
 			}
-			if c.NgramSizeM > 0 {
-				parts = append(parts, "--spec-ngram-size-m", strconv.Itoa(c.NgramSizeM))
-			}
-		}
-		if c.SpecType != "" {
 			if c.DraftMax > 0 {
-				parts = append(parts, "--draft-max", strconv.Itoa(c.DraftMax))
+				parts = append(parts, "--spec-draft-n-max", strconv.Itoa(c.DraftMax))
 			}
 			if c.DraftMin > 0 {
-				parts = append(parts, "--draft-min", strconv.Itoa(c.DraftMin))
+				parts = append(parts, "--spec-draft-n-min", strconv.Itoa(c.DraftMin))
 			}
 			if c.DraftPMin != "" {
-				parts = append(parts, "--draft-p-min", c.DraftPMin)
+				parts = append(parts, "--spec-draft-p-min", c.DraftPMin)
 			}
+		case "ngram-mod":
+			parts = append(parts, "--spec-type", c.SpecType)
+			if c.DraftMax > 0 {
+				parts = append(parts, "--spec-ngram-mod-n-max", strconv.Itoa(c.DraftMax))
+			}
+			if c.DraftMin > 0 {
+				parts = append(parts, "--spec-ngram-mod-n-min", strconv.Itoa(c.DraftMin))
+			}
+		case "ngram-simple", "ngram-map-k", "ngram-map-k4v":
+			parts = append(parts, "--spec-type", c.SpecType)
+			prefix := "--spec-" + c.SpecType
+			if c.NgramSizeN > 0 {
+				parts = append(parts, prefix+"-size-n", strconv.Itoa(c.NgramSizeN))
+			}
+			if c.NgramSizeM > 0 {
+				parts = append(parts, prefix+"-size-m", strconv.Itoa(c.NgramSizeM))
+			}
+		case "ngram-cache":
+			parts = append(parts, "--spec-type", c.SpecType)
 		}
 	}
 	if c.ExtraFlags != "" {
