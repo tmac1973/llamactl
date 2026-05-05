@@ -6,34 +6,27 @@ Click this screenshot to watch the explainer video:
 
 A web-based management interface for [llama.cpp](https://github.com/ggerganov/llama.cpp) inference servers. Build llama.cpp from source, download models from HuggingFace, configure and run inference, and expose an OpenAI-compatible API — all from a single containerized application.
 
-**Linux only.** Supports NVIDIA CUDA, AMD ROCm, Vulkan (host install only), and CPU backends. Works with Docker and Podman on all major Linux distributions. GPU passthrough to containers is not available on macOS or Windows.
+**Linux only.** Supports NVIDIA CUDA, AMD ROCm, Vulkan (host install only), and CPU backends. Works with Docker and Podman on all major Linux distributions.
 
 ## Features
 
-- **Build Management** — Clone and compile llama.cpp with CUDA, ROCm, Vulkan (host only), or CPU backends. Toggleable build options including OpenSSL for HTTPS support. View real-time build logs via SSE streaming.
-- **Model Management** — Download GGUF models directly from HuggingFace. Search repos, browse available quantizations, and track download progress. Configure per-model inference parameters. Scan directories for existing GGUF files.
-- **Multi-Model Loading** — Run multiple models simultaneously via llama.cpp's native router mode. Each model runs in its own isolated subprocess with per-model configuration. LRU eviction automatically unloads least-used models when VRAM limits are reached.
-- **Per-Model Configuration** — Each model can have its own context size, KV cache quantization, GPU layers, tensor split, split mode (layer/tensor parallelism), flash attention, direct I/O, sampling parameters, user-defined aliases, and speculative decoding draft model. Settings are stored in the registry and translated to llama.cpp preset INI format.
-- **Vision / Multimodal** — Automatic detection and association of mmproj (multimodal projector) files for vision-capable models. Vision badge shown on model cards. Send images via the OpenAI-compatible chat API using base64 or URL (requires OpenSSL build).
-- **Embedding Models** — Separate embedding model section with curated one-click downloads (nomic-embed, bge, mxbai-embed, snowflake-arctic-embed). Simplified config for embedding models. Automatic `--embeddings` flag injection.
-- **Speculative Decoding** — Pair a small draft model with a large model for faster inference. Draft model picker auto-filters by architecture and size. Config generates `model-draft` in the preset INI.
-- **Model Capabilities** — Automatic detection of tool calling support from GGUF chat template. Vision and tools badges shown on model cards. Model info endpoint exposes capabilities for client discovery.
-- **VRAM Estimation** — Architecture-aware VRAM estimation using GGUF metadata (layers, KV heads, embedding dimensions). Estimates account for model weights, KV cache at configured context size, and cache quantization.
-- **Service Control** — Start, stop, and restart the inference server. Load and unload individual models. Live server log streaming. Health monitoring. Loaded models list with status indicators on the server page.
-- **OpenAI-Compatible API** — Full OpenAI API compatibility at `/v1` including:
-  - Chat completions (streaming, tool/function calling, structured output / JSON schema)
-  - Completions
-  - Embeddings
-  - Model listing
-  - Per-model sampling defaults injected automatically
-  - Optional Bearer token authentication
-- **Model Info & Status** — `/api/models/{id}/info` returns enriched metadata with capabilities list. `/api/ps` returns loaded models with status, similar to Ollama's ps endpoint.
-- **Model Aliases** — Assign friendly names like `qwen3:latest` or `my-chat-model` to models. Clients can use aliases in the `model` field of API requests.
-- **Dashboard** — At-a-glance view of service status, active models, build/model inventory, and API endpoint URL.
-- **Agent CLI** — Lightweight terminal chat client (`cmd/agent`) that connects to the API with tool-use support for filesystem exploration.
-- **Built-in Chat UI** — llama.cpp's native chat interface at port 8080 with model selector dropdown for switching between loaded models.
+- **Build management** — Compile llama.cpp with CUDA / ROCm / Vulkan / CPU backends. Toggleable build options, real-time SSE log streaming.
+- **Model management** — Download GGUF models from HuggingFace, scan existing files, configure per-model parameters.
+- **Multi-model loading** — Run multiple models simultaneously via llama.cpp's router. Per-model isolated subprocess, LRU eviction at the VRAM limit.
+- **Per-model config** — Context size, KV cache quant, GPU layers, tensor split, flash attention, sampling, aliases, and speculative-decoding draft model.
+- **Vision / multimodal** — Auto-detect and pair `mmproj` files. Send images via the OpenAI chat API (requires OpenSSL build).
+- **Embedding models** — Curated one-click downloads (nomic-embed, bge, mxbai-embed, snowflake-arctic-embed) with automatic `--embeddings` injection.
+- **Speculative decoding** — Pair a small draft model with a large model; draft picker auto-filters by architecture.
+- **Capability detection** — Tool calling and vision detection from GGUF metadata, surfaced as badges and via `/api/models/{id}/info`.
+- **VRAM estimation** — Architecture-aware estimates from GGUF metadata, accounting for KV cache size and quantization.
+- **Benchmarks** — Run llama-bench presets per model, compare runs, and export results.
+- **OpenAI-compatible API** — Chat completions (streaming, tool calling, JSON schema), completions, embeddings, model listing. Optional Bearer auth.
+- **Built-in chat UI** — llama.cpp's native chat interface with a model-selector dropdown.
+- **Agent CLI** — Lightweight terminal chat client (`cmd/agent`) with optional filesystem tool use.
 
-## Quick Start
+## Installation
+
+### Quick start
 
 ```bash
 git clone https://github.com/tmac1973/llama-toolchest.git
@@ -43,13 +36,7 @@ cd llama-toolchest
 ./setup.sh install --host
 ```
 
-The setup script will:
-1. Detect your GPU (NVIDIA, AMD, or CPU-only)
-2. (Container mode) detect your container runtime (Docker or Podman) and install any missing prerequisites
-3. Show a summary and ask for confirmation
-4. Build and start
-
-The management UI will be available at `http://localhost:3000`.
+The setup script detects your GPU and container runtime, installs missing prerequisites, shows a summary, then builds and starts. The management UI is at `http://localhost:3000`.
 
 ### Install modes
 
@@ -59,24 +46,11 @@ The management UI will be available at `http://localhost:3000`.
 | `--host` (default: `--from-package`) | You already have a working GPU driver and want a leaner setup, faster startup, or Vulkan support. | Downloads the latest released `.deb`/`.rpm` for your distro from the GitHub release, verifies its checksum, and installs via `dnf`/`apt`. Writes a config, registers a systemd user unit, and (optionally) enables the service. |
 | `--host --from-source` | You're testing uncommitted changes from the source tree. | Builds the binary via `go build` and drops it in `~/.local/bin/llama-toolchest`. Otherwise the same flow. |
 
-Host mode is managed via `systemctl --user start|stop|status llama-toolchest` (user install) or `sudo systemctl ...` (system install). The container `up`/`down`/`logs`/`enable`/`disable` commands are container-mode-only.
-
-### Switching modes
-
-If you change your mind after install, `./setup.sh migrate` moves your model registry, per-model configs, benchmarks, and main settings between sides:
-
-```bash
-./setup.sh migrate --to-host         # container → host
-./setup.sh migrate --to-container    # host → container
-```
-
-Migration refuses to run if the destination side is already populated — uninstall the unwanted side first (`./setup.sh uninstall` or `./setup.sh uninstall --host`). The source's snapshot is kept at `~/llt-migrate-<timestamp>` and the source install is left in place as a safety net (`docker volume rm llama-toolchest-data` once you're confident; or `./setup.sh uninstall --host` for the reverse).
-
-`builds.json` is wiped during migration: container-built `llama-server` binaries don't run on the host (different glibc/CUDA/ROCm runtime) and vice versa, so a fresh llama.cpp build is required after switching. Open the **Builds** page after the migration finishes and rebuild.
+Host mode is managed via `systemctl --user start|stop|status llama-toolchest` (user install) or `sudo systemctl ...` (system install). Container `up`/`down`/`logs`/`enable`/`disable` are container-mode-only.
 
 ### Backend SDK selection (host mode)
 
-By default `--host` auto-detects your primary GPU and asks whether to also install the Vulkan SDK as a portable fallback. To pick explicitly — including stacking multiple SDKs in one install — pass any combination of `--cuda`, `--rocm`, `--vulkan`. Each implies `--host`. Examples:
+By default `--host` auto-detects your primary GPU and asks whether to also install the Vulkan SDK as a portable fallback. To pick explicitly — including stacking multiple SDKs in one install — pass any combination of `--cuda`, `--rocm`, `--vulkan`. Each implies `--host`.
 
 ```bash
 ./setup.sh install --rocm --vulkan    # AMD GPU + Vulkan as a fallback
@@ -84,260 +58,167 @@ By default `--host` auto-detects your primary GPU and asks whether to also insta
 ./setup.sh install --cuda             # NVIDIA only, skip the Vulkan prompt
 ```
 
-### Manual install (no setup.sh)
+For multi-GPU SDK installs, prefer the additive flags over `GPU=`.
 
-If you'd rather skip the setup script entirely, the released `.deb`/`.rpm` packages are self-contained:
+### Switching modes
 
-```bash
-# Fedora / RHEL
-curl -LO https://github.com/tmac1973/llama-toolchest/releases/latest/download/llama-toolchest_<VERSION>_linux_amd64.rpm
-sudo dnf install ./llama-toolchest_<VERSION>_linux_amd64.rpm
-
-# Debian / Ubuntu
-curl -LO https://github.com/tmac1973/llama-toolchest/releases/latest/download/llama-toolchest_<VERSION>_linux_amd64.deb
-sudo apt-get install ./llama-toolchest_<VERSION>_linux_amd64.deb
-```
-
-The package installs:
-
-- `/usr/bin/llama-toolchest` — the binary
-- `/usr/lib/systemd/{system,user}/llama-toolchest.service` — systemd unit (not enabled by default)
-- `/etc/llama-toolchest/llama-toolchest.yaml.example` — example config
-- Hard deps on the build toolchain (`cmake`, `ninja-build`, `git`, etc.) so llama.cpp can compile inside the UI
-
-After install, you'll need to configure and start the service yourself. **User-scope (recommended for single-user setups):**
+`./setup.sh migrate` moves your model registry, per-model configs, benchmarks, and main settings between sides:
 
 ```bash
-# Create a user config
-mkdir -p ~/.config/llama-toolchest
-cp /etc/llama-toolchest/llama-toolchest.yaml.example ~/.config/llama-toolchest/llama-toolchest.yaml
-$EDITOR ~/.config/llama-toolchest/llama-toolchest.yaml    # set data_dir, optional models_dir, etc.
-
-# Enable + start
-systemctl --user enable --now llama-toolchest
-loginctl enable-linger $USER    # so the service survives logout
+./setup.sh migrate --to-host         # container → host
+./setup.sh migrate --to-container    # host → container
 ```
 
-**System-scope (multi-user or root-managed):**
+Migration refuses to run if the destination side is already populated — uninstall the unwanted side first (`./setup.sh uninstall` or `./setup.sh uninstall --host`). The source's snapshot is kept at `~/llt-migrate-<timestamp>` as a safety net.
 
-```bash
-sudo cp /etc/llama-toolchest/llama-toolchest.yaml.example /etc/llama-toolchest/llama-toolchest.yaml
-sudoedit /etc/llama-toolchest/llama-toolchest.yaml          # set data_dir to /var/lib/llama-toolchest etc.
-sudo systemctl enable --now llama-toolchest
-```
+`builds.json` is wiped during migration: container-built `llama-server` binaries don't run on the host (different glibc/CUDA/ROCm runtime) and vice versa. Open the **Builds** page after migration and rebuild.
 
-Open `http://localhost:3000`. To install the GPU SDK packages needed for compiling llama.cpp against your hardware (ROCm `rocm-hip-devel`, CUDA `cuda-toolkit`, Vulkan `glslc`), see the GPU Backend Notes section below.
-
-You can rerun `./setup.sh install --host` later if you'd rather have the script manage the config and service for you — it's safe to run on top of a manual install.
-
-### Supported GPUs
-
-| GPU | Backend | Build Profiles | Notes |
-|-----|---------|---------------|-------|
-| NVIDIA (Maxwell+) | CUDA 12.8 | cuda, cpu, vulkan† | GTX 900 series and newer. Requires driver >= 570. |
-| AMD | ROCm 7.2 | rocm, cpu, vulkan† | RDNA and newer. |
-| Other (Intel Arc, etc.) | Vulkan† | vulkan, cpu | Cross-vendor backend; install with `./setup.sh install --vulkan`. |
-| None | CPU-only | cpu | No GPU required. |
-
-† Vulkan is host-install only — see [GPU Backend Notes → Vulkan](#vulkan) below.
-
-**NVIDIA generation support (CUDA 12.8):**
-
-| Generation | Example Cards | Supported |
-|------------|--------------|-----------|
-| Blackwell (50xx) | RTX 5080, 5090 | Yes |
-| Ada Lovelace (40xx) | RTX 4060–4090 | Yes |
-| Ampere (30xx) | RTX 3060–3090 | Yes |
-| Turing (20xx) | RTX 2060–2080 | Yes |
-| Pascal (10xx) | GTX 1060–1080 Ti | Yes (driver >= 570) |
-| Maxwell (900) | GTX 970–980 | Yes (driver >= 570) |
-| Kepler and older | GTX 700 and below | No (dropped in CUDA 12) |
-
-**Backend performance:** CUDA and ROCm provide native GPU compute for best performance; Vulkan is portable across vendors but typically slower than the vendor-specific backend on the same hardware. Each container image supports multiple build profiles — an NVIDIA user can build with CUDA or CPU from the same container.
-
-### Supported Distros
-
-| Distro Family | Package Manager | Tested |
-|---------------|-----------------|--------|
-| Debian / Ubuntu | apt | Yes |
-| Fedora / RHEL | dnf | Yes |
-| Arch / CachyOS | pacman | Yes |
-| openSUSE | zypper | Planned |
-
-Both Docker and Podman (including rootless) are supported on all distros.
-
-### Setup Script Reference
+### Setup script reference
 
 ```
 ./setup.sh <command>
 
 Lifecycle:
   install     Detect environment, install prerequisites, build & start
-  uninstall   Stop container, disable auto-start, remove container + image
+  uninstall   Stop, disable auto-start, remove container + image (or host package)
   migrate     Move state between container and host installs
               (--to-host or --to-container required)
-  quick       Fast rebuild (recompile Go code only, reuse cached base)
-  rebuild     Full rebuild with no cache, then start
+  quick       Container only: pull the latest released package and reinstall
+              it inside the existing image (reuses cached GPU SDK / base layers)
+  rebuild     Container only: full rebuild with no cache, then start
 
-Runtime:
-  up          Start a stopped container
-  down        Stop the container
-  logs        Follow container logs
-
-Auto-start:
-  enable      Start llama-toolchest on boot
-  disable     Stop starting on boot
+Runtime (container only):
+  up / down / logs           Start, stop, follow logs
+  enable / disable           Auto-start on boot
 
 Info:
   status      Show detected environment and planned actions
-  deps        Verify all packages needed to build and run; print
-              copy-paste install commands for anything missing
-              (--host for host install, default container)
+  deps        Verify prerequisites and print install commands for anything missing
   detect      Print detected GPU backend (cuda/rocm/vulkan/cpu)
-  help        Show full help with details
+  help        Show full help
 ```
 
-Override detection with environment variables:
+Override detection: `GPU=cpu ./setup.sh install`, `RUNTIME=podman ./setup.sh install`.
 
-```bash
-GPU=cpu ./setup.sh install          # force CPU-only backend (single-backend)
-RUNTIME=podman ./setup.sh install   # force Podman runtime
-```
+### Manual install
 
-For host installs that need multiple GPU SDKs, prefer the additive flags (`--cuda`, `--rocm`, `--vulkan`) over `GPU=` — see "Backend SDK selection" above.
+If you'd rather skip `setup.sh` and install the released `.deb`/`.rpm` packages by hand, see [docs/manual-install.md](docs/manual-install.md).
 
-### First Run
+### Supported GPUs
+
+| GPU | Backend | Build profiles | Notes |
+|-----|---------|----------------|-------|
+| NVIDIA (Maxwell+) | CUDA 12.8 | cuda, cpu, vulkan† | GTX 900 series and newer. Driver >= 570. |
+| AMD | ROCm 7.2 | rocm, cpu, vulkan† | RDNA and newer. |
+| Other (Intel Arc, etc.) | Vulkan† | vulkan, cpu | Cross-vendor; install with `./setup.sh install --vulkan`. |
+| None | CPU-only | cpu | No GPU required. |
+
+† Vulkan is host-install only — see [GPU Backend Notes → Vulkan](#vulkan).
+
+CUDA and ROCm provide native GPU compute for best performance; Vulkan is portable but typically slower than the vendor-specific backend on the same hardware.
+
+### Supported distros
+
+| Distro family | Package manager | Tested |
+|---------------|-----------------|--------|
+| Debian / Ubuntu | apt | Yes |
+| Fedora / RHEL | dnf | Yes |
+| Arch / CachyOS | pacman | Yes |
+| openSUSE | zypper | Planned |
+
+Both Docker and Podman (including rootless) are supported.
+
+### First run
 
 1. Open `http://localhost:3000`
-2. Go to **Builds** and compile llama.cpp (select the appropriate backend for your GPU)
-3. Go to **Browse** to search HuggingFace and download a GGUF model
-4. Go to **Models**, click **Configure** on your model to set GPU layers, context size, and sampling parameters, then enable it and restart the server
-5. The model will load on first request and the OpenAI API becomes available at `http://localhost:3000/v1`
-6. Optionally start additional models — the proxy routes requests by the `model` field
+2. Go to **Builds** and compile llama.cpp for your backend
+3. Go to **Browse** to download a GGUF model from HuggingFace
+4. Go to **Models**, click **Configure** to set GPU layers / context / sampling, then enable the model and restart
+5. The OpenAI API is at `http://localhost:3000/v1`; the proxy routes by the `model` field
 
 ## Configuration
 
-Llama Toolchest uses a YAML config file at `/data/config/llama-toolchest.yaml` inside the container. Settings can also be changed from the Settings page in the UI.
+The YAML config lives at `/data/config/llama-toolchest.yaml` (container) or `~/.config/llama-toolchest/llama-toolchest.yaml` (host user install). Most settings are also editable from the Settings page.
 
 ```yaml
-listen_addr: ":3000"       # Management UI listen address
+listen_addr: ":3000"        # Management UI listen address
 data_dir: "/data"           # Base directory for builds, models, config
+models_dir: ""              # Optional override; empty → <data_dir>/models
 llama_port: 8080            # Port for llama-server inference
-external_url: ""            # Public URL (e.g. "http://myserver:3000") for link generation
-hf_token: ""                # HuggingFace token for gated model downloads
-api_key: ""                 # Bearer token for /v1 proxy authentication
+external_url: ""            # Public URL for link generation (e.g. http://myserver:3000)
+hf_token: ""                # HuggingFace token for gated downloads
+api_key: ""                 # Bearer token for /v1 proxy (empty = no auth)
 log_level: "info"
+active_build: ""            # Active llama.cpp build ID
+models_max: 1               # Max simultaneously loaded models (0 = unlimited)
+auto_start: false           # Start the inference router on container startup
 ```
 
-### Model Storage
-
-By default, models are stored in the Docker volume (`llama-toolchest-data`). To persist models on the host filesystem (so they survive volume removal):
-
-```bash
-# Add to .env (or set before running setup.sh)
-LLAMA_TOOLCHEST_MODELS_DIR=/path/to/your/models
-```
-
-The host directory is bind-mounted to `/data/models` inside the container. Existing models in the volume will not be visible when a host directory is mounted — move them first if needed.
-
-### External URL
-
-Set `external_url` when accessing Llama Toolchest from a remote machine. This configures the displayed API endpoint URL and Chat UI link on the dashboard. Can be set from the Settings page.
-
-### API Key Authentication
-
-When `api_key` is set, all requests to `/v1/*` require a `Authorization: Bearer <key>` header. This secures the inference endpoint without affecting the management UI.
+To persist models on the host filesystem (so they survive `docker volume rm`), set `LLAMA_TOOLCHEST_MODELS_DIR=/path/to/models` in `.env` before running `setup.sh`. Existing models in the volume won't be visible after switching — move them first.
 
 ## Ports
 
 | Port | Service |
 |------|---------|
-| 3000 | Llama Toolchest management UI + OpenAI proxy (`/v1`) |
-| 8080 | llama.cpp router + built-in chat UI with model dropdown |
+| 3000 | Management UI + OpenAI proxy (`/v1`) |
+| 8080 | llama.cpp router + built-in chat UI |
 
 ## GPU Backend Notes
 
 ### ROCm
 
-The setup script auto-detects the AMD GPU architecture and sets `HSA_OVERRIDE_GFX_VERSION` in a `.env` file when needed. This override is only required for older GPUs not natively supported by ROCm 7.2 (e.g., RDNA 1 maps to `10.1.0`, Vega maps to `9.0.0`). Natively supported architectures (RDNA 2, RDNA 3, RDNA 4) don't need the override.
+`setup.sh` auto-detects the AMD GPU architecture and sets `HSA_OVERRIDE_GFX_VERSION` in `.env` when needed. Only required for older GPUs not natively supported by ROCm 7.2 (RDNA 1 → `10.1.0`, Vega → `9.0.0`).
 
 ### CUDA
 
-CUDA 12.8 requires an NVIDIA driver >= 570. The llama.cpp CUDA build auto-detects the GPU architecture at compile time — no manual target configuration is needed (unlike ROCm's `AMDGPU_TARGETS`).
+CUDA 12.8 requires NVIDIA driver >= 570. The CUDA build auto-detects GPU architecture at compile time — no manual target configuration needed.
 
 ### Vulkan
 
-Vulkan is **host-install only** — container mode requires GPU driver / ICD passthrough that this project doesn't manage, so the `vulkan` profile is rejected at build time inside containers. Use it as a portable fallback alongside CUDA or ROCm, or as the sole backend on hardware where the vendor SDK isn't a fit.
+Vulkan is **host-install only** — container mode would need GPU driver / ICD passthrough that this project doesn't manage. Use it as a portable fallback alongside CUDA or ROCm, or as the sole backend on hardware where the vendor SDK isn't a fit.
 
-`./setup.sh install --vulkan` (or `--rocm --vulkan`) installs the SDK packages needed by llama.cpp's Vulkan backend:
+`./setup.sh install --vulkan` (or `--rocm --vulkan`) installs:
 
 | Distro | Packages |
 |--------|----------|
 | Debian / Ubuntu | `glslc libvulkan-dev spirv-headers vulkan-tools` |
 | Fedora / RHEL | `glslc vulkan-headers vulkan-loader-devel spirv-headers-devel vulkan-tools` |
 
-`vulkan-tools` provides `vulkaninfo`, which the backend probe uses to enumerate hardware Vulkan devices — without it the UI marks the backend unavailable. The runtime loader (`libvulkan1` on Debian, `vulkan-loader` on Fedora) is typically already laid down by your GPU driver.
+`vulkan-tools` provides `vulkaninfo`, which the backend probe uses to enumerate hardware Vulkan devices. The runtime loader (`libvulkan1` / `vulkan-loader`) is typically already installed by your GPU driver.
 
-### Multi-GPU Configuration
+### Multi-GPU
 
-Llama Toolchest supports two multi-GPU modes:
+Two modes:
 
-**Layer Parallelism (default)** — Splits model layers sequentially across GPUs. For example, layers 0-24 on GPU 0, layers 25-48 on GPU 1. Best for most use cases.
+- **Layer parallelism (default)** — Layers are split sequentially across GPUs. Best for most cases.
+- **Tensor parallelism (experimental)** — Tensors are split across all GPUs simultaneously. More memory-efficient but needs fast interconnect (NVLink / PCIe 4.0+).
 
-**Tensor Parallelism (experimental)** — Splits tensors across all GPUs simultaneously. All GPUs work on the same calculation at the same time. More memory-efficient but requires fast GPU interconnect (NVLink/PCIe 4.0+).
-
-**GPU Selection:**
-- **All GPUs (tensor mode)** — Uses all available GPUs for tensor parallelism
-- **Specific GPUs** — Select "GPU 0", "GPUs 0-1", etc. for layer parallelism (auto-calculates tensor-split ratios)
-- **Custom** — Manually enter tensor-split ratios (e.g., `1,1,0,0` for equal split on GPUs 0 and 1)
-
-In tensor parallelism mode, the `Processors` field selects which GPUs (0, 1, ..., N-1) to use.
+GPU selection: pick "All GPUs" (tensor mode), specific GPUs ("GPU 0", "GPUs 0–1"), or a custom tensor-split string like `1,1,0,0`.
 
 ## Architecture
 
-Llama Toolchest is a single Go binary that serves a web UI and manages the llama-server subprocess.
+A single Go binary serves the web UI and manages llama-server subprocesses. Server-rendered HTML with [htmx](https://htmx.org/) and [Pico CSS](https://picocss.com/) — no JS build step.
 
 ```
 cmd/
-  llama-toolchest/     Server entry point
-  agent/               Terminal chat client with tool use
+  llama-toolchest/   Server entry point
+  agent/             Terminal chat client with tool use
 internal/
-  api/                 HTTP handlers, SSE streaming, routing proxy
-  builder/             llama.cpp build pipeline (git clone, cmake, ninja)
-  config/              YAML configuration
-  huggingface/         HF API client and model downloader
-  models/              Model registry, GGUF parser, VRAM estimation, preset INI generator
-  monitor/             GPU/CPU/memory metrics collection (ROCm + NVIDIA)
-  process/             llama-server router lifecycle manager
-web/
-  static/              htmx, Pico CSS
-  templates/           Go html/template pages and partials
-scripts/
-  test-api.sh          API smoke test
-  test-embeddings.sh   Embedding model test (dimensions + similarity)
-  test-info.sh         Model info and PS endpoint test
-  test-structured.sh   JSON schema / structured output test
-  test-tools.sh        Tool/function calling test
-  test-vision.sh       Vision / multimodal test
+  api/               HTTP handlers, SSE streaming, /v1 proxy
+  benchmark/         llama-bench runs, presets, comparison
+  builder/           llama.cpp build pipeline (git, cmake, ninja)
+  config/            YAML configuration
+  huggingface/       HF API client and model downloader
+  models/            Registry, GGUF parser, VRAM estimation, preset INI
+  monitor/           GPU/CPU/memory metrics (ROCm + NVIDIA)
+  process/           llama-server router lifecycle
+web/                 Templates + static assets (htmx, Pico CSS)
+scripts/             API smoke tests (test-api, test-embeddings, test-tools, etc.)
 ```
 
-The UI uses server-rendered HTML with [htmx](https://htmx.org/) for interactivity and [Pico CSS](https://picocss.com/) for styling. No JavaScript build step required.
-
-### Container Files
-
-| File | Purpose |
-|------|---------|
-| `Dockerfile.cuda` | NVIDIA CUDA 12.8 runtime |
-| `Dockerfile.rocm` | AMD ROCm 7.2 runtime |
-| `Dockerfile.cpu` | CPU-only (lightweight Debian) |
-| `docker-compose.cuda.yml` | Compose for NVIDIA (works with Docker and Podman) |
-| `docker-compose.rocm.yml` | Compose for AMD |
-| `docker-compose.cpu.yml` | Compose for CPU-only |
-| `setup.sh` | Auto-detect and setup script |
+Container files: `Dockerfile.{cuda,rocm,cpu}`, `docker-compose.{cuda,rocm,cpu}.yml`, plus `setup.sh`.
 
 ## Development
-
-### Local (without container)
 
 ```bash
 make dev          # go run with hot reload
@@ -348,109 +229,62 @@ make agent        # compile just the agent CLI
 
 ### Agent CLI
 
-The agent is a lightweight terminal chat client that connects to the OpenAI-compatible API:
-
 ```bash
-agent                                     # connect to localhost:3000
-agent -host 192.168.1.50                  # remote server
-agent -host gpu-box -port 8080            # custom port
-agent -model qwen3-32b                    # target a specific model
-agent -no-tools                           # plain chat mode (no filesystem tools)
-agent -api-key sk-xxx                     # authenticate
+agent                                 # connect to localhost:3000
+agent -host 192.168.1.50              # remote server
+agent -port 8080                      # custom port
+agent -url http://gpu-box:3000/v1     # full endpoint URL
+agent -model qwen3-32b                # target a specific model
+agent -system "You are..."            # set a system prompt
+agent -no-tools                       # plain chat (no filesystem tools)
+agent -work-dir /path/to/project      # working dir for tools
+agent -api-key sk-xxx                 # authenticate
 ```
 
-### Test Scripts
+### Test scripts
 
-All test scripts include an interactive model picker. Pass a model name to skip selection.
+All scripts include an interactive model picker; pass a model name to skip selection.
 
 ```bash
-./scripts/test-api.sh                     # API smoke test (pages, management, proxy)
-./scripts/test-embeddings.sh              # Embedding dimensions + cosine similarity
-./scripts/test-info.sh                    # Model info endpoint + PS (loaded models)
-./scripts/test-structured.sh              # JSON schema + json_object response format
-./scripts/test-tools.sh                   # Tool/function calling + multi-turn
-./scripts/test-vision.sh                  # Vision with remote URL or local image
+./scripts/test-api.sh           # API smoke test
+./scripts/test-embeddings.sh    # embedding dimensions + cosine similarity
+./scripts/test-info.sh          # /api/models/{id}/info + /api/ps
+./scripts/test-structured.sh    # JSON schema + json_object output
+./scripts/test-tools.sh         # tool / function calling
+./scripts/test-vision.sh        # vision via URL or local image
 ```
 
-## API Endpoints
+## API
+
+### OpenAI-compatible (`/v1/*`)
+
+All requests are forwarded to llama.cpp's router. Per-model sampling defaults are injected for requests that don't specify them; user-defined model aliases work in the `model` field.
+
+- `GET /v1/models` — list available models
+- `GET /v1/models/{model}` — single model info
+- `POST /v1/chat/completions` — streaming, tool calling, JSON schema / `json_object`
+- `POST /v1/completions` — text completion
+- `POST /v1/embeddings` — vector embeddings (auto-configured for `--embeddings` builds)
+
+```bash
+curl http://localhost:3000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model": "qwen35", "messages": [{"role": "user", "content": "Hello!"}]}'
+```
+
+When `api_key` is set, all `/v1/*` requests require `Authorization: Bearer <key>`. The management UI is unaffected.
 
 ### Management API
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/dashboard` | Dashboard HTML fragment |
-| GET | `/api/ps` | Loaded models with status and resource info |
-| GET | `/api/builds/` | List builds |
-| POST | `/api/builds/` | Trigger new build |
-| GET | `/api/builds/backends` | List available backends |
-| GET | `/api/builds/{id}/logs` | Stream build logs (SSE) |
-| DELETE | `/api/builds/{id}` | Delete a build |
-| GET | `/api/models/` | List models |
-| GET | `/api/models/embeddings` | List embedding models |
-| GET | `/api/models/embedding-presets` | Curated embedding model presets |
-| POST | `/api/models/embedding-presets/download` | Download curated embedding model |
-| GET | `/api/models/{id}` | Get model details |
-| GET | `/api/models/{id}/info` | Get enriched model metadata with capabilities |
-| DELETE | `/api/models/{id}` | Delete a model |
-| PUT | `/api/models/{id}/activate` | Load model into VRAM |
-| DELETE | `/api/models/{id}/activate` | Unload model from VRAM |
-| PUT | `/api/models/{id}/enable` | Enable model in preset (restart required) |
-| GET | `/api/models/{id}/config` | Get model config |
-| PUT | `/api/models/{id}/config` | Update model config |
-| GET | `/api/models/{id}/vram-estimate` | VRAM estimate for given config |
-| GET | `/api/hf/search` | Search HuggingFace |
-| GET | `/api/hf/model` | Get HF model details |
-| POST | `/api/hf/download` | Start model download |
-| GET | `/api/hf/download/{id}/progress` | Download progress (SSE) |
-| DELETE | `/api/hf/download/{id}` | Cancel download |
-| GET | `/api/service/status` | Service status |
-| POST | `/api/service/start` | Start llama-server |
-| POST | `/api/service/stop` | Stop all model instances |
-| POST | `/api/service/restart` | Restart all model instances |
-| GET | `/api/service/logs` | Stream server logs (SSE) |
-| GET | `/api/service/health` | Health check |
-| GET | `/api/service/loaded-models` | Models available to router with status |
-| GET | `/api/settings/` | Get settings |
-| PUT | `/api/settings/` | Update settings |
+Routes under `/api/` cover builds, models, HuggingFace search & download, the inference service, settings, monitoring, and benchmarks. SSE endpoints stream build / download / log progress. Browse the routes in [`internal/api/server.go`](internal/api/server.go) — that's the source of truth.
 
-### OpenAI-Compatible API
+A few useful ones:
 
-All requests to `/v1/*` are forwarded to the llama.cpp router. Supports:
-
-- **Chat completions** — streaming, tool/function calling, structured output (JSON schema, json_object)
-- **Completions** — text generation
-- **Embeddings** — vector embeddings (requires embedding model with `--embeddings` flag, auto-configured)
-- **Models** — list available models
-
-```bash
-# List available models
-curl http://localhost:3000/v1/models
-
-# Chat completion
-curl http://localhost:3000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "qwen35",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "max_tokens": 64
-  }'
-
-# Embeddings
-curl http://localhost:3000/v1/embeddings \
-  -H "Content-Type: application/json" \
-  -d '{"model": "nomic-ai--nomic-embed-text-v1.5-GGUF", "input": "Hello world"}'
-
-# Structured output
-curl http://localhost:3000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "qwen35",
-    "messages": [{"role": "user", "content": "List 3 colors"}],
-    "response_format": {"type": "json_schema", "json_schema": {"name": "colors", "schema": {"type": "object", "properties": {"colors": {"type": "array", "items": {"type": "string"}}}}}}
-  }'
-```
-
-The router auto-loads models on first request. Per-model sampling defaults (configured in the UI) are injected by the proxy into requests that don't specify them. User-defined model aliases (e.g., `qwen35`) work in the `model` field.
+- `GET /api/ps` — loaded models with status (Ollama-style)
+- `GET /api/models/{id}/info` — enriched metadata with capabilities (tools, vision)
+- `GET /api/models/{id}/vram-estimate` — VRAM estimate for a given config
+- `GET /api/service/loaded-models` — models available to the router
+- `GET /api/monitor/stream` — GPU/CPU/memory metrics over SSE
 
 ## License
 
