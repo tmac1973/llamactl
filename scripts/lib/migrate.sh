@@ -166,6 +166,44 @@ migrate_write_translated_config() {
     unset -f _migrate_get
 }
 
+# Translate path-shaped fields inside models.json (.configs[*].mmproj_path
+# and .configs[*].draft_model_path) when the source and destination
+# models_dir differ. The main file_path on each .models[*] entry gets
+# refreshed by the post-migration scanner; per-config paths don't, so
+# we rewrite them here. Requires jq; bails with a warning if missing.
+#
+# Args: <models.json path> <src prefix> <dst prefix>
+migrate_translate_model_paths() {
+    local file="$1" src="$2" dst="$3"
+    if ! command -v jq >/dev/null 2>&1; then
+        warn "jq not installed — skipping mmproj/draft path translation."
+        log "If your models include vision (mmproj) or speculative-decoding (draft) entries, you may need to fix paths by hand."
+        log "  apt-get install jq   /   dnf install jq"
+        return 0
+    fi
+    [[ -f "$file" ]] || return 0
+
+    # Normalize trailing slashes — both prefixes should end in '/' so the
+    # jq sub() doesn't accidentally rewrite mid-path substrings.
+    src="${src%/}/"
+    dst="${dst%/}/"
+
+    local tmp; tmp=$(mktemp)
+    jq --arg src "$src" --arg dst "$dst" '
+        .configs |= (map_values(
+            (if .mmproj_path and (.mmproj_path | startswith($src))
+                then .mmproj_path = ($dst + (.mmproj_path | ltrimstr($src)))
+                else . end)
+            |
+            (if .draft_model_path and (.draft_model_path | startswith($src))
+                then .draft_model_path = ($dst + (.draft_model_path | ltrimstr($src)))
+                else . end)
+        ))
+    ' "$file" > "$tmp" && mv "$tmp" "$file" \
+        || { rm -f "$tmp"; warn "jq translation failed; left $file unchanged"; return 1; }
+    ok "Translated mmproj/draft paths: $src → $dst"
+}
+
 # ─── Forward: container → host ───────────────────────────────────────────────
 
 migrate_to_host() {
@@ -211,6 +249,14 @@ migrate_to_host() {
     done
     echo "[]" > "$cfg_dir/builds.json"
     ok "Registry restored. builds.json wiped — rebuild llama.cpp from the UI."
+
+    # Per-config mmproj_path / draft_model_path were stored at /data/models/...
+    # inside the container; rewrite to the host's models_dir so vision and
+    # speculative-decoding configs work post-migration.
+    local host_models_dir; host_models_dir=$(grep '^models_dir:' "$(host_config_path)" \
+        | sed 's/^models_dir: *"//; s/" *$//')
+    [[ -z "$host_models_dir" ]] && host_models_dir="$(host_data_dir)/models"
+    migrate_translate_model_paths "$cfg_dir/models.json" "/data/models" "$host_models_dir"
 
     log "Starting service..."
     service_enable
@@ -270,6 +316,14 @@ migrate_to_container() {
         "$staging/llama-toolchest.yaml" \
         "$tmp_cfg" \
         "to-container"
+
+    # Per-config mmproj_path / draft_model_path on the host point at the
+    # host's models_dir; rewrite them to the container's /data/models so
+    # vision and speculative configs work post-migration.
+    local src_models_dir; src_models_dir=$(grep '^models_dir:' "$staging/llama-toolchest.yaml" \
+        | sed 's/^models_dir: *"//; s/" *$//')
+    [[ -z "$src_models_dir" ]] && src_models_dir="${HOME}/.local/share/llama-toolchest/models"
+    migrate_translate_model_paths "$staging/models.json" "$src_models_dir" "/data/models"
 
     write_env_file
     log "Building and starting container..."
