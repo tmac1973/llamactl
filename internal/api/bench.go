@@ -259,15 +259,9 @@ func (s *Server) handleStartBenchmark(w http.ResponseWriter, r *http.Request) {
 	runCfg := benchmark.RunConfig{
 		Run:        run,
 		Preset:     preset,
-		ModelPath:  model.FilePath,
 		RouterURL:  fmt.Sprintf("http://localhost:%d", s.cfg.LlamaPort),
 		RouterName: routerName,
-		BinaryDir:  activeBuild.BinaryPath,
 		HFRepoID:   model.ModelID,
-	}
-	// BinaryDir should be the directory, not the binary itself
-	if strings.HasSuffix(runCfg.BinaryDir, "/llama-server") {
-		runCfg.BinaryDir = runCfg.BinaryDir[:len(runCfg.BinaryDir)-len("/llama-server")]
 	}
 
 	// Start benchmark in background

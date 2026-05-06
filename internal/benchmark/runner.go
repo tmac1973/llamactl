@@ -8,9 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -19,10 +16,8 @@ import (
 type RunConfig struct {
 	Run        BenchmarkRun
 	Preset     Preset
-	ModelPath  string // GGUF file path for llama-bench
 	RouterURL  string // e.g. "http://localhost:8080"
 	RouterName string // model name the router knows
-	BinaryDir  string // build dir containing llama-bench
 	HFRepoID   string // HuggingFace repo id; passed to llama-benchy as --tokenizer
 }
 
@@ -190,31 +185,7 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig, progress chan<- Progres
 		return
 	}
 
-	// Step 4: llama-bench (if preset says so and binary exists)
-	if cfg.Preset.RunLlamaBench && cfg.BinaryDir != "" && cfg.ModelPath != "" {
-		benchBinary := filepath.Join(cfg.BinaryDir, "llama-bench")
-		if _, err := os.Stat(benchBinary); err == nil {
-			// Unload all models from server to free VRAM for llama-bench
-			send("llama-bench", "Unloading model from server for raw benchmark...", 88)
-			r.unloadAllModels(cfg.RouterURL)
-
-			send("llama-bench", "Running llama-bench — raw inference without server overhead...", 90)
-			lb, benchErr := r.runLlamaBench(ctx, cfg)
-			if benchErr != nil {
-				slog.Warn("llama-bench failed", "error", benchErr)
-				run.Warnings = append(run.Warnings, fmt.Sprintf("llama-bench failed: %v", benchErr))
-			} else {
-				run.LlamaBench = lb
-			}
-
-			// Don't reload — the router will auto-load on next request,
-			// and reloading here causes conflicts with back-to-back benchmarks.
-		} else {
-			run.Warnings = append(run.Warnings, "llama-bench binary not found — rebuild llama.cpp to include it")
-		}
-	}
-
-	// Step 5: Compute summary
+	// Compute summary
 	run.Summary = ComputeSummary(run.Results)
 	run.Status = StatusCompleted
 	send("done", "Benchmark complete", 100)
@@ -421,75 +392,3 @@ func (r *Runner) runOneTest(ctx context.Context, routerURL, model string, prompt
 	}, nil
 }
 
-// runLlamaBench executes the llama-bench binary for raw inference benchmarking.
-func (r *Runner) runLlamaBench(ctx context.Context, cfg RunConfig) (*LlamaBenchResult, error) {
-	benchBinary := filepath.Join(cfg.BinaryDir, "llama-bench")
-
-	args := []string{
-		"-m", cfg.ModelPath,
-		"-p", fmt.Sprintf("%d", cfg.Preset.PromptTokens[0]),
-		"-n", fmt.Sprintf("%d", cfg.Preset.GenTokens),
-		"-r", fmt.Sprintf("%d", cfg.Preset.Repetitions),
-		"-o", "json",
-		"-ngl", fmt.Sprintf("%d", cfg.Run.Config.GPULayers),
-		"-t", fmt.Sprintf("%d", cfg.Run.Config.Threads),
-	}
-	if cfg.Run.Config.FlashAttention {
-		args = append(args, "-fa", "1")
-	}
-	if cfg.Run.Config.TensorSplit != "" {
-		args = append(args, "-ts", cfg.Run.Config.TensorSplit)
-	}
-	if cfg.Run.Config.DirectIO {
-		args = append(args, "--direct-io", "1")
-	}
-	if cfg.Run.Config.KVCacheQuant != "" {
-		args = append(args, "-ctk", cfg.Run.Config.KVCacheQuant, "-ctv", cfg.Run.Config.KVCacheQuant)
-	}
-
-	// Set LD_LIBRARY_PATH for shared libs co-located with the binary
-	cmd := exec.CommandContext(ctx, benchBinary, args...)
-	cmd.Env = append(cmd.Environ(), "LD_LIBRARY_PATH="+cfg.BinaryDir)
-
-	slog.Info("running llama-bench", "binary", benchBinary, "args", strings.Join(args, " "))
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("llama-bench: %w\nstderr: %s", err, stderr.String())
-	}
-
-	return parseLlamaBenchJSON(out)
-}
-
-// parseLlamaBenchJSON parses llama-bench JSON output.
-// llama-bench outputs one JSON array with objects per test.
-func parseLlamaBenchJSON(data []byte) (*LlamaBenchResult, error) {
-	var entries []struct {
-		TestType string  `json:"test"`     // "pp" or "tg"
-		AvgTS    float64 `json:"avg_ts"`
-		NPrompt  int     `json:"n_prompt"`
-		NGen     int     `json:"n_gen"`
-		Reps     int     `json:"n_repetitions"`
-	}
-	if err := json.Unmarshal(data, &entries); err != nil {
-		return nil, fmt.Errorf("parse llama-bench output: %w", err)
-	}
-
-	result := &LlamaBenchResult{}
-	for _, e := range entries {
-		switch {
-		case e.NPrompt > 0 && e.NGen == 0:
-			result.PromptTokPerSec = e.AvgTS
-			result.PromptTokens = e.NPrompt
-			result.Repetitions = e.Reps
-		case e.NGen > 0 && e.NPrompt == 0:
-			result.GenTokPerSec = e.AvgTS
-			result.GenTokens = e.NGen
-		}
-	}
-	if result.PromptTokPerSec == 0 && result.GenTokPerSec == 0 {
-		return nil, fmt.Errorf("no results in llama-bench output")
-	}
-	return result, nil
-}

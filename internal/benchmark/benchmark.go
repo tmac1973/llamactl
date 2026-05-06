@@ -138,15 +138,14 @@ const (
 
 // Preset defines benchmark parameters.
 type Preset struct {
-	Name          string
-	Label         string
-	Description   string
-	Source        string // "" | "internal" | "benchy"
-	PromptTokens  []int
-	GenTokens     int
-	Repetitions   int
-	Concurrency   []int // benchy only; defaults to [1] if empty
-	RunLlamaBench bool  // internal source only; benchy presets ignore this
+	Name         string
+	Label        string
+	Description  string
+	Source       string // "" | "internal" | "benchy"
+	PromptTokens []int
+	GenTokens    int
+	Repetitions  int
+	Concurrency  []int // benchy only; defaults to [1] if empty
 }
 
 // EffectiveSource returns the dispatch key, defaulting empty → internal.
@@ -161,22 +160,32 @@ func (p Preset) EffectiveSource() string {
 func Presets() []Preset {
 	return []Preset{
 		{
-			Name:         "quick",
-			Label:        "Quick — 1 rep, 256-token prompt (~10s)",
+			Name:         "internal-quick",
+			Label:        "internal-quick — 1 rep, 256-token prompt (~10s)",
 			Description:  "Single end-to-end request with a 256-token prompt and 128 generated tokens. Sanity check that the model loads and runs.",
-			PromptTokens: []int{256}, GenTokens: 128, Repetitions: 1, RunLlamaBench: false,
+			Source:       PresetSourceInternal,
+			PromptTokens: []int{256}, GenTokens: 128, Repetitions: 1,
 		},
 		{
-			Name:         "standard",
-			Label:        "Standard — 3 reps × 3 prompt sizes + llama-bench (~2 min)",
-			Description:  "Three repetitions of end-to-end requests at 128, 512, and 2048-token prompts (128 gen tokens each), plus llama-bench for raw kernel throughput.",
-			PromptTokens: []int{128, 512, 2048}, GenTokens: 128, Repetitions: 3, RunLlamaBench: true,
+			Name:         "internal-standard",
+			Label:        "internal-standard — 3 reps × 3 prompt sizes (~1 min)",
+			Description:  "Three repetitions of end-to-end requests at 128, 512, and 2048-token prompts (128 gen tokens each).",
+			Source:       PresetSourceInternal,
+			PromptTokens: []int{128, 512, 2048}, GenTokens: 128, Repetitions: 3,
 		},
 		{
-			Name:         "thorough",
-			Label:        "Thorough — 5 reps × 4 prompt sizes up to 8K + llama-bench (~10 min)",
-			Description:  "Five repetitions at 128 / 512 / 2048 / 8192-token prompts with 256 generated tokens each, plus llama-bench. Stresses long-context performance.",
-			PromptTokens: []int{128, 512, 2048, 8192}, GenTokens: 256, Repetitions: 5, RunLlamaBench: true,
+			Name:         "internal-thorough",
+			Label:        "internal-thorough — 5 reps × 4 prompt sizes up to 8K (~5 min)",
+			Description:  "Five repetitions at 128 / 512 / 2048 / 8192-token prompts with 256 generated tokens each. Stresses long-context performance.",
+			Source:       PresetSourceInternal,
+			PromptTokens: []int{128, 512, 2048, 8192}, GenTokens: 256, Repetitions: 5,
+		},
+		{
+			Name:         "internal-long-ctx",
+			Label:        "internal-long-ctx — 1 rep, 32K prompt / 512 gen",
+			Description:  "Single 32768-token prompt with 512 generated tokens. Stresses KV cache, flash-attention, and KV quantization on a long context.",
+			Source:       PresetSourceInternal,
+			PromptTokens: []int{32768}, GenTokens: 512, Repetitions: 1,
 		},
 		{
 			Name:         "benchy-quick",
@@ -195,14 +204,26 @@ func Presets() []Preset {
 	}
 }
 
-// GetPreset returns a preset by name, falling back to "standard".
+// presetAliases maps the pre-rename preset names (used by data persisted
+// before the internal-* / benchy-* split) onto their current equivalents,
+// so old runs render and re-runs find the right preset.
+var presetAliases = map[string]string{
+	"quick":    "internal-quick",
+	"standard": "internal-standard",
+	"thorough": "internal-thorough",
+}
+
+// GetPreset returns a preset by name, falling back to "internal-standard".
 func GetPreset(name string) Preset {
+	if alias, ok := presetAliases[name]; ok {
+		name = alias
+	}
 	for _, p := range Presets() {
 		if p.Name == name {
 			return p
 		}
 	}
-	return Presets()[1] // standard
+	return Presets()[1] // internal-standard
 }
 
 // GPUSnapshotsFromMetrics converts monitor metrics to GPU snapshots.
