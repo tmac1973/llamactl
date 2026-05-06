@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.2](https://github.com/tmac1973/llama-toolchest/compare/v1.9.1...v1.9.2) (2026-05-06)
+
+
+### Bug Fixes
+
+* **vram:** treat ctx_size=0 as the model's trained context, not 2048 ([d079a5e](https://github.com/tmac1973/llama-toolchest/commit/d079a5ed743d9194867bba6bdbad41c2e994c23c))
+
 ## [1.9.1](https://github.com/tmac1973/llama-toolchest/compare/v1.9.0...v1.9.1) (2026-05-06)
 
 
