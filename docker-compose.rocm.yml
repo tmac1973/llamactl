@@ -33,6 +33,13 @@ services:
     env_file:
       - path: .env
         required: false
+    environment:
+      # LLAMA_TOOLCHEST_MODELS_DIR is a host-side bind-mount source for
+      # docker-compose.models.yml, NOT a container path. Blank it here so
+      # the runtime never reads a host path out of the container env and
+      # mistakes it for an in-container directory (which used to send
+      # downloads into the container's writable layer — lost on rebuild).
+      LLAMA_TOOLCHEST_MODELS_DIR: ""
     restart: unless-stopped
 
 volumes:

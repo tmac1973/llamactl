@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -43,28 +45,44 @@ func Load(path string) (*Config, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			applyEnvOverrides(cfg)
-			return cfg, nil // use defaults
+		if !os.IsNotExist(err) {
+			return nil, err
 		}
+		// no file → use defaults, fall through to validation
+	} else if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
 
-	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, err
-	}
-	applyEnvOverrides(cfg)
+	salvageModelsDir(cfg)
 	return cfg, nil
 }
 
-// applyEnvOverrides lets specific env vars fill in fields the YAML left
-// blank. Intentionally narrow — most config lives in YAML; the env path
-// exists for container deployments where setup.sh-managed env vars feed
-// in a host bind-mount path that the YAML doesn't know about.
-func applyEnvOverrides(cfg *Config) {
+// salvageModelsDir blanks ModelsDir if it points to a path that doesn't exist
+// or isn't a directory. This catches a previously-shipped bug where the host
+// bind-mount source LLAMA_TOOLCHEST_MODELS_DIR leaked from .env into the
+// container's environment and was misinterpreted as the in-container path,
+// causing downloads to land in the container's writable layer (lost on
+// rebuild). With the env-override path removed, runtime models_dir comes
+// only from YAML — but registries written under the broken behavior may
+// still hold a host-shaped models_dir value, so we drop it here at load
+// time and fall back to <DataDir>/models, which is the bind-mount target.
+func salvageModelsDir(cfg *Config) {
 	if cfg.ModelsDir == "" {
-		if v := os.Getenv("LLAMA_TOOLCHEST_MODELS_DIR"); v != "" {
-			cfg.ModelsDir = v
-		}
+		return
 	}
+	info, err := os.Stat(cfg.ModelsDir)
+	if err == nil && info.IsDir() {
+		return
+	}
+	reason := "does not exist"
+	if err == nil {
+		reason = "is not a directory"
+	} else if !os.IsNotExist(err) {
+		reason = fmt.Sprintf("stat failed: %v", err)
+	}
+	fallback := filepath.Join(cfg.DataDir, "models")
+	slog.Warn("configured models_dir is unusable; falling back to default",
+		"models_dir", cfg.ModelsDir, "reason", reason, "fallback", fallback,
+		"hint", "save the Settings page to clear the bad value from the config file")
+	cfg.ModelsDir = ""
 }
