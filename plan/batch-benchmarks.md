@@ -95,8 +95,8 @@ existing entries.
 uvx llama-benchy \
   --base-url   http://127.0.0.1:{routerPort}/v1 \
   --api-key    EMPTY \
-  --model      {hfRepoIDForTokenizer} \
-  --served-model-name {router model ID} \
+  --model      {router served-model-name} \
+  --tokenizer  {hf repo id, e.g. unsloth/DeepSeek-R1-Distill-Qwen-14B-GGUF} \
   --pp         {prompt token sizes...} \
   --tg         {gen tokens} \
   --runs       {repetitions} \
@@ -105,34 +105,80 @@ uvx llama-benchy \
   --save-result {tempfile.json}
 ```
 
+`--model` is the identifier the router responds to in chat-completion
+calls (the auto-discovery name). `--tokenizer` is the HuggingFace repo
+ID — llama-benchy needs it to construct prompts of an exact target token
+count; without it the tool falls back to a default tokenizer and the
+prompt-size accounting drifts. Both come from the model registry
+(`router served name` and `model.ModelID` respectively).
+
+The actual `uvx` invocation injects two tokenizer backends via `--with`:
+
+```
+uvx --with sentencepiece --with tiktoken llama-benchy …
+```
+
+`sentencepiece` covers LLaMA / Mistral / DeepSeek-distill family
+tokenizers; `tiktoken` covers OpenAI-style. Without these, llama-benchy
+silently falls back to GPT-2 tokenization (warning visible in stderr)
+and reported prompt sizes drift by 5–15% on most modern models.
+
 We capture the JSON file llama-benchy writes (rather than parsing
 stdout, which is markdown by default).
 
 ### Result fields captured
 
-Mapped from llama-benchy's JSON output (see upstream
-`schemas/benchmark_report_schema.json`):
+The actual upstream schema (`schemas/benchmark_report_schema.json`)
+wraps a list of per-test runs in a top-level report. Every metric is a
+nullable `BenchmarkMetric { mean, std, values }` rather than a flat
+number — this matters because we want to surface std and the raw
+per-run values in the detail view.
 
 ```go
+// Top-level file written by --save-result.
+type LlamaBenchyReport struct {
+    Version              string              `json:"version"`
+    Timestamp            string              `json:"timestamp"`
+    LatencyMode          string              `json:"latency_mode"`
+    LatencyMs            float64             `json:"latency_ms"`
+    Model                string              `json:"model"`
+    PrefixCachingEnabled bool                `json:"prefix_caching_enabled"`
+    MaxConcurrency       int                 `json:"max_concurrency"`
+    Benchmarks           []LlamaBenchyResult `json:"benchmarks"`
+}
+
+// One row per (concurrency × prompt_size × response_size × depth) point.
 type LlamaBenchyResult struct {
-    Test           string   `json:"test"`            // e.g. "pp2048", "tg32"
-    PromptTokens   int      `json:"pp"`
-    GenTokens      int      `json:"tg"`
-    Depth          int      `json:"depth"`
-    Concurrency    int      `json:"concurrency"`
-    AvgTokPerSec   float64  `json:"t_s"`             // "t/s"
-    PeakTokPerSec  float64  `json:"peak_t_s"`        // "peak t/s"
-    TTFRMs         float64  `json:"ttfr_ms"`         // time-to-first-response
-    EstPPTMs       float64  `json:"est_ppt_ms"`      // estimated prompt-processing
-    E2ETTFTMs      float64  `json:"e2e_ttft_ms"`     // end-to-end TTFT
-    TotalTokPerSec float64  `json:"t_s_total"`       // present when concurrency>1
-    PerReqTokPerSec float64 `json:"t_s_req"`         // present when concurrency>1
+    Concurrency           int  `json:"concurrency"`
+    ContextSize           int  `json:"context_size"`
+    PromptSize            int  `json:"prompt_size"`
+    ResponseSize          int  `json:"response_size"`
+    IsContextPrefillPhase bool `json:"is_context_prefill_phase"`
+
+    PPThroughput      *LlamaBenchyMetric `json:"pp_throughput,omitempty"`       // prefill total t/s
+    PPReqThroughput   *LlamaBenchyMetric `json:"pp_req_throughput,omitempty"`   // prefill per-request t/s
+    TGThroughput      *LlamaBenchyMetric `json:"tg_throughput,omitempty"`       // generation total t/s
+    TGReqThroughput   *LlamaBenchyMetric `json:"tg_req_throughput,omitempty"`   // generation per-request t/s
+    PeakThroughput    *LlamaBenchyMetric `json:"peak_throughput,omitempty"`     // peak total t/s
+    PeakReqThroughput *LlamaBenchyMetric `json:"peak_req_throughput,omitempty"` // peak per-request t/s
+    TTFR              *LlamaBenchyMetric `json:"ttfr,omitempty"`                // time-to-first-response, ms
+    EstPPT            *LlamaBenchyMetric `json:"est_ppt,omitempty"`             // estimated pure processing time, ms
+    E2ETTFT           *LlamaBenchyMetric `json:"e2e_ttft,omitempty"`            // end-to-end TTFT, ms
+    // throughput_over_time and requests_throughput_over_time time-series
+    // arrays are present in the schema but skipped — bulky and unused.
+}
+
+type LlamaBenchyMetric struct {
+    Mean   float64   `json:"mean"`
+    Std    float64   `json:"std"`
+    Values []float64 `json:"values,omitempty"` // raw per-run values
 }
 ```
 
-A run carries `[]LlamaBenchyResult` instead of the previous single
-`LlamaBenchResult`. The legacy `LlamaBenchResult` type is removed
-along with `runner.runLlamaBench()`.
+A run carries `[]LlamaBenchyResult` (one entry per cell of the
+benchy-side matrix) instead of the previous single `LlamaBenchResult`.
+The legacy `LlamaBenchResult` type is removed along with
+`runner.runLlamaBench()`.
 
 ---
 
@@ -241,9 +287,10 @@ Additive (no removals):
 type BenchmarkRun struct {
     // ... existing fields ...
 
-    JobID         string         `json:"job_id"`         // every run belongs to one job
-    Build         BuildSnapshot  `json:"build"`          // full snapshot, not just IDs
+    JobID         string              `json:"job_id"`         // every run belongs to one job
+    Build         BuildSnapshot       `json:"build"`          // full snapshot, not just IDs
     LlamaBenchy   []LlamaBenchyResult `json:"llama_benchy,omitempty"`
+    BenchyCommand string              `json:"benchy_command,omitempty"` // exact uvx invocation, for disclosure
 
     // REMOVED: LlamaBench *LlamaBenchResult
 }
@@ -538,12 +585,16 @@ plus llama-benchy result rows. Columns prefixed by job context:
 ```
 job_id, job_name, model_id, model_name, quant, build_id, build_profile,
 git_ref, preset, source, prompt_tokens, gen_tokens, depth, concurrency,
-repetition, prompt_tps, gen_tps, peak_tps, ttft_ms, ttfr_ms,
-e2e_ttft_ms, total_ms
+repetition, pp_throughput, pp_throughput_std, tg_throughput,
+tg_throughput_std, peak_throughput, peak_throughput_std, ttft_ms,
+ttfr_ms, e2e_ttft_ms, total_ms
 ```
 
-`source` is `"internal"` or `"benchy"`. Fields irrelevant to a row's
-source are blank.
+`source` is `"internal"` or `"benchy"`. For benchy rows, throughput
+columns carry the `BenchmarkMetric.mean` and `_std` carries the
+standard deviation; raw per-run values from `BenchmarkMetric.values`
+are not exported in CSV (use JSON export for round-trip fidelity).
+Fields irrelevant to a row's source are blank.
 
 ### CSV — per-cell summary (`scope=summary`)
 
