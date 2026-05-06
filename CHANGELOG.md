@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/tmac1973/llama-toolchest/compare/v1.9.0...v1.9.1) (2026-05-06)
+
+
+### Bug Fixes
+
+* **config:** stop env-var leak that lost downloaded models ([ffbe58e](https://github.com/tmac1973/llama-toolchest/commit/ffbe58e8fd3c9aaf89bab7dc8d9be8c19174eff8))
+
 ## [1.9.0](https://github.com/tmac1973/llama-toolchest/compare/v1.8.0...v1.9.0) (2026-05-06)
 
 
