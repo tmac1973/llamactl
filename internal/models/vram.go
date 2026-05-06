@@ -89,10 +89,17 @@ func VRAMEstimateForConfig(m *Model, cfg *ModelConfig) float64 {
 		// No GGUF metadata — fall back to rough estimate
 		return EstimateVRAM(m.SizeBytes)
 	}
+	// ContextSize 0 means "Model Default" in the UI; llama-server resolves
+	// that to the model's trained context length at load time, so estimate
+	// against that, not the bare 2048 fallback in EstimateKVCacheGB.
+	ctx := cfg.ContextSize
+	if ctx == 0 {
+		ctx = m.ContextLength
+	}
 	return EstimateVRAMDetailed(
 		m.SizeBytes,
 		m.NLayers, m.NKVHead, m.NHead, m.NEmbd,
-		cfg.ContextSize,
+		ctx,
 		cfg.KVCacheQuant,
 	)
 }
