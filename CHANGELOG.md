@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.4](https://github.com/tmac1973/llama-toolchest/compare/v1.9.3...v1.9.4) (2026-05-06)
+
+
+### Bug Fixes
+
+* **setup:** host install summary reports the configured port ([43ef7e2](https://github.com/tmac1973/llama-toolchest/commit/43ef7e21e19b98555532efcf29928e91b9fc83b1))
+
 ## [1.9.3](https://github.com/tmac1973/llama-toolchest/compare/v1.9.2...v1.9.3) (2026-05-06)
 
 
