@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.0](https://github.com/tmac1973/llama-toolchest/compare/v1.8.0...v1.9.0) (2026-05-06)
+
+
+### Features
+
+* **models:** per-model parallel request slots ([6c25ebd](https://github.com/tmac1973/llama-toolchest/commit/6c25ebd5c4181cb7b6cf5006d53951384f52acb9))
+
 ## [1.8.0](https://github.com/tmac1973/llama-toolchest/compare/v1.7.1...v1.8.0) (2026-05-05)
 
 
