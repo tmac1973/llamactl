@@ -241,6 +241,16 @@ func (s *Server) buildRouter() chi.Router {
 			r.Delete("/{id}", s.handleDeleteBuild)
 		})
 		r.Get("/gpu-map", s.handleGPUMap)
+		r.Route("/benchmark-jobs", func(r chi.Router) {
+			r.Get("/", s.handleListJobs)
+			r.Post("/", s.handleCreateJob)
+			r.Get("/{id}", s.handleGetJob)
+			r.Delete("/{id}", s.handleDeleteJob)
+			r.Post("/{id}/cancel", s.handleCancelJob)
+			r.Post("/{id}/retry-failed", s.handleRetryFailedCells)
+			r.Get("/{id}/progress", s.handleJobProgress)
+			r.Get("/{id}/export", s.handleExportJob)
+		})
 		r.Route("/benchmarks", func(r chi.Router) {
 			r.Get("/", s.handleListBenchmarks)
 			r.Post("/", s.handleStartBenchmark)

@@ -41,9 +41,39 @@ func builderResolver(b *builder.Builder) benchmark.BuildResolver {
 	}
 }
 
-// handleListBenchmarks returns all benchmark runs.
+// handleListBenchmarks returns benchmark runs, optionally filtered:
+//   - ?job=<id>          returns only runs belonging to that job
+//   - ?scope=adhoc       returns only runs in the synthetic adhoc job
+//   - ?scope=batch       returns only runs belonging to a real batch job
 func (s *Server) handleListBenchmarks(w http.ResponseWriter, r *http.Request) {
 	runs := s.bench.List()
+
+	if jobID := r.URL.Query().Get("job"); jobID != "" {
+		runs = filterRunsByJob(runs, jobID)
+	}
+	if scope := r.URL.Query().Get("scope"); scope != "" {
+		switch scope {
+		case "adhoc":
+			runs = filterRunsByJob(runs, benchmark.AdhocJobID)
+		case "batch":
+			batchJobIDs := map[string]bool{}
+			for _, j := range s.bench.ListJobs() {
+				if j.ID != benchmark.AdhocJobID {
+					batchJobIDs[j.ID] = true
+				}
+			}
+			filtered := runs[:0]
+			for _, run := range runs {
+				if batchJobIDs[run.JobID] {
+					filtered = append(filtered, run)
+				}
+			}
+			runs = filtered
+		default:
+			http.Error(w, "scope must be 'adhoc' or 'batch'", http.StatusBadRequest)
+			return
+		}
+	}
 
 	if isHTMX(r) {
 		respondHTML(w)
@@ -52,6 +82,16 @@ func (s *Server) handleListBenchmarks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, runs)
+}
+
+func filterRunsByJob(runs []benchmark.BenchmarkRun, jobID string) []benchmark.BenchmarkRun {
+	out := runs[:0]
+	for _, r := range runs {
+		if r.JobID == jobID {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // renderBenchmarkList emits the grouped, searchable benchmarks table.
