@@ -16,6 +16,31 @@ import (
 	"github.com/tmlabonte/llamactl/internal/models"
 )
 
+// builderResolver adapts the builder's List() into a benchmark.BuildResolver
+// closure so the benchmark package can backfill Build snapshots without
+// importing builder. Returns the zero value when the build is no longer
+// known, which the migration treats as "fall back to the legacy flat
+// fields."
+func builderResolver(b *builder.Builder) benchmark.BuildResolver {
+	return func(buildID string) benchmark.BuildSnapshot {
+		for _, br := range b.List() {
+			if br.ID == buildID {
+				return benchmark.BuildSnapshot{
+					ID:         br.ID,
+					Tag:        br.Tag,
+					Profile:    br.Profile,
+					Vendor:     br.Profile,
+					GitSHA:     br.GitSHA,
+					GitRef:     br.GitRef,
+					CMakeFlags: br.CMakeFlags,
+					BinaryPath: br.BinaryPath,
+				}
+			}
+		}
+		return benchmark.BuildSnapshot{}
+	}
+}
+
 // handleListBenchmarks returns all benchmark runs.
 func (s *Server) handleListBenchmarks(w http.ResponseWriter, r *http.Request) {
 	runs := s.bench.List()

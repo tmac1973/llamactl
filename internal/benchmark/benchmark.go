@@ -22,6 +22,7 @@ const (
 // BenchmarkRun is one complete benchmark execution.
 type BenchmarkRun struct {
 	ID        string    `json:"id"`
+	JobID     string    `json:"job_id,omitempty"` // owning job; "adhoc" for migrated/legacy and quick-bench runs
 	CreatedAt time.Time `json:"created_at"`
 	Status    string    `json:"status"`
 	Error     string    `json:"error,omitempty"`
@@ -272,11 +273,21 @@ func GPUSnapshotsFromMetrics(m monitor.Metrics) []GPUSnapshot {
 	return snaps
 }
 
+// BuildResolver resolves a build ID to its full snapshot. Implemented by
+// the api layer over *builder.Builder; passed in so the benchmark
+// package doesn't import builder directly.
+//
+// A nil resolver, or one that returns the zero value, signals "not
+// known" — the migration falls back to the legacy flat fields.
+type BuildResolver func(buildID string) BuildSnapshot
+
 // Store manages benchmark persistence and timing samples.
 type Store struct {
-	mu      sync.RWMutex
-	dataDir string
-	runs    []BenchmarkRun
+	mu       sync.RWMutex
+	dataDir  string
+	runs     []BenchmarkRun
+	jobs     []BenchmarkJob
+	resolver BuildResolver
 
 	timingsMu sync.RWMutex
 	timings   map[string][]TimingSample // model ID → ring buffer
@@ -284,11 +295,26 @@ type Store struct {
 
 const maxTimingSamples = 1000
 
-// NewStore creates a store and loads persisted benchmarks.
-func NewStore(dataDir string) *Store {
+// schemaVersion is the on-disk envelope version this build writes. v1
+// was a bare JSON array of runs; v2 wraps them with a jobs list.
+const schemaVersion = 2
+
+// benchmarkFile is the v2 envelope. v1 files are detected by an
+// unmarshal failure into this shape and a successful retry as []BenchmarkRun.
+type benchmarkFile struct {
+	Version int            `json:"version"`
+	Jobs    []BenchmarkJob `json:"jobs"`
+	Runs    []BenchmarkRun `json:"runs"`
+}
+
+// NewStore creates a store and loads persisted benchmarks. resolver may
+// be nil; if provided, the v1→v2 migration uses it to backfill Build
+// snapshots for runs whose build still exists in the builder.
+func NewStore(dataDir string, resolver BuildResolver) *Store {
 	s := &Store{
-		dataDir: dataDir,
-		timings: make(map[string][]TimingSample),
+		dataDir:  dataDir,
+		resolver: resolver,
+		timings:  make(map[string][]TimingSample),
 	}
 	s.load()
 	return s
@@ -319,10 +345,18 @@ func (s *Store) Get(id string) (*BenchmarkRun, error) {
 	return nil, fmt.Errorf("benchmark not found: %s", id)
 }
 
-// Save adds or updates a benchmark run.
+// Save adds or updates a benchmark run. Runs with no JobID are assigned
+// to the synthetic Ad-Hoc Runs job so the "every run belongs to a job"
+// invariant holds across the existing single-run code path.
 func (s *Store) Save(run BenchmarkRun) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if run.JobID == "" {
+		run.JobID = AdhocJobID
+		if !s.hasJobLocked(AdhocJobID) {
+			s.jobs = append(s.jobs, newAdhocJob(run.CreatedAt))
+		}
+	}
 	for i := range s.runs {
 		if s.runs[i].ID == run.ID {
 			s.runs[i] = run
@@ -346,6 +380,111 @@ func (s *Store) Delete(id string) error {
 		}
 	}
 	return fmt.Errorf("benchmark not found: %s", id)
+}
+
+// ListJobs returns all jobs, newest CreatedAt first. The synthetic
+// AdhocJobID always sorts last, regardless of timestamp, so the user's
+// real batch jobs surface above their history.
+func (s *Store) ListJobs() []BenchmarkJob {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]BenchmarkJob, len(s.jobs))
+	copy(out, s.jobs)
+	sort.SliceStable(out, func(i, j int) bool {
+		if (out[i].ID == AdhocJobID) != (out[j].ID == AdhocJobID) {
+			return out[j].ID == AdhocJobID
+		}
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	return out
+}
+
+// GetJob returns a job by ID.
+func (s *Store) GetJob(id string) (*BenchmarkJob, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for i := range s.jobs {
+		if s.jobs[i].ID == id {
+			job := s.jobs[i]
+			return &job, nil
+		}
+	}
+	return nil, fmt.Errorf("job not found: %s", id)
+}
+
+// SaveJob adds or updates a job.
+func (s *Store) SaveJob(job BenchmarkJob) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.jobs {
+		if s.jobs[i].ID == job.ID {
+			s.jobs[i] = job
+			s.persist()
+			return
+		}
+	}
+	s.jobs = append(s.jobs, job)
+	s.persist()
+}
+
+// DeleteJob removes a job. The disposition controls what happens to its
+// runs: DeleteCascade removes them with the job; DeleteOrphan reassigns
+// them to the AdhocJobID. Deleting AdhocJobID itself is rejected — it's
+// the migration target and the home of the existing single-run path.
+func (s *Store) DeleteJob(id string, disposition DeleteDisposition) error {
+	if id == AdhocJobID {
+		return fmt.Errorf("cannot delete the synthetic %q job", AdhocJobID)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx := -1
+	for i := range s.jobs {
+		if s.jobs[i].ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return fmt.Errorf("job not found: %s", id)
+	}
+	switch disposition {
+	case DeleteCascade:
+		filtered := s.runs[:0]
+		for _, r := range s.runs {
+			if r.JobID != id {
+				filtered = append(filtered, r)
+			}
+		}
+		s.runs = filtered
+	case DeleteOrphan:
+		if !s.hasJobLocked(AdhocJobID) {
+			s.jobs = append(s.jobs, newAdhocJob(time.Now()))
+		}
+		for i := range s.runs {
+			if s.runs[i].JobID == id {
+				s.runs[i].JobID = AdhocJobID
+			}
+		}
+	default:
+		return fmt.Errorf("unknown disposition: %q (want %q or %q)", disposition, DeleteCascade, DeleteOrphan)
+	}
+	s.jobs = append(s.jobs[:idx], s.jobs[idx+1:]...)
+	s.persist()
+	return nil
+}
+
+// RunsForJob returns all runs belonging to the given job, newest first.
+func (s *Store) RunsForJob(jobID string) []BenchmarkRun {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []BenchmarkRun
+	for _, r := range s.runs {
+		if r.JobID == jobID {
+			out = append(out, r)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return out
 }
 
 // RecordTiming adds a passive timing sample.
@@ -424,13 +563,26 @@ func (s *Store) load() {
 	if err != nil {
 		return
 	}
-	if err := json.Unmarshal(data, &s.runs); err != nil {
-		slog.Error("failed to load benchmarks", "error", err)
-		return
+
+	dirty := false
+
+	// Try v2 envelope first; on failure, fall back to v1 bare array.
+	var file benchmarkFile
+	if jsonErr := json.Unmarshal(data, &file); jsonErr == nil && file.Version >= 2 {
+		s.jobs = file.Jobs
+		s.runs = file.Runs
+	} else {
+		var runs []BenchmarkRun
+		if v1Err := json.Unmarshal(data, &runs); v1Err != nil {
+			slog.Error("failed to load benchmarks (neither v2 envelope nor v1 array)", "v2_error", jsonErr, "v1_error", v1Err)
+			return
+		}
+		s.runs = runs
+		dirty = true // forces a v2 rewrite at end of load
 	}
+
 	// Any benchmark still marked running at startup belongs to a previous
 	// process that died mid-run — surface it as failed so it's deletable.
-	dirty := false
 	for i := range s.runs {
 		if s.runs[i].Status == StatusRunning {
 			s.runs[i].Status = StatusFailed
@@ -440,14 +592,75 @@ func (s *Store) load() {
 			dirty = true
 		}
 	}
+
+	// Backfill JobID="adhoc" on every run that lacks one and ensure the
+	// adhoc pseudo-job exists. Track the earliest run's CreatedAt so the
+	// synthesized adhoc job sorts naturally with history.
+	var earliest time.Time
+	needsAdhoc := false
+	for i := range s.runs {
+		if s.runs[i].JobID == "" {
+			s.runs[i].JobID = AdhocJobID
+			needsAdhoc = true
+			dirty = true
+		}
+		if s.runs[i].JobID == AdhocJobID {
+			if earliest.IsZero() || s.runs[i].CreatedAt.Before(earliest) {
+				earliest = s.runs[i].CreatedAt
+			}
+		}
+	}
+	if needsAdhoc && !s.hasJobLocked(AdhocJobID) {
+		s.jobs = append(s.jobs, newAdhocJob(earliest))
+	}
+
+	// Backfill Build snapshot for runs that pre-date step 3. Try the
+	// resolver first (gives full CMake flags / tag / SHA when the build
+	// still exists), then fall back to the legacy flat fields.
+	for i := range s.runs {
+		if s.runs[i].Build.ID != "" || s.runs[i].Build.GitRef != "" {
+			continue
+		}
+		if s.resolver != nil && s.runs[i].BuildID != "" {
+			if snap := s.resolver(s.runs[i].BuildID); snap.ID != "" {
+				s.runs[i].Build = snap
+				dirty = true
+				continue
+			}
+		}
+		if s.runs[i].BuildID != "" || s.runs[i].BuildRef != "" {
+			s.runs[i].Build = BuildSnapshot{
+				ID:      s.runs[i].BuildID,
+				GitRef:  s.runs[i].BuildRef,
+				Profile: s.runs[i].BuildProfile,
+				Vendor:  s.runs[i].BuildProfile,
+			}
+			dirty = true
+		}
+	}
+
 	if dirty {
 		s.persist()
 	}
 }
 
+func (s *Store) hasJobLocked(id string) bool {
+	for i := range s.jobs {
+		if s.jobs[i].ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Store) persist() {
 	os.MkdirAll(filepath.Dir(s.benchmarkPath()), 0o755)
-	data, err := json.MarshalIndent(s.runs, "", "  ")
+	file := benchmarkFile{
+		Version: schemaVersion,
+		Jobs:    s.jobs,
+		Runs:    s.runs,
+	}
+	data, err := json.MarshalIndent(file, "", "  ")
 	if err != nil {
 		slog.Error("failed to marshal benchmarks", "error", err)
 		return

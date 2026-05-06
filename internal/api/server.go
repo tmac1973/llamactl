@@ -53,16 +53,17 @@ func NewServer(cfg *config.Config, configPath string) *Server {
 	mon := monitor.New(3 * time.Second)
 	mon.Start()
 
+	bld := builder.NewBuilder(cfg.DataDir)
 	s := &Server{
 		cfg:           cfg,
 		configPath:    configPath,
-		builder:       builder.NewBuilder(cfg.DataDir),
+		builder:       bld,
 		hfClient:      huggingface.NewClient(cfg.HFToken),
 		downloader:    huggingface.NewDownloader(cfg.DataDir, cfg.ModelsPath(), cfg.HFToken),
 		registry:      models.NewRegistry(cfg.DataDir, cfg.ModelsPath()),
 		process:       process.NewManager(),
 		monitor:       mon,
-		bench:         benchmark.NewStore(cfg.DataDir),
+		bench:         benchmark.NewStore(cfg.DataDir, builderResolver(bld)),
 		benchProgress: make(map[string]chan benchmark.ProgressUpdate),
 		dirtyModels:   make(map[string]bool),
 	}
