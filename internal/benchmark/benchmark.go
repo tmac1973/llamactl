@@ -593,6 +593,25 @@ func (s *Store) load() {
 		}
 	}
 
+	// Same fixup for jobs and any cells caught mid-flight.
+	for i := range s.jobs {
+		if s.jobs[i].Status != JobStatusRunning {
+			continue
+		}
+		s.jobs[i].Status = JobStatusFailed
+		s.jobs[i].FinishedAt = time.Now()
+		for ci := range s.jobs[i].Cells {
+			c := &s.jobs[i].Cells[ci]
+			if c.Status == CellStatusRunning {
+				c.Status = CellStatusFailed
+				if c.Error == "" {
+					c.Error = "interrupted: server restarted before job finished"
+				}
+			}
+		}
+		dirty = true
+	}
+
 	// Backfill JobID="adhoc" on every run that lacks one and ensure the
 	// adhoc pseudo-job exists. Track the earliest run's CreatedAt so the
 	// synthesized adhoc job sorts naturally with history.

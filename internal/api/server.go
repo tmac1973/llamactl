@@ -38,6 +38,7 @@ type Server struct {
 	process         *process.Manager
 	monitor         *monitor.Monitor
 	bench           *benchmark.Store
+	jobs            *benchmark.JobQueue
 	benchProgress   map[string]chan benchmark.ProgressUpdate
 	benchProgressMu sync.RWMutex
 	dirtyModels     map[string]bool // models whose config changed since last load
@@ -67,6 +68,7 @@ func NewServer(cfg *config.Config, configPath string) *Server {
 		benchProgress: make(map[string]chan benchmark.ProgressUpdate),
 		dirtyModels:   make(map[string]bool),
 	}
+	s.jobs = benchmark.NewJobQueue(s.bench, newJobEnv(s))
 	s.downloader.SetOnComplete(s.onDownloadComplete)
 	s.registry.BackfillGGUFMeta()
 	if n := s.registry.DeduplicateModels(); n > 0 {
