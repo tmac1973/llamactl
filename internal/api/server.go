@@ -119,6 +119,12 @@ func (s *Server) parseTemplates() map[string]*template.Template {
 				}
 			}, s)
 		},
+		"shortSHA": func(s string) string {
+			if len(s) > 12 {
+				return s[:12]
+			}
+			return s
+		},
 		"divf": func(a, b interface{}) float64 {
 			af, bf := toFloat64(a), toFloat64(b)
 			if bf == 0 {

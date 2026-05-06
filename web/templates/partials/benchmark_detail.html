@@ -27,6 +27,26 @@
         </div>
     </div>
 
+    {{with .EffectiveBuild}}{{if or .ID .GitRef}}
+    <div style="margin-bottom:0.5rem;">
+        <small><strong>Build</strong></small><br>
+        <small>
+            {{if .ID}}<kbd>{{.ID}}</kbd>{{end}}
+            {{if .Tag}} &middot; tag {{.Tag}}{{end}}
+            {{if .Profile}} &middot; {{.Profile}}{{end}}
+            {{if .GitRef}} &middot; ref {{.GitRef}}{{end}}
+            {{if .GitSHA}} &middot; <span title="{{.GitSHA}}">sha {{shortSHA .GitSHA}}</span>{{end}}
+        </small>
+        {{if .CMakeFlags}}
+        <details style="margin-top:0.25rem;">
+            <summary><small>CMake flags</small></summary>
+            <pre style="font-size:0.75rem;margin:0.25rem 0 0;">{{range $k, $v := .CMakeFlags}}{{$k}}={{$v}}
+{{end}}</pre>
+        </details>
+        {{end}}
+    </div>
+    {{end}}{{end}}
+
     {{if .Results}}
     <small><strong>API Benchmark</strong> — real chat completion requests through the server</small>
     <table role="grid" style="font-size:0.85rem;">

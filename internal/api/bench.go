@@ -244,6 +244,16 @@ func (s *Server) handleStartBenchmark(w http.ResponseWriter, r *http.Request) {
 		BuildID:      activeBuild.ID,
 		BuildRef:     activeBuild.GitRef,
 		BuildProfile: activeBuild.Profile,
+		Build: benchmark.BuildSnapshot{
+			ID:         activeBuild.ID,
+			Tag:        activeBuild.Tag,
+			Profile:    activeBuild.Profile,
+			Vendor:     activeBuild.Profile,
+			GitSHA:     activeBuild.GitSHA,
+			GitRef:     activeBuild.GitRef,
+			CMakeFlags: activeBuild.CMakeFlags,
+			BinaryPath: activeBuild.BinaryPath,
+		},
 
 		GPUs: benchmark.GPUSnapshotsFromMetrics(metrics),
 

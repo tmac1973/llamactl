@@ -35,10 +35,14 @@ type BenchmarkRun struct {
 	// Configuration snapshot
 	Config ConfigSnapshot `json:"config"`
 
-	// Build info
-	BuildID      string `json:"build_id"`
-	BuildRef     string `json:"build_ref"`
-	BuildProfile string `json:"build_profile"`
+	// Build info. The flat BuildID/BuildRef/BuildProfile fields predate
+	// the Build snapshot and are preserved for already-persisted runs;
+	// new runs populate Build with the full snapshot. Use EffectiveBuild()
+	// to read; it falls back to the flat fields for legacy data.
+	BuildID      string        `json:"build_id"`
+	BuildRef     string        `json:"build_ref"`
+	BuildProfile string        `json:"build_profile"`
+	Build        BuildSnapshot `json:"build,omitempty"`
 
 	// Hardware
 	GPUs []GPUSnapshot `json:"gpus"`
@@ -86,6 +90,20 @@ type GPUSnapshot struct {
 	Index       int    `json:"index"`
 	Name        string `json:"name"`
 	VRAMTotalMB int    `json:"vram_total_mb"`
+}
+
+// BuildSnapshot freezes the llama.cpp build that produced a benchmark
+// run. Captured at run start so deleting/rebuilding the build later
+// doesn't strand the result without context.
+type BuildSnapshot struct {
+	ID         string            `json:"id"`
+	Tag        string            `json:"tag,omitempty"`
+	Profile    string            `json:"profile"` // rocm | cuda | vulkan | metal | cpu
+	Vendor     string            `json:"vendor"`  // currently == Profile; reserved for future split
+	GitSHA     string            `json:"git_sha,omitempty"`
+	GitRef     string            `json:"git_ref,omitempty"`
+	CMakeFlags map[string]string `json:"cmake_flags,omitempty"`
+	BinaryPath string            `json:"binary_path,omitempty"`
 }
 
 // BenchmarkResult is one test point.
@@ -224,6 +242,21 @@ func GetPreset(name string) Preset {
 		}
 	}
 	return Presets()[1] // internal-standard
+}
+
+// EffectiveBuild returns the run's Build snapshot, falling back to a
+// minimal snapshot synthesized from the legacy flat fields when the run
+// was persisted before BuildSnapshot existed.
+func (r *BenchmarkRun) EffectiveBuild() BuildSnapshot {
+	if r.Build.ID != "" || r.Build.GitRef != "" {
+		return r.Build
+	}
+	return BuildSnapshot{
+		ID:      r.BuildID,
+		GitRef:  r.BuildRef,
+		Profile: r.BuildProfile,
+		Vendor:  r.BuildProfile,
+	}
 }
 
 // GPUSnapshotsFromMetrics converts monitor metrics to GPU snapshots.
