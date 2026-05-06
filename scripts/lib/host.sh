@@ -335,6 +335,26 @@ host_install_from_package() {
     ok "Installed: $(/usr/bin/llama-toolchest --version 2>/dev/null || echo "v$version")"
 }
 
+# Echo the management UI port, preferring the listen_addr from an existing
+# config file (so an upgrade install reports the actual port, not the
+# default). Falls back to LLAMA_TOOLCHEST_PORT or 3000.
+host_effective_port() {
+    local cfg_path; cfg_path="$(host_config_path)"
+    if [[ -f "$cfg_path" ]]; then
+        # listen_addr looks like ":3001" or "0.0.0.0:3001"; strip everything
+        # up to and including the last colon. Quotes optional in YAML.
+        local addr port
+        addr="$(grep -E '^[[:space:]]*listen_addr:' "$cfg_path" 2>/dev/null \
+            | head -1 | sed -E 's/^[[:space:]]*listen_addr:[[:space:]]*"?([^"#]+)"?.*/\1/' | tr -d ' ')" || true
+        port="${addr##*:}"
+        if [[ "$port" =~ ^[0-9]+$ ]]; then
+            echo "$port"
+            return 0
+        fi
+    fi
+    echo "${LLAMA_TOOLCHEST_PORT:-3000}"
+}
+
 # Write the example config to the user's config dir if it doesn't exist.
 # Existing configs are left alone — we don't overwrite the user's settings.
 host_write_config() {
@@ -520,7 +540,7 @@ host_install() {
     esac
     echo "  Config:      $(host_config_path)"
     echo "  Data dir:    $(host_data_dir)"
-    echo "  Web UI:      http://localhost:${LLAMA_TOOLCHEST_PORT:-3000}"
+    echo "  Web UI:      http://localhost:$(host_effective_port)"
     echo ""
 }
 
