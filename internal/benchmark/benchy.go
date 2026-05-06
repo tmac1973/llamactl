@@ -74,8 +74,16 @@ type BenchyConfig struct {
 // BuildBenchyArgs returns the argument vector passed to `uvx`. Pure
 // function so the disclosure modal can render the same string the runner
 // will execute.
+//
+// `--with sentencepiece tiktoken` pulls in the tokenizer backends needed
+// for the common HF tokenizer formats (SentencePiece for LLaMA / Mistral /
+// DeepSeek-distill, tiktoken for OpenAI-style). Without these llama-benchy
+// silently falls back to GPT-2 and prompt-size accounting drifts.
 func BuildBenchyArgs(c BenchyConfig) []string {
-	args := []string{"llama-benchy",
+	args := []string{
+		"--with", "sentencepiece",
+		"--with", "tiktoken",
+		"llama-benchy",
 		"--base-url", c.BaseURL,
 		"--api-key", c.APIKey,
 		"--model", c.ServedModelName,
