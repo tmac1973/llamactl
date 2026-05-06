@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.3](https://github.com/tmac1973/llama-toolchest/compare/v1.9.2...v1.9.3) (2026-05-06)
+
+
+### Bug Fixes
+
+* **server:** restart picks up the latest active build, settings persist ([27aaa87](https://github.com/tmac1973/llama-toolchest/commit/27aaa870aefbee45054e186d192591bd1017c2ce))
+
 ## [1.9.2](https://github.com/tmac1973/llama-toolchest/compare/v1.9.1...v1.9.2) (2026-05-06)
 
 
