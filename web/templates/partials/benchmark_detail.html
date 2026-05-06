@@ -69,6 +69,42 @@
     </table>
     {{end}}
 
+    {{if .LlamaBenchy}}
+    <small><strong>llama-benchy</strong> — OpenAI-compatible API benchmark via uvx</small>
+    <table role="grid" style="font-size:0.85rem;">
+        <thead>
+            <tr>
+                <th title="Concurrent requests issued for this row">Conc</th>
+                <th title="Prompt tokens">Prompt</th>
+                <th title="Generated tokens">Gen</th>
+                <th title="Prompt processing throughput (mean ± std, tokens/sec)">PP t/s</th>
+                <th title="Token generation throughput (mean ± std, tokens/sec)">TG t/s</th>
+                <th title="Time-to-first-response, milliseconds">TTFR</th>
+                <th title="End-to-end time-to-first-token, milliseconds">e2e TTFT</th>
+            </tr>
+        </thead>
+        <tbody>
+        {{range .LlamaBenchy}}
+        <tr>
+            <td>{{.Concurrency}}</td>
+            <td>{{.PromptSize}}</td>
+            <td>{{.ResponseSize}}</td>
+            <td>{{if .PPThroughput}}{{printf "%.0f" .PPThroughput.Mean}} ± {{printf "%.0f" .PPThroughput.Std}}{{else}}—{{end}}</td>
+            <td>{{if .TGThroughput}}<strong>{{printf "%.1f" .TGThroughput.Mean}}</strong> ± {{printf "%.1f" .TGThroughput.Std}}{{else}}—{{end}}</td>
+            <td>{{if .TTFR}}{{printf "%.0f" .TTFR.Mean}} ms{{else}}—{{end}}</td>
+            <td>{{if .E2ETTFT}}{{printf "%.0f" .E2ETTFT.Mean}} ms{{else}}—{{end}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+    </table>
+    {{if .BenchyCommand}}
+    <details style="margin-top:0.25rem;">
+        <summary><small>Command</small></summary>
+        <pre style="font-size:0.75rem;white-space:pre-wrap;word-break:break-all;">{{.BenchyCommand}}</pre>
+    </details>
+    {{end}}
+    {{end}}
+
     {{if .Warnings}}
     <div style="margin-top:0.5rem;">
     {{range .Warnings}}

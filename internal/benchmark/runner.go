@@ -23,6 +23,7 @@ type RunConfig struct {
 	RouterURL  string // e.g. "http://localhost:8080"
 	RouterName string // model name the router knows
 	BinaryDir  string // build dir containing llama-bench
+	HFRepoID   string // HuggingFace repo id; passed to llama-benchy as --tokenizer
 }
 
 // ProgressUpdate is sent during benchmark execution.
@@ -106,7 +107,46 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig, progress chan<- Progres
 		return
 	}
 
-	// Step 3: Run benchmarks
+	// Step 3: Run benchmarks (internal API loop or llama-benchy shell-out).
+	switch cfg.Preset.EffectiveSource() {
+	case PresetSourceBenchy:
+		send("benchmark", "Running llama-benchy via uvx — output will appear when finished...", 30)
+		concurrency := cfg.Preset.Concurrency
+		if len(concurrency) == 0 {
+			concurrency = []int{1}
+		}
+		results, cmdStr, err := runLlamaBenchy(ctx, BenchyConfig{
+			BaseURL:         cfg.RouterURL + "/v1",
+			APIKey:          "EMPTY",
+			ServedModelName: cfg.RouterName,
+			Tokenizer:       cfg.HFRepoID,
+			PromptSizes:     cfg.Preset.PromptTokens,
+			GenSizes:        []int{cfg.Preset.GenTokens},
+			Runs:            cfg.Preset.Repetitions,
+			Concurrency:     concurrency,
+		})
+		run.BenchyCommand = cmdStr
+		if err != nil {
+			run.Status = StatusFailed
+			run.Error = err.Error()
+			send("error", run.Error, 0)
+			return
+		}
+		run.LlamaBenchy = results
+		run.Summary = summarizeBenchy(results)
+		run.Status = StatusCompleted
+		send("done", "Benchmark complete", 100)
+		return
+
+	case PresetSourceInternal, "":
+		// fallthrough to internal API loop below
+	default:
+		run.Status = StatusFailed
+		run.Error = fmt.Sprintf("unknown preset source: %q", cfg.Preset.Source)
+		send("error", run.Error, 0)
+		return
+	}
+
 	totalTests := 0
 	for _, pp := range cfg.Preset.PromptTokens {
 		_ = pp

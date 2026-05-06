@@ -98,6 +98,9 @@ func (s *Server) renderBenchmarkList(w http.ResponseWriter, runs []benchmark.Ben
 			if run.LlamaBench != nil {
 				benchTag = ` <mark style="padding:0 0.3rem;font-size:0.75rem;">bench</mark>`
 			}
+			if len(run.LlamaBenchy) > 0 {
+				benchTag += ` <mark style="padding:0 0.3rem;font-size:0.75rem;background:var(--pico-primary-background);color:var(--pico-primary-inverse);">benchy</mark>`
+			}
 			runningTitle := ""
 			if run.Status == "running" {
 				runningTitle = `title="Running — select to delete anyway"`
@@ -260,6 +263,7 @@ func (s *Server) handleStartBenchmark(w http.ResponseWriter, r *http.Request) {
 		RouterURL:  fmt.Sprintf("http://localhost:%d", s.cfg.LlamaPort),
 		RouterName: routerName,
 		BinaryDir:  activeBuild.BinaryPath,
+		HFRepoID:   model.ModelID,
 	}
 	// BinaryDir should be the directory, not the binary itself
 	if strings.HasSuffix(runCfg.BinaryDir, "/llama-server") {

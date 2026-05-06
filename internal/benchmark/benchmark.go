@@ -49,9 +49,14 @@ type BenchmarkRun struct {
 	GenTokens    int    `json:"gen_tokens"`
 
 	// Results
-	Results    []BenchmarkResult  `json:"results,omitempty"`
-	Summary    *BenchmarkSummary  `json:"summary,omitempty"`
-	LlamaBench *LlamaBenchResult  `json:"llama_bench,omitempty"`
+	Results     []BenchmarkResult   `json:"results,omitempty"`
+	Summary     *BenchmarkSummary   `json:"summary,omitempty"`
+	LlamaBench  *LlamaBenchResult   `json:"llama_bench,omitempty"`
+	LlamaBenchy []LlamaBenchyResult `json:"llama_benchy,omitempty"`
+
+	// Command line that was actually executed for benchy presets, captured
+	// at run time so the detail view and "About" modal can disclose it.
+	BenchyCommand string `json:"benchy_command,omitempty"`
 
 	// Warnings (non-fatal issues during the run)
 	Warnings []string `json:"warnings,omitempty"`
@@ -122,15 +127,34 @@ type TimingSample struct {
 	GenTokPerSec    float64   `json:"gen_tps"`
 }
 
+// PresetSourceInternal drives the in-process API benchmark loop in
+// runner.go (real chat completions through the router). PresetSourceBenchy
+// shells out to `uvx llama-benchy` against the same router. Empty defaults
+// to internal so older preset definitions stay valid.
+const (
+	PresetSourceInternal = "internal"
+	PresetSourceBenchy   = "benchy"
+)
+
 // Preset defines benchmark parameters.
 type Preset struct {
 	Name          string
 	Label         string
 	Description   string
+	Source        string // "" | "internal" | "benchy"
 	PromptTokens  []int
 	GenTokens     int
 	Repetitions   int
-	RunLlamaBench bool
+	Concurrency   []int // benchy only; defaults to [1] if empty
+	RunLlamaBench bool  // internal source only; benchy presets ignore this
+}
+
+// EffectiveSource returns the dispatch key, defaulting empty → internal.
+func (p Preset) EffectiveSource() string {
+	if p.Source == "" {
+		return PresetSourceInternal
+	}
+	return p.Source
 }
 
 // Presets returns the available benchmark presets.
@@ -153,6 +177,20 @@ func Presets() []Preset {
 			Label:        "Thorough — 5 reps × 4 prompt sizes up to 8K + llama-bench (~10 min)",
 			Description:  "Five repetitions at 128 / 512 / 2048 / 8192-token prompts with 256 generated tokens each, plus llama-bench. Stresses long-context performance.",
 			PromptTokens: []int{128, 512, 2048, 8192}, GenTokens: 256, Repetitions: 5, RunLlamaBench: true,
+		},
+		{
+			Name:         "benchy-quick",
+			Label:        "benchy-quick — 1 rep, 512 prompt / 32 gen via llama-benchy (~10s)",
+			Description:  "Single-shot llama-benchy run against the router. Smoke test for the API path; works with sharded GGUFs.",
+			Source:       PresetSourceBenchy,
+			PromptTokens: []int{512}, GenTokens: 32, Repetitions: 1, Concurrency: []int{1},
+		},
+		{
+			Name:         "benchy-standard",
+			Label:        "benchy-standard — 3 reps, 2048 prompt / 128 gen via llama-benchy (~1 min)",
+			Description:  "Three-run llama-benchy benchmark at 2048-token prompts. Replaces the legacy llama-bench raw inference test for sharded models.",
+			Source:       PresetSourceBenchy,
+			PromptTokens: []int{2048}, GenTokens: 128, Repetitions: 3, Concurrency: []int{1},
 		},
 	}
 }
