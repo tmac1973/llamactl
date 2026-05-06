@@ -574,6 +574,7 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 			cfg.MainGPU = mg
 		}
 		cfg.ContextSize, _ = strconv.Atoi(r.FormValue("context_size"))
+		cfg.Parallel, _ = strconv.Atoi(r.FormValue("parallel"))
 		cfg.Threads, _ = strconv.Atoi(r.FormValue("threads"))
 		cfg.FlashAttention = r.FormValue("flash_attention") == "on"
 		cfg.Jinja = r.FormValue("jinja") == "on"

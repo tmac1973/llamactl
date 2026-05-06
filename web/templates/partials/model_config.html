@@ -97,6 +97,7 @@
         </label>
     </div>
 
+
     {{if not .IsEmbedding}}
     <div class="grid">
         <label title="Use flash attention for faster inference and lower VRAM usage. Recommended for most models. Disable if you experience compatibility issues.">
@@ -124,6 +125,11 @@
                 <option value="q8_0" {{if eq .Config.KVCacheQuant "q8_0"}}selected{{end}}>q8_0</option>
                 <option value="q4_0" {{if eq .Config.KVCacheQuant "q4_0"}}selected{{end}}>q4_0</option>
             </select>
+        </label>
+        <label title="Number of parallel request slots. Lets multiple chat completions run against this model concurrently. The configured Context Size is divided across slots — e.g. ctx_size=32768 with 4 slots gives each request 8K of context. Set to 1 to disable.">
+            Parallel Slots
+            <input type="number" name="parallel" value="{{if gt .Config.Parallel 0}}{{.Config.Parallel}}{{end}}"
+                   min="1" max="32" placeholder="1 (serial)">
         </label>
     </div>
 

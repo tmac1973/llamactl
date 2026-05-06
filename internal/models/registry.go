@@ -88,6 +88,7 @@ type ModelConfig struct {
 	MainGPU          int    `json:"main_gpu,omitempty"`
 	GPUAssign        string `json:"gpu_assign,omitempty"` // "all", "0", "0-1", "custom", etc.
 	ContextSize      int    `json:"context_size"`
+	Parallel         int    `json:"parallel,omitempty"` // n parallel sequence slots; 0/1 = no extra slots, >1 divides ctx_size across slots
 	Threads          int    `json:"threads"`
 	FlashAttention   bool   `json:"flash_attention"`
 	Jinja            bool   `json:"jinja"`
@@ -155,6 +156,9 @@ func (c *ModelConfig) EffectiveFlagsFor(isEmbedding bool) string {
 		parts = append(parts, "--ctx-size", strconv.Itoa(c.ContextSize))
 	}
 	parts = append(parts, "--threads", strconv.Itoa(c.Threads))
+	if c.Parallel > 1 {
+		parts = append(parts, "--parallel", strconv.Itoa(c.Parallel))
+	}
 	if c.TensorSplit != "" {
 		parts = append(parts, "--tensor-split", c.TensorSplit)
 	}

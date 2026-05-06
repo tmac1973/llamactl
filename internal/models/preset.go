@@ -97,6 +97,9 @@ func writeConfigParams(b *strings.Builder, cfg *ModelConfig, isEmbedding bool) {
 	if cfg.Threads > 0 {
 		b.WriteString(fmt.Sprintf("threads = %d\n", cfg.Threads))
 	}
+	if cfg.Parallel > 1 {
+		b.WriteString(fmt.Sprintf("parallel = %d\n", cfg.Parallel))
+	}
 	if cfg.TensorSplit != "" {
 		b.WriteString(fmt.Sprintf("tensor-split = %s\n", cfg.TensorSplit))
 	}
