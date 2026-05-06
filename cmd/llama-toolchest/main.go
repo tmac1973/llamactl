@@ -42,7 +42,7 @@ func main() {
 		slog.Warn("could not init data dir (expected in local dev)", "error", err)
 	}
 
-	srv := api.NewServer(cfg)
+	srv := api.NewServer(cfg, *configPath)
 	srv.SetVersion(version)
 
 	httpSrv := &http.Server{

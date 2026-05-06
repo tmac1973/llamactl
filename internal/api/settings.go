@@ -148,7 +148,18 @@ func (s *Server) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) saveConfig() {
-	configPath := filepath.Join(s.cfg.DataDir, "config", "llama-toolchest.yaml")
+	// Write back to the same path the config was loaded from, so the next
+	// startup actually sees what the user just changed. Old behavior wrote
+	// to <DataDir>/config/llama-toolchest.yaml unconditionally, which only
+	// matched the read path in container mode — host installs read from
+	// ~/.config/... or /etc/..., so saved settings silently vanished on
+	// the next restart.
+	configPath := s.configPath
+	if configPath == "" {
+		// Defensive fallback for callers that didn't supply a path
+		// (e.g. tests). Same shape as the legacy default.
+		configPath = filepath.Join(s.cfg.DataDir, "config", "llama-toolchest.yaml")
+	}
 	os.MkdirAll(filepath.Dir(configPath), 0o755)
 
 	data, err := yaml.Marshal(s.cfg)

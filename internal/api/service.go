@@ -183,7 +183,17 @@ func (s *Server) handleServiceStop(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleServiceRestart(w http.ResponseWriter, r *http.Request) {
-	if err := s.process.Restart(); err != nil {
+	// Stop + startRouter rather than process.Restart(): the latter relaunches
+	// with the RouterConfig captured at the original Start, so a build
+	// switched in the UI between Start and Restart would be ignored. Going
+	// through startRouter re-resolves cfg.ActiveBuild and rewrites the
+	// preset INI from the current registry state.
+	if s.process.IsRunning() {
+		if err := s.process.Stop(); err != nil {
+			slog.Debug("stop during restart", "error", err)
+		}
+	}
+	if err := s.startRouter(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

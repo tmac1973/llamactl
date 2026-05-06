@@ -27,6 +27,7 @@ import (
 
 type Server struct {
 	cfg             *config.Config
+	configPath      string // path the cfg was loaded from; saveConfig writes back here
 	version         string // injected by main via SetVersion; "" = dev build
 	pages           map[string]*template.Template
 	router          chi.Router
@@ -48,12 +49,13 @@ type Server struct {
 // the first page render.
 func (s *Server) SetVersion(v string) { s.version = v }
 
-func NewServer(cfg *config.Config) *Server {
+func NewServer(cfg *config.Config, configPath string) *Server {
 	mon := monitor.New(3 * time.Second)
 	mon.Start()
 
 	s := &Server{
 		cfg:           cfg,
+		configPath:    configPath,
 		builder:       builder.NewBuilder(cfg.DataDir),
 		hfClient:      huggingface.NewClient(cfg.HFToken),
 		downloader:    huggingface.NewDownloader(cfg.DataDir, cfg.ModelsPath(), cfg.HFToken),
