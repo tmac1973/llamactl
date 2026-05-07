@@ -290,20 +290,31 @@ func (r *Runner) unloadModel(routerURL, modelName string) {
 	slog.Info("benchmark: unload requested", "name", modelName)
 }
 
-// benchPromptText is a fixed, deterministic text used for benchmarking.
-const benchPromptText = `The history of computing is a story of human ingenuity and the relentless pursuit of automation. From the earliest mechanical calculators of the 17th century to the modern silicon chips that power our world, each generation has built upon the discoveries of the last. Charles Babbage conceived of the Analytical Engine in the 1830s, a mechanical general-purpose computer that, had it been built, would have contained many features of modern computers. Ada Lovelace, working with Babbage, wrote what is often considered the first computer program. The 20th century brought electronic computing into reality. Alan Turing formalized the concept of computation itself, while engineers at the University of Pennsylvania built ENIAC, one of the first electronic general-purpose computers. The invention of the transistor at Bell Labs in 1947 revolutionized electronics, leading to smaller, faster, and more reliable computers. The integrated circuit, developed independently by Jack Kilby and Robert Noyce, made it possible to place thousands and eventually billions of transistors on a single chip. This exponential growth in computing power, described by Moore's Law, has driven decades of innovation. Personal computers brought computing to the masses in the 1980s, the internet connected them in the 1990s, and smartphones made computing truly ubiquitous in the 2000s. Today, artificial intelligence and machine learning represent the latest frontier, with large language models demonstrating remarkable capabilities in understanding and generating human language. These models, trained on vast amounts of text data, can engage in conversation, write code, analyze documents, and assist with creative tasks. The computational requirements for training and running these models have driven advances in GPU computing, distributed systems, and specialized hardware accelerators. `
+// BenchPromptText is the deterministic prose passage the internal API
+// benchmark repeats to fill prompts. Exported so the "About benchmarks"
+// modal can disclose it verbatim.
+const BenchPromptText = `The history of computing is a story of human ingenuity and the relentless pursuit of automation. From the earliest mechanical calculators of the 17th century to the modern silicon chips that power our world, each generation has built upon the discoveries of the last. Charles Babbage conceived of the Analytical Engine in the 1830s, a mechanical general-purpose computer that, had it been built, would have contained many features of modern computers. Ada Lovelace, working with Babbage, wrote what is often considered the first computer program. The 20th century brought electronic computing into reality. Alan Turing formalized the concept of computation itself, while engineers at the University of Pennsylvania built ENIAC, one of the first electronic general-purpose computers. The invention of the transistor at Bell Labs in 1947 revolutionized electronics, leading to smaller, faster, and more reliable computers. The integrated circuit, developed independently by Jack Kilby and Robert Noyce, made it possible to place thousands and eventually billions of transistors on a single chip. This exponential growth in computing power, described by Moore's Law, has driven decades of innovation. Personal computers brought computing to the masses in the 1980s, the internet connected them in the 1990s, and smartphones made computing truly ubiquitous in the 2000s. Today, artificial intelligence and machine learning represent the latest frontier, with large language models demonstrating remarkable capabilities in understanding and generating human language. These models, trained on vast amounts of text data, can engage in conversation, write code, analyze documents, and assist with creative tasks. The computational requirements for training and running these models have driven advances in GPU computing, distributed systems, and specialized hardware accelerators. `
+
+// BenchPromptPrefixTemplate is the per-repetition prefix prepended to
+// every internal prompt. The "%d" is filled with the repetition number,
+// which varies the prompt across runs to defeat llama.cpp's prompt
+// cache. Exposed so the About modal can show the actual template.
+const BenchPromptPrefixTemplate = "This is benchmark repetition number %d. Please analyze the following text carefully and provide a detailed response.\n\n"
+
+// BenchPromptCharsPerToken is the chars-per-token approximation used
+// when sizing prompts to a target token count (English prose averages
+// ~4 chars/token under most BPE tokenizers).
+const BenchPromptCharsPerToken = 4
 
 // buildPrompt constructs a prompt of approximately the target token count
 // by repeating the benchmark text. The repetition parameter varies the
 // prompt to defeat llama.cpp's prompt cache.
 func buildPrompt(targetTokens int, repetition int) string {
-	// Rough approximation: 1 token ≈ 4 characters for English text
-	targetChars := targetTokens * 4
+	targetChars := targetTokens * BenchPromptCharsPerToken
 	var b strings.Builder
-	// Prefix with repetition-specific text to defeat prompt caching
-	b.WriteString(fmt.Sprintf("This is benchmark repetition number %d. Please analyze the following text carefully and provide a detailed response.\n\n", repetition))
+	b.WriteString(fmt.Sprintf(BenchPromptPrefixTemplate, repetition))
 	for b.Len() < targetChars {
-		b.WriteString(benchPromptText)
+		b.WriteString(BenchPromptText)
 	}
 	text := b.String()
 	if len(text) > targetChars {
