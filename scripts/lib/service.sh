@@ -16,6 +16,9 @@
 #   service_uninstall             → stop, disable, remove unit file, daemon-reload
 #   service_enable                → enable + start
 #   service_disable               → stop + disable (leaves unit file in place)
+#   service_start                 → start (without changing enabled state)
+#   service_stop                  → stop (without changing enabled state)
+#   service_restart               → restart
 #   service_status                → show status (multi-line)
 #   service_is_active             → returns 0 if active, 1 otherwise
 #
@@ -95,6 +98,16 @@ service_disable() {
 
 service_restart() {
     _systemctl restart "$SERVICE_NAME"
+}
+
+# Plain start/stop — used by `setup.sh up`/`down` to toggle the running
+# state without touching whether the unit is enabled at boot.
+service_start() {
+    _systemctl start "$SERVICE_NAME"
+}
+
+service_stop() {
+    _systemctl stop "$SERVICE_NAME"
 }
 
 service_status() {

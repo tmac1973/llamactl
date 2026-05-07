@@ -418,7 +418,50 @@ func (b *Builder) runBuild(ctx context.Context, prof BuildProfile, srcDir string
 		cmakeArgs = append(cmakeArgs, fmt.Sprintf("-D%s=%s", k, v))
 	}
 
-	if err := b.runCmd(ctx, buildDir, logCh, result.ID, "cmake", cmakeArgs...); err != nil {
+	// NVIDIA's official RPM/DEB installs nvcc at /usr/local/cuda/bin without
+	// adding it to PATH. The systemd-managed service inherits a minimal PATH,
+	// so cmake's enable_language(CUDA) probe fails with "No CMAKE_CUDA_COMPILER
+	// could be found" even when the toolkit is installed. Locate nvcc and pin
+	// it explicitly when building the cuda profile.
+	//
+	// Separately, modern distros now ship a default g++ that nvcc rejects
+	// (e.g. Fedora 44 ships gcc 16, but CUDA 12.x's host_config.h refuses
+	// anything past gcc 13/14/15 depending on toolkit version). Probe for
+	// a compatible side-by-side g++ and hand it to cmake as the host
+	// compiler — without this, build fails on "unsupported GNU version".
+	buildEnv := os.Environ()
+	if prof.Backend == "cuda" {
+		if nvcc, dir := findNVCC(); nvcc != "" {
+			alreadySet := false
+			for _, a := range cmakeArgs {
+				if strings.HasPrefix(a, "-DCMAKE_CUDA_COMPILER=") {
+					alreadySet = true
+					break
+				}
+			}
+			if !alreadySet {
+				cmakeArgs = append(cmakeArgs, "-DCMAKE_CUDA_COMPILER="+nvcc)
+				sendLog(fmt.Sprintf("==> Using nvcc at %s", nvcc))
+			}
+			buildEnv = prependPath(buildEnv, dir)
+		}
+		hostCC := findCUDAHostCompiler()
+		if hostCC != "" {
+			hostCCAlreadySet := false
+			for _, a := range cmakeArgs {
+				if strings.HasPrefix(a, "-DCMAKE_CUDA_HOST_COMPILER=") {
+					hostCCAlreadySet = true
+					break
+				}
+			}
+			if !hostCCAlreadySet {
+				cmakeArgs = append(cmakeArgs, "-DCMAKE_CUDA_HOST_COMPILER="+hostCC)
+				sendLog(fmt.Sprintf("==> Using CUDA host compiler %s", hostCC))
+			}
+		}
+	}
+
+	if err := b.runCmd(ctx, buildDir, logCh, result.ID, buildEnv, "cmake", cmakeArgs...); err != nil {
 		b.finishBuild(result, BuildStatusFailed, fmt.Sprintf("cmake failed: %v", err))
 		sendLog(fmt.Sprintf("==> cmake FAILED: %v", err))
 		return
@@ -426,7 +469,7 @@ func (b *Builder) runBuild(ctx context.Context, prof BuildProfile, srcDir string
 
 	// ninja — build all targets (target names vary across llama.cpp versions)
 	sendLog("==> Running ninja...")
-	if err := b.runCmd(ctx, buildDir, logCh, result.ID, "ninja", "-j", fmt.Sprintf("%d", runtime.NumCPU())); err != nil {
+	if err := b.runCmd(ctx, buildDir, logCh, result.ID, buildEnv, "ninja", "-j", fmt.Sprintf("%d", runtime.NumCPU())); err != nil {
 		b.finishBuild(result, BuildStatusFailed, fmt.Sprintf("ninja failed: %v", err))
 		sendLog(fmt.Sprintf("==> ninja FAILED: %v", err))
 		return
@@ -532,11 +575,11 @@ func (b *Builder) finishBuild(result *BuildResult, status, errMsg string) {
 func (b *Builder) ensureRepo(ctx context.Context, srcDir string, logCh chan string) error {
 	if _, err := os.Stat(filepath.Join(srcDir, ".git")); err == nil {
 		sendLog(logCh, "==> Fetching latest from llama.cpp...")
-		return b.runCmd(ctx, srcDir, logCh, "", "git", "fetch", "--all", "--tags")
+		return b.runCmd(ctx, srcDir, logCh, "", nil, "git", "fetch", "--all", "--tags")
 	}
 
 	sendLog(logCh, "==> Cloning llama.cpp...")
-	return b.runCmd(ctx, filepath.Dir(srcDir), logCh, "", "git", "clone", llamaCppRepo, filepath.Base(srcDir))
+	return b.runCmd(ctx, filepath.Dir(srcDir), logCh, "", nil, "git", "clone", llamaCppRepo, filepath.Base(srcDir))
 }
 
 // checkoutRef checks out the given ref and returns (resolvedRef, sha, error).
@@ -559,7 +602,7 @@ func (b *Builder) checkoutRef(ctx context.Context, srcDir string, ref string, lo
 	}
 
 	sendLog(logCh, fmt.Sprintf("==> Checking out %s...", ref))
-	if err := b.runCmd(ctx, srcDir, logCh, "", "git", "checkout", ref); err != nil {
+	if err := b.runCmd(ctx, srcDir, logCh, "", nil, "git", "checkout", ref); err != nil {
 		return "", "", err
 	}
 
@@ -634,9 +677,14 @@ func (b *Builder) HasBuild(id string) bool {
 }
 
 // runCmd runs a command, streaming stdout+stderr line-by-line to the log channel.
-func (b *Builder) runCmd(ctx context.Context, dir string, logCh chan string, buildID string, name string, args ...string) error {
+// If env is non-nil it overrides the inherited environment; pass nil to inherit
+// os.Environ() unchanged (the common case for git operations).
+func (b *Builder) runCmd(ctx context.Context, dir string, logCh chan string, buildID string, env []string, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	if env != nil {
+		cmd.Env = env
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -764,5 +812,64 @@ func copyFile(src, dst string) error {
 
 	_, err = io.Copy(out, in)
 	return err
+}
+
+// findCUDAHostCompiler probes for a side-by-side g++ that nvcc will
+// accept as host compiler. Modern distros (Fedora 44 with gcc 16,
+// Ubuntu 24.04 with gcc 13/14) ship a default g++ that exceeds CUDA's
+// supported range; the side-by-side packages (gcc15-c++, g++-13, ...)
+// land at /usr/bin/g++-N. Returns the absolute path of the highest
+// available version, or "" if none is installed.
+func findCUDAHostCompiler() string {
+	for _, c := range []string{
+		"/usr/bin/g++-15",
+		"/usr/bin/g++-14",
+		"/usr/bin/g++-13",
+		"/usr/bin/g++-12",
+	} {
+		if st, err := os.Stat(c); err == nil && !st.IsDir() {
+			return c
+		}
+	}
+	return ""
+}
+
+// findNVCC locates the CUDA compiler. NVIDIA's official RPM/DEB installs
+// nvcc under /usr/local/cuda/bin without adding it to PATH, so PATH alone
+// isn't enough. Returns (full path, containing dir) or ("", "") if absent.
+func findNVCC() (string, string) {
+	if p, err := exec.LookPath("nvcc"); err == nil {
+		return p, filepath.Dir(p)
+	}
+	for _, c := range []string{"/usr/local/cuda/bin/nvcc", "/opt/cuda/bin/nvcc"} {
+		if st, err := os.Stat(c); err == nil && !st.IsDir() {
+			return c, filepath.Dir(c)
+		}
+	}
+	return "", ""
+}
+
+// prependPath returns env with dir prepended to PATH (no-op if dir is
+// already first). Operates on a copy so the caller's slice is unchanged.
+func prependPath(env []string, dir string) []string {
+	out := make([]string, 0, len(env)+1)
+	found := false
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "PATH=") {
+			cur := strings.TrimPrefix(kv, "PATH=")
+			if cur == dir || strings.HasPrefix(cur, dir+":") {
+				out = append(out, kv)
+			} else {
+				out = append(out, "PATH="+dir+":"+cur)
+			}
+			found = true
+		} else {
+			out = append(out, kv)
+		}
+	}
+	if !found {
+		out = append(out, "PATH="+dir)
+	}
+	return out
 }
 
