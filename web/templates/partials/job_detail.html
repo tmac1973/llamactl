@@ -1,0 +1,79 @@
+{{define "job_detail"}}
+{{$j := .Job}}
+<div class="job-detail">
+    {{if $j.Overrides}}
+    <small><strong>Overrides applied:</strong>
+        {{with $j.Overrides}}
+        {{if .GPULayers}}gpu_layers={{deref .GPULayers}}{{end}}
+        {{if .ContextSize}} · context_size={{deref .ContextSize}}{{end}}
+        {{if .Threads}} · threads={{deref .Threads}}{{end}}
+        {{if .FlashAttention}} · flash_attention={{deref .FlashAttention}}{{end}}
+        {{if .KVCacheQuant}} · kv_cache_quant={{deref .KVCacheQuant}}{{end}}
+        {{if .DirectIO}} · direct_io={{deref .DirectIO}}{{end}}
+        {{if .GPUAssign}} · gpu_assign={{deref .GPUAssign}}{{end}}
+        {{if .TensorSplit}} · tensor_split={{deref .TensorSplit}}{{end}}
+        {{if .SpecType}} · spec_type={{deref .SpecType}}{{end}}
+        {{end}}
+    </small>
+    {{end}}
+
+    <table role="grid" style="font-size:0.85rem;margin-top:0.5rem;">
+        <thead>
+            <tr>
+                <th style="width:2rem;"><input type="checkbox" style="margin:0;"
+                    onchange="this.closest('table').querySelectorAll('.cell-check').forEach(function(c){c.checked=this.checked}.bind(this));"></th>
+                <th>Model</th>
+                <th>Build</th>
+                <th>Preset</th>
+                <th>Status</th>
+                <th title="Token Generation tokens/sec">TG t/s</th>
+                <th title="Prompt Processing tokens/sec">PP t/s</th>
+                <th>Attempt</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {{range .Rows}}
+        <tr>
+            <td>{{if .Cell.BenchmarkRunID}}<input type="checkbox" class="cell-check" value="{{.Cell.BenchmarkRunID}}" style="margin:0;">{{end}}</td>
+            <td>{{.ModelName}}</td>
+            <td><kbd>{{.BuildLbl}}</kbd></td>
+            <td><small>{{.Cell.Preset}}</small></td>
+            <td><span class="cell-status status-{{.Cell.Status}}">{{.Cell.Status}}</span>
+                {{if .ErrorShort}}<br><small style="color:var(--pico-del-color);" title="{{.Cell.Error}}">{{.ErrorShort}}</small>{{end}}
+            </td>
+            <td>{{.TGTPS}}</td>
+            <td>{{.PPTPS}}</td>
+            <td><small>{{.Cell.Attempt}}</small></td>
+            <td>
+                {{if .Cell.BenchmarkRunID}}
+                <button type="button" class="outline secondary" style="padding:0.2rem 0.5rem;font-size:0.8rem;width:auto;"
+                        hx-get="/api/benchmarks/{{.Cell.BenchmarkRunID}}" hx-target="next .bench-detail" hx-swap="innerHTML"
+                        hx-on::before-request="var d=this.closest('tr').nextElementSibling.querySelector('td');if(d.innerHTML.trim()){d.innerHTML='';event.preventDefault();}">Detail</button>
+                {{end}}
+            </td>
+        </tr>
+        <tr><td colspan="9" class="bench-detail"></td></tr>
+        {{end}}
+        </tbody>
+    </table>
+
+    <div style="display:flex;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap;">
+        <button type="button" class="outline secondary" style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
+                onclick="compareSelectedCells(this)">Compare selected</button>
+        {{if eq $j.Status "running"}}
+        <button type="button" class="outline secondary" style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
+                onclick="cancelJob('{{$j.ID}}')">Cancel</button>
+        {{else}}
+        <button type="button" class="outline secondary" style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
+                onclick="retryFailed('{{$j.ID}}')">Retry failed</button>
+        {{end}}
+        <a class="outline secondary" role="button" style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;text-decoration:none;"
+           href="/api/benchmark-jobs/{{$j.ID}}/export?format=json" download>Export JSON</a>
+        <button type="button" class="outline secondary" style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
+                onclick="deleteJob('{{$j.ID}}','cascade')">Delete (with runs)</button>
+        <button type="button" class="outline secondary" style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
+                onclick="deleteJob('{{$j.ID}}','orphan')">Delete (keep runs)</button>
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,90 @@
+{{define "job_form"}}
+<form id="new-job-form" onsubmit="event.preventDefault();submitNewJob();">
+    <label>
+        Name
+        <input type="text" name="name" required placeholder="Q4 vs Q8 sweep" oninput="updateMatrixCount()">
+    </label>
+    <label>
+        Description <small style="color:var(--pico-muted-color);">(optional)</small>
+        <input type="text" name="description" placeholder="What's this job exploring?">
+    </label>
+
+    <fieldset>
+        <legend>Models {{if not .Models}}<small style="color:var(--pico-del-color);">(no enabled models — enable at least one on the Models tab)</small>{{end}}</legend>
+        {{range .Models}}
+        <label>
+            <input type="checkbox" name="model" value="{{.ID}}" onchange="updateMatrixCount()">
+            <span>{{.ModelID}} <small style="color:var(--pico-muted-color);">({{.Quant}}, {{printf "%.1f" (divGB .SizeBytes)}} GB)</small></span>
+        </label>
+        {{end}}
+    </fieldset>
+
+    <fieldset>
+        <legend>Builds {{if not .Builds}}<small style="color:var(--pico-del-color);">(no successful builds — build llama.cpp first)</small>{{end}}</legend>
+        {{range .Builds}}
+        <label>
+            <input type="checkbox" name="build" value="{{.ID}}" onchange="updateMatrixCount()">
+            <span><kbd>{{.ID}}</kbd> <small style="color:var(--pico-muted-color);">({{.Profile}}{{if .GitRef}}, ref {{.GitRef}}{{end}}{{if .Tag}}, tag {{.Tag}}{{end}})</small></span>
+        </label>
+        {{end}}
+    </fieldset>
+
+    <fieldset>
+        <legend>Presets</legend>
+        {{range .Presets}}
+        <label>
+            <input type="checkbox" name="preset" value="{{.Name}}" onchange="updateMatrixCount()">
+            <span>{{.Label}}</span>
+        </label>
+        {{end}}
+    </fieldset>
+
+    <details>
+        <summary>Overrides <small style="color:var(--pico-muted-color);">(blank = use each model's saved value)</small></summary>
+        <div class="grid">
+            <label>GPU layers <input type="number" name="ov_gpu_layers" placeholder=""></label>
+            <label>Context size <input type="number" name="ov_context_size" placeholder=""></label>
+            <label>Threads <input type="number" name="ov_threads" placeholder=""></label>
+        </div>
+        <div class="grid">
+            <label>Flash attention
+                <select name="ov_flash_attention">
+                    <option value="">inherit</option>
+                    <option value="true">on</option>
+                    <option value="false">off</option>
+                </select>
+            </label>
+            <label>KV cache quant
+                <select name="ov_kv_cache_quant">
+                    <option value="">inherit</option>
+                    <option value="q8_0">q8_0</option>
+                    <option value="q4_0">q4_0</option>
+                </select>
+            </label>
+            <label>Direct I/O
+                <select name="ov_direct_io">
+                    <option value="">inherit</option>
+                    <option value="true">on</option>
+                    <option value="false">off</option>
+                </select>
+            </label>
+        </div>
+        <div class="grid">
+            <label>GPU assign <input type="text" name="ov_gpu_assign" placeholder="e.g. all, 0, 0-1"></label>
+            <label>Tensor split <input type="text" name="ov_tensor_split" placeholder="e.g. 50,50"></label>
+            <label>Spec type <input type="text" name="ov_spec_type" placeholder="e.g. draft"></label>
+        </div>
+    </details>
+
+    <p id="job-matrix-preview" style="margin:0.5rem 0;color:var(--pico-muted-color);">
+        Select models, builds, and presets to compute the matrix size.
+    </p>
+
+    <p id="job-form-error" style="margin:0.25rem 0;color:var(--pico-del-color);display:none;"></p>
+
+    <div style="display:flex;gap:0.5rem;justify-content:flex-end;">
+        <button type="button" class="outline secondary" onclick="closeJobForm()">Cancel</button>
+        <button type="submit" id="job-submit-btn">Create &amp; Start</button>
+    </div>
+</form>
+{{end}}

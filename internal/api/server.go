@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -121,6 +122,22 @@ func (s *Server) parseTemplates() map[string]*template.Template {
 					return '_'
 				}
 			}, s)
+		},
+		// deref turns a pointer like *int / *bool / *string / *float64
+		// into its underlying value for templates. Non-pointers pass
+		// through; nil pointers return empty string.
+		"deref": func(v interface{}) interface{} {
+			if v == nil {
+				return ""
+			}
+			rv := reflect.ValueOf(v)
+			if rv.Kind() == reflect.Ptr {
+				if rv.IsNil() {
+					return ""
+				}
+				return rv.Elem().Interface()
+			}
+			return v
 		},
 		"shortSHA": func(s string) string {
 			if len(s) > 12 {
@@ -244,6 +261,7 @@ func (s *Server) buildRouter() chi.Router {
 		r.Route("/benchmark-jobs", func(r chi.Router) {
 			r.Get("/", s.handleListJobs)
 			r.Post("/", s.handleCreateJob)
+			r.Get("/form", s.handleJobForm)
 			r.Get("/{id}", s.handleGetJob)
 			r.Delete("/{id}", s.handleDeleteJob)
 			r.Post("/{id}/cancel", s.handleCancelJob)

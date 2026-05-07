@@ -1,4 +1,56 @@
 {{define "content"}}
+<style>
+.job-list .job-row { border:1px solid var(--pico-muted-border-color); border-radius:0.25rem; padding:0.5rem 0.75rem; margin-bottom:0.5rem; background:var(--pico-card-background-color); }
+.job-list .job-row > summary { list-style:none; cursor:pointer; }
+.job-list .job-row > summary::marker, .job-list .job-row > summary::-webkit-details-marker { display:none; }
+.job-list .job-row > summary::before { content:"▸"; display:inline-block; width:1rem; color:var(--pico-muted-color); }
+.job-list .job-row[open] > summary::before { content:"▾"; }
+.job-row-line1 { display:inline-flex; gap:0.6rem; align-items:baseline; }
+.job-row-line2 { display:block; margin-left:1rem; margin-top:0.1rem; color:var(--pico-muted-color); }
+.job-status, .cell-status { display:inline-block; padding:0.05rem 0.4rem; border-radius:0.2rem; font-size:0.75rem; line-height:1.4; background:var(--pico-muted-border-color); color:var(--pico-color); text-transform:uppercase; letter-spacing:0.03em; }
+.status-running   { background:#3b82f6; color:#fff; }
+.status-completed { background:#22c55e; color:#fff; }
+.status-failed    { background:var(--pico-del-color); color:#fff; }
+.status-canceled, .status-skipped { background:var(--pico-muted-color); color:#fff; }
+.status-pending   { background:transparent; border:1px solid var(--pico-muted-border-color); color:var(--pico-muted-color); }
+.cell-failed-tag  { color:var(--pico-del-color); font-size:0.75rem; }
+.job-progress     { font-size:0.8rem; color:var(--pico-muted-color); }
+.job-detail-slot  { padding:0.5rem 0 0; }
+.job-meta, .job-desc { font-size:0.75rem; }
+</style>
+
+<article id="jobs-section">
+    <header>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span>Benchmark Jobs</span>
+            <span style="display:flex;gap:0.5rem;">
+                <button type="button" class="outline secondary"
+                        style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
+                        onclick="document.getElementById('bench-help').showModal();">?</button>
+                <button type="button" class="outline secondary"
+                        style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
+                        onclick="openJobForm()">+ New Batch Job</button>
+            </span>
+        </div>
+    </header>
+    <div id="job-list"
+         hx-get="/api/benchmark-jobs"
+         hx-trigger="load, jobChanged from:body"
+         hx-swap="innerHTML">
+        Loading…
+    </div>
+</article>
+
+<dialog id="job-form-modal" style="max-width:720px;">
+    <article>
+        <header>
+            <button type="button" aria-label="Close" rel="prev" onclick="closeJobForm();"></button>
+            New Batch Job
+        </header>
+        <div id="job-form-slot">Loading…</div>
+    </article>
+</dialog>
+
 <div id="benchmark-form"
      hx-get="/api/benchmarks/form"
      hx-trigger="load"
@@ -162,6 +214,112 @@ function filterBenchmarks(q) {
         var name = tb.dataset.model || '';
         tb.style.display = (tb._matches && !collapsed[name]) ? '' : 'none';
     });
+}
+
+// --- Job form modal ---
+function openJobForm() {
+    var modal = document.getElementById('job-form-modal');
+    var slot = document.getElementById('job-form-slot');
+    slot.innerHTML = 'Loading…';
+    fetch('/api/benchmark-jobs/form', {headers:{'HX-Request':'true'}})
+        .then(function(r){return r.text();})
+        .then(function(html){
+            slot.innerHTML = html;
+            htmx.process(slot);
+            updateMatrixCount();
+        });
+    modal.showModal();
+}
+function closeJobForm() {
+    document.getElementById('job-form-modal').close();
+}
+function updateMatrixCount() {
+    var form = document.getElementById('new-job-form');
+    if (!form) return;
+    var m = form.querySelectorAll('input[name=model]:checked').length;
+    var b = form.querySelectorAll('input[name=build]:checked').length;
+    var p = form.querySelectorAll('input[name=preset]:checked').length;
+    var preview = document.getElementById('job-matrix-preview');
+    var btn = document.getElementById('job-submit-btn');
+    if (m && b && p) {
+        preview.textContent = m+' models × '+b+' builds × '+p+' presets = '+(m*b*p)+' cells';
+        btn.disabled = false;
+    } else {
+        preview.textContent = 'Select models, builds, and presets to compute the matrix size.';
+        btn.disabled = true;
+    }
+}
+function readOverrides(form) {
+    var ov = {};
+    var num = function(name){ var v=form.elements[name].value; return v===''?null:parseInt(v,10); };
+    var bool = function(name){ var v=form.elements[name].value; return v===''?null:(v==='true'); };
+    var str = function(name){ var v=form.elements[name].value; return v===''?null:v; };
+    if (num('ov_gpu_layers')!==null)       ov.gpu_layers = num('ov_gpu_layers');
+    if (num('ov_context_size')!==null)     ov.context_size = num('ov_context_size');
+    if (num('ov_threads')!==null)          ov.threads = num('ov_threads');
+    if (bool('ov_flash_attention')!==null) ov.flash_attention = bool('ov_flash_attention');
+    if (str('ov_kv_cache_quant')!==null)   ov.kv_cache_quant = str('ov_kv_cache_quant');
+    if (bool('ov_direct_io')!==null)       ov.direct_io = bool('ov_direct_io');
+    if (str('ov_gpu_assign')!==null)       ov.gpu_assign = str('ov_gpu_assign');
+    if (str('ov_tensor_split')!==null)     ov.tensor_split = str('ov_tensor_split');
+    if (str('ov_spec_type')!==null)        ov.spec_type = str('ov_spec_type');
+    return Object.keys(ov).length ? ov : null;
+}
+function submitNewJob() {
+    var form = document.getElementById('new-job-form');
+    var err = document.getElementById('job-form-error');
+    err.style.display = 'none';
+    var picked = function(name){ return Array.from(form.querySelectorAll('input[name='+name+']:checked')).map(function(c){return c.value;}); };
+    var payload = {
+        name: form.elements.name.value.trim(),
+        description: form.elements.description.value.trim(),
+        model_ids: picked('model'),
+        build_ids: picked('build'),
+        presets: picked('preset'),
+        overrides: readOverrides(form),
+    };
+    fetch('/api/benchmark-jobs', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)})
+        .then(function(r){
+            if (r.status === 201) {
+                closeJobForm();
+                document.body.dispatchEvent(new CustomEvent('jobChanged'));
+                return;
+            }
+            return r.text().then(function(t){ throw new Error('HTTP '+r.status+': '+t); });
+        })
+        .catch(function(e){ err.textContent = e.message; err.style.display = ''; });
+}
+
+// --- Job actions ---
+function cancelJob(id) {
+    if (!confirm('Cancel job '+id+'?')) return;
+    fetch('/api/benchmark-jobs/'+id+'/cancel', {method:'POST'}).then(function(){
+        document.body.dispatchEvent(new CustomEvent('jobChanged'));
+    });
+}
+function retryFailed(id) {
+    fetch('/api/benchmark-jobs/'+id+'/retry-failed', {method:'POST'}).then(function(r){
+        if (!r.ok) { return r.text().then(function(t){alert(t);}); }
+        document.body.dispatchEvent(new CustomEvent('jobChanged'));
+    });
+}
+function deleteJob(id, disposition) {
+    var msg = disposition==='cascade' ? 'Delete job '+id+' AND its runs?' : 'Delete job '+id+' but keep runs (move to Ad-Hoc)?';
+    if (!confirm(msg)) return;
+    fetch('/api/benchmark-jobs/'+id+'?runs='+disposition, {method:'DELETE'}).then(function(r){
+        if (!r.ok) { return r.text().then(function(t){alert(t);}); }
+        document.body.dispatchEvent(new CustomEvent('jobChanged'));
+        document.body.dispatchEvent(new CustomEvent('benchmarkChanged'));
+    });
+}
+function compareSelectedCells(btn) {
+    var checks = btn.closest('.job-detail').querySelectorAll('.cell-check:checked');
+    if (checks.length < 2) { alert('Select at least 2 cells to compare.'); return; }
+    var ids = Array.from(checks).map(function(c){return c.value;}).join(',');
+    var view = document.getElementById('comparison-view');
+    fetch('/api/benchmarks/compare?ids='+ids, {headers:{'HX-Request':'true'}})
+        .then(function(r){return r.text();})
+        .then(function(h){ view.innerHTML = h; view.scrollIntoView({behavior:'smooth'}); });
 }
 
 (function() {

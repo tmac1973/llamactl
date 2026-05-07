@@ -12,11 +12,63 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/tmlabonte/llamactl/internal/benchmark"
+	"github.com/tmlabonte/llamactl/internal/models"
 )
 
-// handleListJobs returns all benchmark jobs as JSON.
+// handleListJobs returns all benchmark jobs.
 func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, s.bench.ListJobs())
+	jobs := s.bench.ListJobs()
+	if isHTMX(r) {
+		respondHTML(w)
+		s.renderJobList(w, jobs)
+		return
+	}
+	respondJSON(w, jobs)
+}
+
+// renderJobList renders the collapsible jobs list partial. Each job row
+// shows status + cell-progress; expanding fetches the detail partial via
+// HTMX so the matrix view doesn't render on every list refresh.
+func (s *Server) renderJobList(w http.ResponseWriter, jobs []benchmark.BenchmarkJob) {
+	enriched := make([]jobListEntry, 0, len(jobs))
+	for _, j := range jobs {
+		j := j
+		var done, failed, total int
+		for _, c := range j.Cells {
+			total++
+			switch c.Status {
+			case benchmark.CellStatusCompleted:
+				done++
+			case benchmark.CellStatusFailed:
+				failed++
+			}
+		}
+		enriched = append(enriched, jobListEntry{
+			Job:       &j,
+			Done:      done,
+			Failed:    failed,
+			Total:     total,
+			AdhocRuns: 0,
+		})
+	}
+	if len(enriched) > 0 {
+		// The synthetic adhoc job carries no Cells, so its progress
+		// column should show the total run count instead.
+		for i := range enriched {
+			if enriched[i].Job.ID == benchmark.AdhocJobID {
+				enriched[i].AdhocRuns = len(s.bench.RunsForJob(benchmark.AdhocJobID))
+			}
+		}
+	}
+	s.renderPartial(w, "job_list", enriched)
+}
+
+type jobListEntry struct {
+	Job       *benchmark.BenchmarkJob
+	Done      int
+	Failed    int
+	Total     int
+	AdhocRuns int
 }
 
 // jobCreateRequest is the JSON body POST /api/benchmark-jobs accepts.
@@ -75,12 +127,101 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 
 // handleGetJob returns one job (with its cells).
 func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
-	job, err := s.bench.GetJob(chi.URLParam(r, "id"))
+	id := chi.URLParam(r, "id")
+	job, err := s.bench.GetJob(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	if isHTMX(r) {
+		respondHTML(w)
+		// The synthetic adhoc job has no cell matrix — render the
+		// existing flat run list instead so legacy + quick-bench runs
+		// stay visible.
+		if job.ID == benchmark.AdhocJobID {
+			s.renderBenchmarkList(w, s.bench.RunsForJob(benchmark.AdhocJobID))
+			return
+		}
+		s.renderJobDetail(w, job)
+		return
+	}
 	respondJSON(w, job)
+}
+
+// renderJobDetail enriches a job's cells with their linked run summary
+// before rendering, so the matrix view can show TG t/s without a second
+// round-trip per cell.
+func (s *Server) renderJobDetail(w http.ResponseWriter, job *benchmark.BenchmarkJob) {
+	type cellRow struct {
+		Cell      benchmark.JobCell
+		ModelName string
+		BuildLbl  string
+		TGTPS     string // formatted, "—" when no summary
+		PPTPS     string
+		ErrorShort string
+	}
+	rows := make([]cellRow, 0, len(job.Cells))
+	for _, c := range job.Cells {
+		row := cellRow{Cell: c, ModelName: shortenModelName(c.ModelID), BuildLbl: c.BuildID, TGTPS: "—", PPTPS: "—"}
+		if c.BenchmarkRunID != "" {
+			if run, err := s.bench.Get(c.BenchmarkRunID); err == nil {
+				if run.ModelName != "" {
+					row.ModelName = run.ModelName
+				}
+				if run.BuildID != "" {
+					row.BuildLbl = run.BuildID
+				}
+				if run.Summary != nil {
+					row.TGTPS = fmt.Sprintf("%.1f", run.Summary.AvgGenTokPerSec)
+					row.PPTPS = fmt.Sprintf("%.0f", run.Summary.AvgPromptTokPerSec)
+				}
+			}
+		}
+		if c.Error != "" {
+			row.ErrorShort = c.Error
+			if len(row.ErrorShort) > 80 {
+				row.ErrorShort = row.ErrorShort[:80] + "…"
+			}
+		}
+		rows = append(rows, row)
+	}
+	s.renderPartial(w, "job_detail", struct {
+		Job  *benchmark.BenchmarkJob
+		Rows []cellRow
+	}{Job: job, Rows: rows})
+}
+
+// handleJobForm renders the new-job modal contents (multi-select models,
+// builds, presets, optional overrides, live cell-count preview).
+func (s *Server) handleJobForm(w http.ResponseWriter, r *http.Request) {
+	respondHTML(w)
+	var enabled []*models.Model
+	for _, m := range s.registry.List() {
+		if cfg, err := s.registry.GetConfig(m.ID); err == nil && cfg.Enabled {
+			enabled = append(enabled, m)
+		}
+	}
+	type buildOpt struct {
+		ID, Profile, GitRef, Tag string
+	}
+	var builds []buildOpt
+	for _, b := range s.builder.List() {
+		if b.Status != "success" {
+			continue
+		}
+		builds = append(builds, buildOpt{ID: b.ID, Profile: b.Profile, GitRef: b.GitRef, Tag: b.Tag})
+	}
+	s.renderPartial(w, "job_form", struct {
+		Models  []*models.Model
+		Builds  []buildOpt
+		Presets []benchmark.Preset
+		Running bool
+	}{
+		Models:  enabled,
+		Builds:  builds,
+		Presets: benchmark.Presets(),
+		Running: s.process.IsRunning(),
+	})
 }
 
 // handleDeleteJob removes a job. The runs query param controls what
