@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -38,10 +37,8 @@ type Server struct {
 	registry        *models.Registry
 	process         *process.Manager
 	monitor         *monitor.Monitor
-	bench           *benchmark.Store
-	jobs            *benchmark.JobQueue
-	benchProgress   map[string]chan benchmark.ProgressUpdate
-	benchProgressMu sync.RWMutex
+	bench *benchmark.Store
+	jobs  *benchmark.JobQueue
 	dirtyModels     map[string]bool // models whose config changed since last load
 }
 
@@ -66,7 +63,6 @@ func NewServer(cfg *config.Config, configPath string) *Server {
 		process:       process.NewManager(),
 		monitor:       mon,
 		bench:         benchmark.NewStore(cfg.DataDir, builderResolver(bld)),
-		benchProgress: make(map[string]chan benchmark.ProgressUpdate),
 		dirtyModels:   make(map[string]bool),
 	}
 	s.jobs = benchmark.NewJobQueue(s.bench, newJobEnv(s))
@@ -278,7 +274,6 @@ func (s *Server) buildRouter() chi.Router {
 			r.Delete("/batch-delete", s.handleBatchDeleteBenchmarks)
 			r.Get("/{id}", s.handleGetBenchmark)
 			r.Delete("/{id}", s.handleDeleteBenchmark)
-			r.Get("/{id}/progress", s.handleBenchmarkProgress)
 		})
 		r.Get("/timings", s.handleTimings)
 		r.Get("/timings/{model_id}", s.handleTimings)

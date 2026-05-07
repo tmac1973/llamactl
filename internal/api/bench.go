@@ -1,7 +1,7 @@
 package api
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"html"
 	"log/slog"
@@ -229,7 +229,10 @@ func (s *Server) handleGetBenchmark(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, run)
 }
 
-// handleStartBenchmark starts a new benchmark run.
+// handleStartBenchmark is the Quick Benchmark entry point: it builds a
+// 1-cell job from a (model, preset) pair and submits it to the JobQueue,
+// using the currently-active build. Equivalent to the new-job form with
+// {ModelIDs:[modelID], BuildIDs:[active], Presets:[preset]}.
 func (s *Server) handleStartBenchmark(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	modelID := r.FormValue("model_id")
@@ -245,126 +248,58 @@ func (s *Server) handleStartBenchmark(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	cfg, err := s.registry.GetConfig(modelID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
 
 	if !s.process.IsRunning() {
 		http.Error(w, "router is not running — start the server first", http.StatusBadRequest)
 		return
 	}
 
-	preset := benchmark.GetPreset(presetName)
-	metrics := s.monitor.Current()
-
-	// Find active build info. Explicit selection wins; otherwise fall back
-	// to the successful build with the newest GitRef.
-	var activeBuild builder.BuildResult
-	if s.cfg.ActiveBuild != "" {
-		for _, b := range s.builder.List() {
-			if b.ID == s.cfg.ActiveBuild && b.Status == builder.BuildStatusSuccess {
-				activeBuild = b
-				break
-			}
-		}
-	}
-	if activeBuild.ID == "" {
+	// Resolve active build the same way startRouter does.
+	buildID := s.cfg.ActiveBuild
+	if buildID == "" {
 		if b := s.builder.LatestSuccessfulBuild(); b != nil {
-			activeBuild = *b
+			buildID = b.ID
 		}
 	}
-
-	// Short model name for display
-	modelName := model.ModelID
-	if idx := strings.LastIndex(modelName, "/"); idx >= 0 {
-		modelName = modelName[idx+1:]
-	}
-	modelName = strings.TrimSuffix(modelName, "-GGUF")
-	modelName = strings.TrimSuffix(modelName, "-gguf")
-
-	run := benchmark.BenchmarkRun{
-		ID:        fmt.Sprintf("bench-%d", time.Now().UnixMilli()),
-		CreatedAt: time.Now(),
-		Status:    benchmark.StatusRunning,
-
-		ModelID:   modelID,
-		ModelName: modelName,
-		Quant:     model.Quant,
-		SizeGB:    models.BytesToGB(model.SizeBytes),
-
-		Config: benchmark.ConfigSnapshot{
-			GPULayers:      cfg.GPULayers,
-			ContextSize:    cfg.ContextSize,
-			GPUAssign:      cfg.GPUAssign,
-			TensorSplit:    cfg.TensorSplit,
-			FlashAttention: cfg.FlashAttention,
-			KVCacheQuant:   cfg.KVCacheQuant,
-			DirectIO:       cfg.DirectIO,
-			Threads:        cfg.Threads,
-			SpecType:       cfg.SpecType,
-		},
-
-		BuildID:      activeBuild.ID,
-		BuildRef:     activeBuild.GitRef,
-		BuildProfile: activeBuild.Profile,
-		Build: benchmark.BuildSnapshot{
-			ID:         activeBuild.ID,
-			Tag:        activeBuild.Tag,
-			Profile:    activeBuild.Profile,
-			Vendor:     activeBuild.Profile,
-			GitSHA:     activeBuild.GitSHA,
-			GitRef:     activeBuild.GitRef,
-			CMakeFlags: activeBuild.CMakeFlags,
-			BinaryPath: activeBuild.BinaryPath,
-		},
-
-		GPUs: benchmark.GPUSnapshotsFromMetrics(metrics),
-
-		Preset:       preset.Name,
-		PromptTokens: preset.PromptTokens,
-		GenTokens:    preset.GenTokens,
-	}
-
-	s.bench.Save(run)
-
-	// Build runner config
-	routerName := s.registry.RouterName(modelID)
-	runCfg := benchmark.RunConfig{
-		Run:        run,
-		Preset:     preset,
-		RouterURL:  fmt.Sprintf("http://localhost:%d", s.cfg.LlamaPort),
-		RouterName: routerName,
-		HFRepoID:   model.ModelID,
-	}
-
-	// Start benchmark in background
-	progressCh := make(chan benchmark.ProgressUpdate, 16)
-	s.benchProgressMu.Lock()
-	s.benchProgress[run.ID] = progressCh
-	s.benchProgressMu.Unlock()
-
-	runner := benchmark.NewRunner(s.bench)
-	go func() {
-		runner.Run(context.Background(), runCfg, progressCh)
-		// Clean up progress channel after completion
-		s.benchProgressMu.Lock()
-		delete(s.benchProgress, run.ID)
-		s.benchProgressMu.Unlock()
-	}()
-
-	if isHTMX(r) {
-		respondHTML(w)
-		// Return just the initial text content. The HX-Trigger-After-Swap
-		// header tells the page JS to start polling.
-		w.Header().Set("HX-Trigger-After-Swap", fmt.Sprintf(
-			`{"benchmarkStarted":{"id":%q}}`, run.ID))
-		fmt.Fprint(w, "&#x23F3; Benchmark starting...")
+	if buildID == "" {
+		http.Error(w, "no compiled build available — build llama.cpp first", http.StatusBadRequest)
 		return
 	}
 
-	respondJSON(w, run)
+	preset := benchmark.GetPreset(presetName)
+
+	jobName := fmt.Sprintf("Quick: %s / %s", shortenModelName(model.ModelID), preset.Name)
+	job := benchmark.BenchmarkJob{
+		ID:        newJobID(),
+		Name:      jobName,
+		Kind:      benchmark.JobKindBatch,
+		Status:    benchmark.JobStatusPending,
+		CreatedAt: time.Now(),
+		ModelIDs:  []string{modelID},
+		BuildIDs:  []string{buildID},
+		Presets:   []string{preset.Name},
+		Cells:     benchmark.ExpandCells([]string{modelID}, []string{buildID}, []string{preset.Name}),
+	}
+
+	if err := s.jobs.Submit(job); err != nil {
+		if errors.Is(err, benchmark.ErrJobAlreadyRunning) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if isHTMX(r) {
+		respondHTML(w)
+		// Tell the jobs list to refresh so the user sees the new job
+		// appear; the response body itself is just a brief confirmation.
+		w.Header().Set("HX-Trigger", "jobChanged")
+		fmt.Fprintf(w, `<small style="color:var(--pico-muted-color);">Started: %s</small>`, html.EscapeString(jobName))
+		return
+	}
+
+	respondJSON(w, job)
 }
 
 // handleDeleteBenchmark removes a benchmark run.
@@ -473,31 +408,6 @@ func (s *Server) handleExportBenchmarks(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-// handleBenchmarkProgress returns the current state of a running benchmark.
-// Called by HTMX polling from the progress partial.
-func (s *Server) handleBenchmarkProgress(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-
-	run, err := s.bench.Get(id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	if isHTMX(r) {
-		respondHTML(w)
-		s.renderPartial(w, "benchmark_progress", struct {
-			ID     string
-			Status string
-			Detail string
-			Error  string
-		}{ID: run.ID, Status: run.Status, Detail: run.ProgressDetail, Error: run.Error})
-		return
-	}
-
-	respondJSON(w, run)
-}
-
 // handleCompareBenchmarks returns comparison data for selected runs.
 func (s *Server) handleCompareBenchmarks(w http.ResponseWriter, r *http.Request) {
 	idsParam := r.URL.Query().Get("ids")
@@ -560,31 +470,15 @@ func (s *Server) handleBenchmarkForm(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// If a benchmark is currently running, surface its ID so the page
-	// can reattach the progress UI when the user navigates back to
-	// this tab. The runner uses the most-recent run, so pick the
-	// newest by CreatedAt.
-	var activeID string
-	var activeAt time.Time
-	for _, run := range s.bench.List() {
-		if run.Status == benchmark.StatusRunning && run.CreatedAt.After(activeAt) {
-			activeID = run.ID
-			activeAt = run.CreatedAt
-		}
-	}
-
-	data := struct {
-		Models   []*models.Model
-		Presets  []benchmark.Preset
-		Running  bool
-		ActiveID string
+	s.renderPartial(w, "benchmark_form", struct {
+		Models  []*models.Model
+		Presets []benchmark.Preset
+		Running bool
 	}{
-		Models:   enabledModels,
-		Presets:  benchmark.Presets(),
-		Running:  s.process.IsRunning(),
-		ActiveID: activeID,
-	}
-	s.renderPartial(w, "benchmark_form", data)
+		Models:  enabledModels,
+		Presets: benchmark.Presets(),
+		Running: s.process.IsRunning(),
+	})
 }
 
 // captureTimings is called by the proxy to record passive timing data.

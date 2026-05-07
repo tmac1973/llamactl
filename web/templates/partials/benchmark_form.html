@@ -1,12 +1,13 @@
 {{define "benchmark_form"}}
 <article>
-    <header>Run Benchmark</header>
+    <header>Quick Benchmark <small style="color:var(--pico-muted-color);">(creates a 1-cell job using the active build)</small></header>
     {{if not .Running}}
     <p>Start the server before running benchmarks.</p>
     {{else}}
     <form hx-post="/api/benchmarks"
-          hx-target="#benchmark-progress"
-          hx-swap="innerHTML">
+          hx-target="#quick-bench-result"
+          hx-swap="innerHTML"
+          hx-on::after-request="if(event.detail.successful) this.reset();">
         <div class="grid">
             <label title="Select an enabled model to benchmark. The model will be loaded automatically if not already in VRAM.">
                 Model
@@ -29,19 +30,11 @@
             </label>
             <label>
                 &nbsp;
-                <button type="submit" style="margin:0;white-space:nowrap;">Run Benchmark</button>
+                <button type="submit" style="margin:0;white-space:nowrap;">Run</button>
             </label>
         </div>
+        <div id="quick-bench-result" style="margin-top:0.25rem;"></div>
     </form>
     {{end}}
 </article>
-{{if .ActiveID}}
-<script>
-// A benchmark was already running when we loaded this tab. Reattach
-// the progress UI by firing the same event the form submit fires.
-document.body.dispatchEvent(new CustomEvent('benchmarkStarted', {
-    detail: {id: {{.ActiveID}}}
-}));
-</script>
-{{end}}
 {{end}}
