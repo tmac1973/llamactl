@@ -18,6 +18,13 @@ var ErrJobAlreadyRunning = errors.New("a benchmark job is already running")
 // benchmark package. The api layer implements it against the Server so
 // this package stays free of imports for builder / models / process.
 type JobEnv interface {
+	// CheckBuildRunnable returns nil if the build's binary can satisfy
+	// its dynamic-linker dependencies on this host, or an error
+	// describing what's missing. Lets the cell loop fail fast on stale
+	// builds (e.g. ROCm SONAME bumps that strand older llama-server
+	// binaries) instead of restarting the router and watching it crash.
+	CheckBuildRunnable(ctx context.Context, buildID string) error
+
 	// EnsureBuildActive switches the router to the build identified by
 	// buildID, restarting llama-server when the active build differs.
 	// Blocks until the router is reachable.
@@ -222,6 +229,9 @@ func (q *JobQueue) run(ctx context.Context, job BenchmarkJob, rj *runningJob) {
 // happened.
 func (q *JobQueue) runCell(ctx context.Context, job *BenchmarkJob, cell *JobCell, prevBuildID *string) error {
 	if cell.BuildID != *prevBuildID {
+		if err := q.env.CheckBuildRunnable(ctx, cell.BuildID); err != nil {
+			return fmt.Errorf("build %s not runnable on this host: %w", cell.BuildID, err)
+		}
 		if err := q.env.EnsureBuildActive(ctx, cell.BuildID); err != nil {
 			return fmt.Errorf("activate build %s: %w", cell.BuildID, err)
 		}

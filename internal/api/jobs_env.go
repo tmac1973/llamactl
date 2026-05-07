@@ -3,6 +3,10 @@ package api
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -19,6 +23,59 @@ type jobEnv struct {
 }
 
 func newJobEnv(s *Server) *jobEnv { return &jobEnv{s: s} }
+
+// CheckBuildRunnable parses `ldd` output to detect missing shared
+// libraries (e.g. a build linked against an older ROCm SONAME than the
+// one the host now ships). Linux only; on other OSes returns nil so the
+// runner falls through to EnsureBuildActive and any failure surfaces
+// from the router instead.
+func (e *jobEnv) CheckBuildRunnable(ctx context.Context, buildID string) error {
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+	var binary string
+	for _, b := range e.s.builder.List() {
+		if b.ID == buildID {
+			binary = b.BinaryPath
+			break
+		}
+	}
+	if binary == "" {
+		return fmt.Errorf("build %s not found", buildID)
+	}
+	cmd := exec.CommandContext(ctx, "ldd", binary)
+	// Mirror what process.Manager does at launch: prepend the binary's
+	// directory to LD_LIBRARY_PATH so co-located libs (libllama.so,
+	// libggml*.so, etc.) resolve. Without this every build false-flags
+	// as broken.
+	binDir := filepath.Dir(binary)
+	env := os.Environ()
+	prepended := false
+	for i, kv := range env {
+		if strings.HasPrefix(kv, "LD_LIBRARY_PATH=") {
+			env[i] = "LD_LIBRARY_PATH=" + binDir + string(os.PathListSeparator) + kv[len("LD_LIBRARY_PATH="):]
+			prepended = true
+			break
+		}
+	}
+	if !prepended {
+		env = append(env, "LD_LIBRARY_PATH="+binDir)
+	}
+	cmd.Env = env
+	// ldd returns non-zero when there are unresolved libs but still
+	// prints them, so we deliberately ignore exit code and parse output.
+	out, _ := cmd.Output()
+	var missing []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.Contains(line, "=> not found") {
+			missing = append(missing, strings.TrimSpace(line))
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("missing shared libraries: %s — was the build compiled against a different version of the runtime libs (e.g. ROCm SONAME bump)? rebuild llama.cpp on this host", strings.Join(missing, "; "))
+	}
+	return nil
+}
 
 // EnsureBuildActive switches the router to buildID if it isn't already,
 // waiting up to 2 minutes for /health to pass.

@@ -1,6 +1,11 @@
 {{define "job_detail"}}
 {{$j := .Job}}
-<div class="job-detail">
+<div class="job-detail"
+     {{if eq $j.Status "running"}}
+     hx-get="/api/benchmark-jobs/{{$j.ID}}"
+     hx-trigger="every 2s"
+     hx-swap="outerHTML"
+     {{end}}>
     {{if $j.Overrides}}
     <small><strong>Overrides applied:</strong>
         {{with $j.Overrides}}
