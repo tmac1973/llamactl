@@ -234,14 +234,15 @@ function filterBenchmarks(q) {
         var t = e.detail && e.detail.target;
         if (t && t.id === 'job-list') {
             t.querySelectorAll('details.job-row').forEach(function(d) {
-                if (openSet.has(d.dataset.jobId)) {
-                    d.open = true;
-                    if (!d.dataset.loaded) {
-                        d.dataset.loaded = '1';
-                        var slot = d.querySelector('.job-detail-slot');
-                        if (slot) htmx.trigger(slot, 'showJobDetail');
-                    }
-                }
+                if (!openSet.has(d.dataset.jobId)) return;
+                d.open = true;
+                d.dataset.loaded = '1';
+                var slot = d.querySelector('.job-detail-slot');
+                if (!slot) return;
+                // Don't rely on the brand-new slot having its hx-trigger
+                // wired up yet — fetch directly via the URL on the slot.
+                var url = slot.getAttribute('hx-get');
+                if (url) htmx.ajax('GET', url, {target: slot, swap: 'innerHTML'});
             });
         }
     });
