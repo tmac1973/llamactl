@@ -26,6 +26,13 @@ COMPOSE_CMD=""          # "docker compose" or "podman-compose" or "podman compos
 CONTAINER_VERSION=""
 COMPOSE_VERSION=""
 
+# Tracks whether the user explicitly picked a mode this run (via --host /
+# --container / --cuda / etc. or the INSTALL_MODE env var). Stateful
+# commands (up/down/logs) auto-detect from disk only when the user did NOT
+# pick — otherwise the explicit choice wins. Set BEFORE the default so an
+# inherited INSTALL_MODE env var still counts as explicit.
+INSTALL_MODE_EXPLICIT="${INSTALL_MODE:+true}"
+INSTALL_MODE_EXPLICIT="${INSTALL_MODE_EXPLICIT:-false}"
 INSTALL_MODE="${INSTALL_MODE:-container}"  # host or container; default container preserves existing behavior
 HOST_INSTALL_MODE="${HOST_INSTALL_MODE:-package}"  # for --host: "package" (download released .deb/.rpm) or "source" (go build locally)
 HOST_SDK_BACKENDS=()    # backends to install host SDKs for (--cuda/--rocm/--vulkan); empty means autodetect+prompt
@@ -1336,6 +1343,36 @@ source "${SCRIPT_DIR}/scripts/lib/host.sh"
 # shellcheck source=scripts/lib/migrate.sh
 source "${SCRIPT_DIR}/scripts/lib/migrate.sh"
 
+# Detect which install modes are present on this machine. Echoes one of:
+#   host       — only a host install (binary on disk + systemd unit)
+#   container  — only a container install (named llama-toolchest exists)
+#   both       — both are present (e.g. mid-migration); caller must disambiguate
+#   none       — nothing installed
+# Used by up/down/logs/status to route to the right backend without forcing
+# the user to remember which install they have.
+detect_install_mode() {
+    local has_host=false has_container=false
+    host_is_installed && has_host=true
+
+    # Container detection needs $CONTAINER_CMD; populate it if not set yet.
+    if [[ -z "${CONTAINER_CMD:-}" ]]; then
+        detect_container_runtime 2>/dev/null || true
+    fi
+    if [[ -n "${CONTAINER_CMD:-}" ]] && container_exists llama-toolchest; then
+        has_container=true
+    fi
+
+    if [[ "$has_host" == true && "$has_container" == true ]]; then
+        echo "both"
+    elif [[ "$has_host" == true ]]; then
+        echo "host"
+    elif [[ "$has_container" == true ]]; then
+        echo "container"
+    else
+        echo "none"
+    fi
+}
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 usage() {
@@ -1390,12 +1427,12 @@ Lifecycle:
               Use this when you've changed the Dockerfile or want to
               refresh the GPU SDK layers as well.
 
-Runtime (container only):
-  up          Start a stopped container
-  down        Stop the container
-  logs        Follow container logs (Ctrl-C to stop)
+Runtime (works for both host and container installs — auto-detected):
+  up          Start a stopped install (container or host service)
+  down        Stop a running install
+  logs        Follow logs (Ctrl-C to stop)
 
-Auto-start (container only):
+Auto-start (container only — for host installs use systemctl directly):
   enable      Enable auto-start on boot
   disable     Disable auto-start on boot
 
@@ -1452,17 +1489,17 @@ main() {
     # ── Parse flags after the command ──
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --host)         INSTALL_MODE="host" ;;
-            --container)    INSTALL_MODE="container" ;;
-            --from-source)  INSTALL_MODE="host"; HOST_INSTALL_MODE="source" ;;
-            --from-package) INSTALL_MODE="host"; HOST_INSTALL_MODE="package" ;;
+            --host)         INSTALL_MODE="host"; INSTALL_MODE_EXPLICIT=true ;;
+            --container)    INSTALL_MODE="container"; INSTALL_MODE_EXPLICIT=true ;;
+            --from-source)  INSTALL_MODE="host"; HOST_INSTALL_MODE="source"; INSTALL_MODE_EXPLICIT=true ;;
+            --from-package) INSTALL_MODE="host"; HOST_INSTALL_MODE="package"; INSTALL_MODE_EXPLICIT=true ;;
             # Backend flags are additive and host-mode-only (vulkan can't run
             # in containers without driver passthrough we don't manage; for
             # consistency cuda/rocm flags also imply --host). Stack them:
             # `./setup.sh install --rocm --vulkan` installs both SDKs.
-            --cuda)         INSTALL_MODE="host"; HOST_SDK_BACKENDS+=("cuda") ;;
-            --rocm)         INSTALL_MODE="host"; HOST_SDK_BACKENDS+=("rocm") ;;
-            --vulkan)       INSTALL_MODE="host"; HOST_SDK_BACKENDS+=("vulkan") ;;
+            --cuda)         INSTALL_MODE="host"; INSTALL_MODE_EXPLICIT=true; HOST_SDK_BACKENDS+=("cuda") ;;
+            --rocm)         INSTALL_MODE="host"; INSTALL_MODE_EXPLICIT=true; HOST_SDK_BACKENDS+=("rocm") ;;
+            --vulkan)       INSTALL_MODE="host"; INSTALL_MODE_EXPLICIT=true; HOST_SDK_BACKENDS+=("vulkan") ;;
             # Direction flags for the `migrate` command. Mutually exclusive
             # — passing both is an error. Each implies its target mode for
             # the purpose of post-flag dispatch.
@@ -1503,6 +1540,32 @@ main() {
             exit 1
             ;;
     esac
+
+    # ── Auto-route stateful commands by detecting which install is present ──
+    # up/down/logs are mode-agnostic from the user's POV: they want to start,
+    # stop, or tail logs for "the install that's there." Detect it instead of
+    # forcing the user to remember --host vs --container. install/migrate/etc.
+    # set up new state and don't auto-route.
+    if [[ "$INSTALL_MODE_EXPLICIT" != "true" ]]; then
+        case "$command" in
+            up|down|logs)
+                local detected
+                detected="$(detect_install_mode)"
+                case "$detected" in
+                    host)      INSTALL_MODE="host" ;;
+                    container) INSTALL_MODE="container" ;;
+                    both)
+                        err "Both host and container installs detected — pass --host or --container to disambiguate."
+                        exit 1
+                        ;;
+                    none)
+                        err "No llama-toolchest install detected. Run './setup.sh install' first."
+                        exit 1
+                        ;;
+                esac
+                ;;
+        esac
+    fi
 
     # ── migrate: hybrid command, needs both container and host context ──
     if [[ "$command" == "migrate" ]]; then
@@ -1593,15 +1656,16 @@ main() {
             status)    host_status ;;
             deps)      host_deps ;;
             detect)    echo "$GPU_VENDOR" ;;
-            up|down|logs|enable|disable|rebuild|quick)
+            up)        host_up ;;
+            down)      host_down ;;
+            logs)      host_logs ;;
+            enable|disable|rebuild|quick)
                 err "'$command' is not supported in --host mode."
-                log "For host installs, manage the service via systemd directly:"
+                log "For host installs, manage autostart via systemd directly:"
                 if [[ "$(host_scope 2>/dev/null)" == "system" ]]; then
-                    echo "    sudo systemctl start|stop|status|enable|disable llama-toolchest"
-                    echo "    sudo journalctl -u llama-toolchest -f      # logs"
+                    echo "    sudo systemctl enable|disable llama-toolchest"
                 else
-                    echo "    systemctl --user start|stop|status|enable|disable llama-toolchest"
-                    echo "    journalctl --user -u llama-toolchest -f    # logs"
+                    echo "    systemctl --user enable|disable llama-toolchest"
                 fi
                 exit 1
                 ;;

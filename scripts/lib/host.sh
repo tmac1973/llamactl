@@ -24,6 +24,10 @@
 #   host_install
 #   host_uninstall
 #   host_status
+#   host_is_installed
+#   host_up
+#   host_down
+#   host_logs
 
 host_scope() {
     if [[ $EUID -eq 0 ]]; then
@@ -88,6 +92,40 @@ host_check_build_toolchain() {
     return 0
 }
 
+# Locate a side-by-side g++ that nvcc will accept as host compiler. The
+# default system g++ on modern distros (gcc 16 on Fedora 44) outpaces what
+# CUDA's host_config.h will allow, so the builder explicitly hands nvcc a
+# compat compiler when one is installed. Echoes the absolute path on
+# success (returns 0); silent on miss (returns 1).
+host_find_cuda_host_compiler() {
+    for c in /usr/bin/g++-15 /usr/bin/g++-14 /usr/bin/g++-13 /usr/bin/g++-12; do
+        if [[ -x "$c" ]]; then
+            echo "$c"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Locate nvcc, looking past PATH. NVIDIA's official RPM/DEB installs it
+# under /usr/local/cuda/bin without touching PATH, so a plain `command -v`
+# misses it. Echoes the absolute path if found and returns 0; otherwise
+# returns 1 with no output. Used by both the SDK-presence check and the
+# builder PATH augmentation guidance.
+host_find_nvcc() {
+    if command -v nvcc >/dev/null 2>&1; then
+        command -v nvcc
+        return 0
+    fi
+    for candidate in /usr/local/cuda/bin/nvcc /opt/cuda/bin/nvcc; do
+        if [[ -x "$candidate" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # Map a GPU backend to the package list needed for llama.cpp to compile
 # against it on this distro family. Echoes a space-separated list (empty
 # if everything is already present, or if we don't know how to detect
@@ -117,9 +155,41 @@ host_missing_gpu_sdk_packages() {
             esac
             ;;
         cuda)
-            # Detect by binary presence — CUDA toolkit ships nvcc; if it's
-            # on PATH we have what we need to compile.
-            command -v nvcc >/dev/null 2>&1 || need+=("cuda-toolkit")
+            # Detect by binary presence — CUDA toolkit ships nvcc. NVIDIA's
+            # RPM/DEB drops it under /usr/local/cuda/bin (not on PATH);
+            # Fedora's RPMFusion cuda-devel and Arch's cuda put it on PATH.
+            # Treat any of these as "installed" so we don't try to dnf-install
+            # a package that's already there.
+            host_find_nvcc >/dev/null || need+=("cuda-toolkit")
+            # nvcc rejects host compilers newer than its supported ceiling
+            # (e.g. CUDA 12.x refuses gcc 16). Pull in a side-by-side gcc
+            # the builder can hand to cmake via CMAKE_CUDA_HOST_COMPILER.
+            # Names differ per distro — and on Fedora, the version of the
+            # compat package shifts each release (Fedora 44 ships gcc15
+            # only; older releases shipped gcc13/gcc14). Pick the first one
+            # the distro actually offers.
+            case "$DISTRO_FAMILY" in
+                fedora)
+                    if ! host_find_cuda_host_compiler >/dev/null 2>&1; then
+                        for pkg in gcc15-c++ gcc14-c++ gcc13-c++; do
+                            if dnf info "$pkg" >/dev/null 2>&1; then
+                                need+=("$pkg")
+                                break
+                            fi
+                        done
+                    fi
+                    ;;
+                debian)
+                    if ! host_find_cuda_host_compiler >/dev/null 2>&1; then
+                        for pkg in g++-13 g++-12 g++-14; do
+                            if apt-cache show "$pkg" >/dev/null 2>&1; then
+                                need+=("$pkg")
+                                break
+                            fi
+                        done
+                    fi
+                    ;;
+            esac
             ;;
         vulkan)
             # llama.cpp's Vulkan backend pulls in the Vulkan loader/headers
@@ -159,6 +229,76 @@ host_missing_gpu_sdk_packages() {
     echo "${need[*]}"
 }
 
+# Ensure NVIDIA's CUDA dnf repository is configured. The base Fedora repos
+# don't carry cuda-toolkit, so without this `dnf install cuda-toolkit` only
+# works if the user manually downloaded an RPM (which is how stale 12.6
+# installs end up locked to a release that doesn't support newer GPUs).
+# NVIDIA publishes a per-Fedora-version repo file; we probe the running
+# version first, then walk back through known-good releases. No-op if a
+# cuda-fedora*.repo is already present.
+host_install_nvidia_cuda_repo_fedora() {
+    if compgen -G "/etc/yum.repos.d/cuda-fedora*.repo" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    local current_ver
+    current_ver="$(rpm -E %fedora 2>/dev/null || echo 41)"
+
+    log "NVIDIA CUDA dnf repository is not configured."
+    if ! prompt_confirm "Add it now? (needed to install or upgrade cuda-toolkit on Fedora)"; then
+        warn "Skipped — cuda-toolkit install will likely fail without this repo."
+        return 1
+    fi
+
+    local versions=("$current_ver")
+    # Walk back through Fedora releases NVIDIA has historically published.
+    # Newer releases are tried first; the first reachable one wins.
+    for v in 44 43 42 41; do
+        [[ "$v" == "$current_ver" ]] && continue
+        versions+=("$v")
+    done
+
+    local repo_url
+    for ver in "${versions[@]}"; do
+        repo_url="https://developer.download.nvidia.com/compute/cuda/repos/fedora${ver}/x86_64/cuda-fedora${ver}.repo"
+        log "Probing $repo_url"
+        if curl -fsI "$repo_url" >/dev/null 2>&1; then
+            curl -fsSL "$repo_url" | run_sudo tee "/etc/yum.repos.d/cuda-fedora${ver}.repo" >/dev/null || return 1
+            ok "NVIDIA CUDA repository configured (fedora${ver})"
+            return 0
+        fi
+    done
+    warn "Couldn't reach NVIDIA's CUDA repo for any tested Fedora version."
+    log "Configure it manually from https://developer.nvidia.com/cuda-downloads and re-run."
+    return 1
+}
+
+# Parse the installed cuda-toolkit version. Echoes the major.minor (e.g.
+# "12.6") if a versioned cuda-toolkit package is installed; empty if
+# nothing's installed or if rpm isn't usable. Used to nudge users off
+# stale CUDA versions that don't support modern GPUs.
+host_installed_cuda_version() {
+    [[ "$DISTRO_FAMILY" == "fedora" ]] || return 0
+    rpm -qa 'cuda-toolkit-*-config-common' 2>/dev/null \
+        | sed -n 's/^cuda-toolkit-\([0-9]\+\)-\([0-9]\+\)-config-common.*/\1.\2/p' \
+        | sort -V | tail -n 1
+}
+
+# Detect the highest GPU compute capability via nvidia-smi. Echoes "X.Y"
+# (e.g. "12.0" for Blackwell / RTX 50xx) or empty if nvidia-smi isn't
+# available. Best-effort — we use it only to scale up warnings, never to
+# block an install.
+host_gpu_compute_cap() {
+    command -v nvidia-smi >/dev/null 2>&1 || return 0
+    nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null \
+        | sort -V | tail -n 1 | tr -d ' '
+}
+
+# Compare two dotted versions. Returns 0 (true) if $1 >= $2.
+host_version_ge() {
+    [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | tail -n 1)" == "$1" ]]
+}
+
 # Offer to install missing GPU SDK packages for the chosen backend.
 # Returns 0 if everything is in place (or user declined), 1 on install
 # failure. Distro-aware: fedora and debian get auto-install; others get
@@ -173,6 +313,8 @@ host_install_gpu_sdk() {
             cpu|metal) ;;
             *) ok "GPU SDK ($backend): all required packages installed" ;;
         esac
+        host_warn_cuda_offpath "$backend"
+        host_warn_cuda_version_for_gpu "$backend"
         return 0
     fi
 
@@ -181,6 +323,11 @@ host_install_gpu_sdk() {
 
     case "$DISTRO_FAMILY" in
         fedora)
+            # cuda-toolkit isn't in Fedora's base repos — make sure NVIDIA's
+            # is wired up before dnf goes hunting for it.
+            if [[ "$backend" == "cuda" ]] && [[ "$missing" == *cuda-toolkit* ]]; then
+                host_install_nvidia_cuda_repo_fedora || true
+            fi
             log "Run: sudo dnf install $missing"
             if prompt_confirm "Install now?"; then
                 # shellcheck disable=SC2086
@@ -215,7 +362,60 @@ host_install_gpu_sdk() {
             return 1
             ;;
     esac
+    host_warn_cuda_offpath "$backend"
+    host_warn_cuda_version_for_gpu "$backend"
     return 0
+}
+
+# Loud-warn if the installed CUDA toolkit predates the GPU's compute
+# capability. RTX 50xx (Blackwell, sm_120) needs CUDA 12.8+; CUDA 12.6 will
+# build but silently fall back to an older arch and won't actually run on
+# the GPU. We can't auto-upgrade safely (NVIDIA's repo split keeps multiple
+# versions on disk), so spell out the manual fix.
+host_warn_cuda_version_for_gpu() {
+    [[ "$1" == "cuda" ]] || return 0
+    local cuda_ver gpu_cap
+    cuda_ver="$(host_installed_cuda_version)"
+    gpu_cap="$(host_gpu_compute_cap)"
+    [[ -z "$cuda_ver" || -z "$gpu_cap" ]] && return 0
+
+    # Required CUDA toolkit major.minor by GPU compute capability.
+    # Blackwell needs 12.8; Hopper (9.0) was already on 11.8/12.0.
+    local needed=""
+    if host_version_ge "$gpu_cap" "12.0"; then
+        needed="12.8"
+    fi
+    [[ -z "$needed" ]] && return 0
+
+    if ! host_version_ge "$cuda_ver" "$needed"; then
+        warn "CUDA toolkit $cuda_ver is older than the GPU requires (compute $gpu_cap → CUDA >= $needed)."
+        log "llama.cpp will build but won't actually run on this GPU."
+        # Offer to wire up NVIDIA's repo so the user can upgrade in-place.
+        # We don't run the upgrade ourselves — that's a multi-package shuffle
+        # and the user should see what dnf is about to do.
+        if [[ "$DISTRO_FAMILY" == "fedora" ]]; then
+            host_install_nvidia_cuda_repo_fedora || true
+            log "To upgrade, run:"
+            echo "    sudo dnf install cuda-toolkit"
+        fi
+    fi
+}
+
+# NVIDIA's official RPM/DEB drops nvcc at /usr/local/cuda/bin without
+# touching PATH, which breaks cmake's CUDA detection for anyone running
+# the build outside the llama-toolchest service (which sets the path
+# explicitly in the builder). Emit a heads-up so users know how to wire
+# it into their shell.
+host_warn_cuda_offpath() {
+    [[ "$1" == "cuda" ]] || return 0
+    if command -v nvcc >/dev/null 2>&1; then
+        return 0
+    fi
+    local nvcc_path
+    nvcc_path="$(host_find_nvcc 2>/dev/null)" || return 0
+    log "nvcc is installed at $nvcc_path but not on PATH."
+    log "llama-toolchest's builder picks it up automatically. To run cmake/nvcc by hand, add:"
+    echo "    export PATH=\"$(dirname "$nvcc_path"):\$PATH\""
 }
 
 host_build_binary() {
@@ -411,7 +611,11 @@ host_write_unit_override() {
     if [[ "$need_execstart" == false ]] && [[ "$need_env" == false ]]; then
         # Clean up any stale override left from a previous from-source install.
         local stale="$override_dir/override.conf"
-        [[ -f "$stale" ]] && rm -f "$stale" && log "Removed stale unit override"
+        if [[ -f "$stale" ]]; then
+            rm -f "$stale"
+            log "Removed stale unit override"
+            _systemctl daemon-reload
+        fi
         return 0
     fi
 
@@ -430,6 +634,10 @@ host_write_unit_override() {
     } > "$override_file"
 
     log "Wrote unit override: $override_file"
+    # systemd needs a reload to pick up override.conf changes; without this,
+    # the next service_restart re-runs the previously cached ExecStart and
+    # ignores our new binary path.
+    _systemctl daemon-reload
 }
 
 host_install() {
@@ -585,6 +793,46 @@ host_uninstall() {
     fi
 
     ok "Host uninstall complete."
+}
+
+# Returns 0 if a host install is present (binary on disk, either the
+# packaged /usr/bin path or a from-source path under host_bin_dir).
+# Used by setup.sh's auto-routing for up/down/logs to decide whether
+# to call into the host or container path.
+host_is_installed() {
+    [[ -x /usr/bin/llama-toolchest ]] || [[ -x "$(host_binary_path)" ]]
+}
+
+host_up() {
+    if ! host_is_installed; then
+        err "No host install found. Run './setup.sh install --host' first."
+        return 1
+    fi
+    if service_is_active; then
+        ok "llama-toolchest is already running"
+        return 0
+    fi
+    log "Starting llama-toolchest service..."
+    service_start
+    ok "llama-toolchest started"
+}
+
+host_down() {
+    if ! service_is_active; then
+        ok "llama-toolchest is already stopped"
+        return 0
+    fi
+    log "Stopping llama-toolchest service..."
+    service_stop
+    ok "llama-toolchest stopped"
+}
+
+host_logs() {
+    if [[ "$(service_scope)" == "user" ]]; then
+        journalctl --user -u "$SERVICE_NAME" -f
+    else
+        journalctl -u "$SERVICE_NAME" -f
+    fi
 }
 
 # Whether a backend is applicable to this host. Used by deps/status to
