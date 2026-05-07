@@ -233,16 +233,19 @@ func (s *Server) handleJobForm(w http.ResponseWriter, r *http.Request) {
 		}
 		builds = append(builds, buildOpt{ID: b.ID, Profile: b.Profile, GitRef: b.GitRef, Tag: b.Tag})
 	}
+	numGPUs := len(s.monitor.Current().GPU)
 	s.renderPartial(w, "job_form", struct {
-		Models  []*models.Model
-		Builds  []buildOpt
-		Presets []benchmark.Preset
-		Running bool
+		Models     []*models.Model
+		Builds     []buildOpt
+		Presets    []benchmark.Preset
+		GPUOptions []models.GPUOption
+		Running    bool
 	}{
-		Models:  enabled,
-		Builds:  builds,
-		Presets: benchmark.Presets(),
-		Running: s.process.IsRunning(),
+		Models:     enabled,
+		Builds:     builds,
+		Presets:    benchmark.Presets(),
+		GPUOptions: models.GPUAssignOptions(numGPUs),
+		Running:    s.process.IsRunning(),
 	})
 }
 

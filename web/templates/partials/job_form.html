@@ -43,7 +43,19 @@
         <summary>Overrides <small style="color:var(--pico-muted-color);">(blank = use each model's saved value)</small></summary>
         <div class="grid">
             <label>GPU layers <input type="number" name="ov_gpu_layers" placeholder=""></label>
-            <label>Context size <input type="number" name="ov_context_size" placeholder=""></label>
+            <label>Context size
+                <select name="ov_context_size">
+                    <option value="">inherit</option>
+                    <option value="2048">2K</option>
+                    <option value="4096">4K</option>
+                    <option value="8192">8K</option>
+                    <option value="16384">16K</option>
+                    <option value="32768">32K</option>
+                    <option value="65536">64K</option>
+                    <option value="131072">128K</option>
+                    <option value="262144">256K</option>
+                </select>
+            </label>
             <label>Threads <input type="number" name="ov_threads" placeholder=""></label>
         </div>
         <div class="grid">
@@ -70,9 +82,26 @@
             </label>
         </div>
         <div class="grid">
-            <label>GPU assign <input type="text" name="ov_gpu_assign" placeholder="e.g. all, 0, 0-1"></label>
+            <label>GPU assign
+                <select name="ov_gpu_assign">
+                    <option value="">inherit</option>
+                    {{range .GPUOptions}}
+                    <option value="{{.Value}}" {{if .Disabled}}disabled{{end}}>{{.Label}}</option>
+                    {{end}}
+                </select>
+            </label>
             <label>Tensor split <input type="text" name="ov_tensor_split" placeholder="e.g. 50,50"></label>
-            <label>Spec type <input type="text" name="ov_spec_type" placeholder="e.g. draft"></label>
+            <label>Spec type
+                <select name="ov_spec_type">
+                    <option value="">inherit</option>
+                    <option value="draft">Draft Model</option>
+                    <option value="ngram-simple">N-gram Simple</option>
+                    <option value="ngram-cache">N-gram Cache</option>
+                    <option value="ngram-map-k">N-gram Map-K</option>
+                    <option value="ngram-map-k4v">N-gram Map-K4V</option>
+                    <option value="ngram-mod">N-gram Mod</option>
+                </select>
+            </label>
         </div>
     </details>
 
