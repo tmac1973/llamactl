@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.0](https://github.com/tmac1973/llama-toolchest/compare/v2.0.0...v2.1.0) (2026-05-07)
+
+
+### Features
+
+* **setup:** auto-route up/down/logs and harden host cuda install ([bafbb11](https://github.com/tmac1973/llama-toolchest/commit/bafbb116bce7855f21303e1d3847965cc1199eed))
+* **setup:** auto-route up/down/logs and harden host cuda install ([3585dcc](https://github.com/tmac1973/llama-toolchest/commit/3585dcc814dbd2ac03582c087a2a4785da445127))
+
 ## [2.0.0](https://github.com/tmac1973/llama-toolchest/compare/v1.9.3...v2.0.0) (2026-05-07)
 
 
