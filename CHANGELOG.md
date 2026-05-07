@@ -1,5 +1,42 @@
 # Changelog
 
+## [2.0.0](https://github.com/tmac1973/llama-toolchest/compare/v1.9.3...v2.0.0) (2026-05-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ui:** fold the single-run path into a 1-cell job builder (pass 7b)
+* **benchmark:** drop llama-bench, rename presets to internal-*
+
+### Features
+
+* **api:** /api/benchmark-jobs endpoints + SSE progress + run filters ([8399d88](https://github.com/tmac1973/llama-toolchest/commit/8399d88c5b19979ff72a5da28e1814b77ded5022))
+* **api+ui:** About Benchmarks modal renders live data from server ([952c5e4](https://github.com/tmac1973/llama-toolchest/commit/952c5e4750a9dcafe87b3a2be56e39c0f7ddeb8e))
+* **api+ui:** full CSV (cells/summary) + JSON exports for runs and jobs ([874b449](https://github.com/tmac1973/llama-toolchest/commit/874b4492fc0050f0be42ee1f7df3fa6d1d5b69c7))
+* **benchmark+ui:** build pre-flight guard, live job updates ([296a35f](https://github.com/tmac1973/llama-toolchest/commit/296a35f44e6ea6812ab3c7fbf060dc85230bb672))
+* **benchmark:** drop llama-bench, rename presets to internal-* ([149ad5e](https://github.com/tmac1973/llama-toolchest/commit/149ad5e6ee87c0cbef77392a8b4fb7c934029e76))
+* **benchmark:** integrate llama-benchy alongside existing presets ([3652c78](https://github.com/tmac1973/llama-toolchest/commit/3652c788d9121b82745f880876a25d44005a72a5))
+* **benchmark:** job model + v2 storage envelope with v1→v2 migration ([4286591](https://github.com/tmac1973/llama-toolchest/commit/4286591235a32e626449b1a6ad8f5f15f262b0a9))
+* **benchmark:** JobQueue with sequential per-cell orchestration ([9182c72](https://github.com/tmac1973/llama-toolchest/commit/9182c72e76582c0ec8cae30f9a52164899491095))
+* **benchmark:** snapshot the active build on every run ([827570c](https://github.com/tmac1973/llama-toolchest/commit/827570c14addb60cdc70ee3f512990906d6c2504))
+* **ui:** fold the single-run path into a 1-cell job builder (pass 7b) ([8e32975](https://github.com/tmac1973/llama-toolchest/commit/8e32975f684d54920cabbbff8db79489f65b0f8e))
+* **ui:** jobs list, detail matrix, and new-job form (pass 7a) ([d4b1c15](https://github.com/tmac1973/llama-toolchest/commit/d4b1c15ddacba414156fa4c2b2ad01ad11d6396c))
+* **ui:** override fields use dropdowns to match the model config form ([4d4c3e7](https://github.com/tmac1973/llama-toolchest/commit/4d4c3e751d0ee86a642a1926376f788fb562e5d6))
+* **ui:** show model quant + preserve open cell-detail across job poll ([75405dc](https://github.com/tmac1973/llama-toolchest/commit/75405dc078e70f10a75c60a2ad6aad9936ea55a1))
+* **ui:** wider model column, tooltips, build column, client-side sort ([70dbcbc](https://github.com/tmac1973/llama-toolchest/commit/70dbcbc094283b93d17ea08bea3180efe369cb8a))
+
+
+### Bug Fixes
+
+* **benchmark:** include sentencepiece + tiktoken in uvx environment ([113b081](https://github.com/tmac1973/llama-toolchest/commit/113b081f7d587cd3f96052d9fdfcaac3fe884a82))
+* **setup:** host install summary reports the configured port ([43ef7e2](https://github.com/tmac1973/llama-toolchest/commit/43ef7e21e19b98555532efcf29928e91b9fc83b1))
+* **ui:** drop list polling, push live updates via OOB swaps from detail ([319d2b6](https://github.com/tmac1973/llama-toolchest/commit/319d2b6c9926e2495676f00aee1812305573b4c2))
+* **ui:** pivot compare details table — one row per run ([a2d7d94](https://github.com/tmac1973/llama-toolchest/commit/a2d7d947ecb00c24021af84067b8364b91ca3179))
+* **ui:** re-fetch detail directly after list refresh, not via event trigger ([b9897c6](https://github.com/tmac1973/llama-toolchest/commit/b9897c6380e13d43019161f27ee6bfe37c84aa66))
+* **ui:** remove redundant Benchmark Results section, scope bulk actions ([356a9d4](https://github.com/tmac1973/llama-toolchest/commit/356a9d4f501037a2c5d37ed50b18feffc24533b5))
+* **ui:** show "f16" for default KV cache quant instead of dash/hidden ([4f8dc63](https://github.com/tmac1973/llama-toolchest/commit/4f8dc63ba2b4092293f0d527335bd2c9b1be38e3))
+* **ui:** use htmx.ajax for compare swap so inline &lt;script&gt; runs ([45756cb](https://github.com/tmac1973/llama-toolchest/commit/45756cb77c5716e837aa48a1986897b219eef4f4))
+
 ## [1.9.3](https://github.com/tmac1973/llama-toolchest/compare/v1.9.2...v1.9.3) (2026-05-06)
 
 
