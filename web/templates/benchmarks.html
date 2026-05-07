@@ -1,88 +1,70 @@
 {{define "content"}}
+<style>
+.job-list .job-row { border:1px solid var(--pico-muted-border-color); border-radius:0.25rem; padding:0.5rem 0.75rem; margin-bottom:0.5rem; background:var(--pico-card-background-color); }
+.job-list .job-row > summary { list-style:none; cursor:pointer; }
+.job-list .job-row > summary::marker, .job-list .job-row > summary::-webkit-details-marker { display:none; }
+.job-list .job-row > summary::before { content:"▸"; display:inline-block; width:1rem; color:var(--pico-muted-color); }
+.job-list .job-row[open] > summary::before { content:"▾"; }
+.job-row-line1 { display:inline-flex; gap:0.6rem; align-items:baseline; }
+.job-row-line2 { display:block; margin-left:1rem; margin-top:0.1rem; color:var(--pico-muted-color); }
+.job-status, .cell-status { display:inline-block; padding:0.05rem 0.4rem; border-radius:0.2rem; font-size:0.75rem; line-height:1.4; background:var(--pico-muted-border-color); color:var(--pico-color); text-transform:uppercase; letter-spacing:0.03em; }
+.status-running   { background:#3b82f6; color:#fff; }
+.status-completed { background:#22c55e; color:#fff; }
+.status-failed    { background:var(--pico-del-color); color:#fff; }
+.status-canceled, .status-skipped { background:var(--pico-muted-color); color:#fff; }
+.status-pending   { background:transparent; border:1px solid var(--pico-muted-border-color); color:var(--pico-muted-color); }
+.cell-failed-tag  { color:var(--pico-del-color); font-size:0.75rem; }
+.job-progress     { font-size:0.8rem; color:var(--pico-muted-color); }
+.job-detail-slot  { padding:0.5rem 0 0; }
+.job-meta, .job-desc { font-size:0.75rem; }
+</style>
+
+<article id="jobs-section">
+    <header>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span>Benchmark Jobs</span>
+            <span style="display:flex;gap:0.5rem;">
+                <button type="button" class="outline secondary"
+                        style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
+                        onclick="openBenchHelp()">?</button>
+                <button type="button" class="outline secondary"
+                        style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
+                        onclick="openJobForm()">+ New Batch Job</button>
+            </span>
+        </div>
+    </header>
+    <div id="comparison-view"></div>
+    <div id="job-list"
+         hx-get="/api/benchmark-jobs"
+         hx-trigger="load, jobChanged from:body"
+         hx-swap="innerHTML">
+        Loading…
+    </div>
+</article>
+
+<dialog id="job-form-modal" style="max-width:720px;">
+    <article>
+        <header>
+            <button type="button" aria-label="Close" rel="prev" onclick="closeJobForm();"></button>
+            New Batch Job
+        </header>
+        <div id="job-form-slot">Loading…</div>
+    </article>
+</dialog>
+
 <div id="benchmark-form"
      hx-get="/api/benchmarks/form"
      hx-trigger="load"
      hx-swap="innerHTML">
 </div>
 
-<div id="benchmark-progress"
-     style="padding:0.75rem 1rem;border-radius:0.25rem;margin-bottom:1rem;display:none;border:1px solid var(--pico-muted-border-color);"></div>
-
-<article>
-    <header>
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-            <span>Benchmark Results</span>
-            <span style="display:flex;gap:0.5rem;">
-                <button type="button" class="outline secondary"
-                        style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
-                        onclick="document.getElementById('bench-help').showModal();">
-                    ?
-                </button>
-                <button type="button" class="outline secondary"
-                        style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
-                        onclick="var checks=document.querySelectorAll('.bench-check:checked');if(checks.length<2){alert('Select at least 2 benchmarks to compare');return;}var ids=Array.from(checks).map(function(c){return c.value}).join(',');var el=document.getElementById('comparison-view');fetch('/api/benchmarks/compare?ids='+ids,{headers:{'HX-Request':'true'}}).then(function(r){return r.text()}).then(function(h){el.innerHTML=h});">
-                    Compare
-                </button>
-                <button type="button" class="outline secondary"
-                        style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
-                        onclick="var checks=document.querySelectorAll('.bench-check:checked');if(checks.length===0){alert('Select benchmarks to export');return;}var ids=Array.from(checks).map(function(c){return c.value}).join(',');window.location='/api/benchmarks/export?ids='+ids;">
-                    Export CSV
-                </button>
-                <button type="button" class="outline secondary"
-                        style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
-                        onclick="var checks=document.querySelectorAll('.bench-check:checked');if(checks.length===0){alert('Select benchmarks to delete');return;}if(!confirm('Delete '+checks.length+' benchmark(s)?'))return;var ids=Array.from(checks).map(function(c){return c.value}).join(',');fetch('/api/benchmarks/batch-delete?ids='+ids,{method:'DELETE',headers:{'HX-Request':'true'}}).then(function(){htmx.ajax('GET','/api/benchmarks',{target:'#benchmark-list',swap:'innerHTML'})});">
-                    Delete Selected
-                </button>
-            </span>
-        </div>
-    </header>
-    <div id="comparison-view"></div>
-    <div id="benchmark-list"
-         hx-get="/api/benchmarks"
-         hx-trigger="load, benchmarkChanged from:body"
-         hx-swap="innerHTML">
-        Loading...
-    </div>
-</article>
-
-<dialog id="bench-help" style="max-width:600px;">
+<dialog id="bench-help" style="max-width:720px;">
     <article>
         <header>
             <button type="button" aria-label="Close" rel="prev" onclick="this.closest('dialog').close();"></button>
             About Benchmarks
         </header>
-        <h5>What benchmarks measure</h5>
-        <p>Benchmarks send real chat completion requests to the running server and measure the response timings reported by llama.cpp. This captures true end-to-end performance including server overhead, GPU scheduling, and memory transfer.</p>
-
-        <h5>Metrics</h5>
-        <dl>
-            <dt><strong>PP t/s</strong> (Prompt Processing tokens/sec)</dt>
-            <dd>How fast the model reads and processes your input prompt. Higher is better. This is GPU compute-bound and benefits from batching.</dd>
-
-            <dt><strong>TG t/s</strong> (Token Generation tokens/sec)</dt>
-            <dd>How fast the model generates its response, token by token. This is the speed you feel during chat. Memory bandwidth-bound on GPU.</dd>
-
-            <dt><strong>TTFT</strong> (Time To First Token)</dt>
-            <dd>Wall-clock time from sending the request until the first response token appears. Lower is better. Includes prompt processing.</dd>
-        </dl>
-
-        <h5>Presets</h5>
-        <dl>
-            <dt><strong>Quick</strong> (~10 seconds)</dt>
-            <dd>Single test: 256 prompt tokens, 128 generated tokens, 1 repetition. Good for a fast sanity check.</dd>
-
-            <dt><strong>Standard</strong> (~2 minutes)</dt>
-            <dd>Tests 128, 512, and 2048 prompt tokens with 3 repetitions each. Also runs <code>llama-bench</code> for raw inference numbers without server overhead.</dd>
-
-            <dt><strong>Thorough</strong> (~10 minutes)</dt>
-            <dd>Tests 128, 512, 2048, and 8192 prompt tokens with 5 repetitions and 256 generated tokens. Includes <code>llama-bench</code>.</dd>
-        </dl>
-
-        <h5>llama-bench</h5>
-        <p>When included (Standard and Thorough presets), <code>llama-bench</code> runs the model directly without the HTTP server layer. This gives a performance ceiling — the fastest the model can run on your hardware. Comparing API results to llama-bench results shows how much overhead the server adds.</p>
-
-        <h5>Live Performance</h5>
-        <p>Live Performance (on the Server tab) passively captures timing data from every chat completion request made through the API — no explicit benchmark needed. It shows a rolling average of real-world performance across recent requests.</p>
+        <div id="bench-about-slot">Loading…</div>
     </article>
 </dialog>
 
@@ -103,25 +85,65 @@ function toggleBenchGroup(header) {
     });
 }
 
-function collapseAllBenchGroups() {
-    var root = document.getElementById('benchmark-list');
+function benchContainer(btn) {
+    return btn && btn.closest ? btn.closest('.bench-runs-container') : null;
+}
+
+function collapseAllBenchGroups(btn) {
+    var root = benchContainer(btn);
     if (!root) return;
     root.querySelectorAll('tbody.bench-group-header').forEach(function(h) {
         if (!h.classList.contains('collapsed')) toggleBenchGroup(h);
     });
 }
 
-function expandAllBenchGroups() {
-    var root = document.getElementById('benchmark-list');
+function expandAllBenchGroups(btn) {
+    var root = benchContainer(btn);
     if (!root) return;
     root.querySelectorAll('tbody.bench-group-header').forEach(function(h) {
         if (h.classList.contains('collapsed')) toggleBenchGroup(h);
     });
 }
 
-function filterBenchmarks(q) {
+function compareSelectedRuns(btn) {
+    var root = benchContainer(btn);
+    if (!root) return;
+    var checks = root.querySelectorAll('.bench-check:checked');
+    if (checks.length < 2) { alert('Select at least 2 benchmarks to compare.'); return; }
+    var ids = Array.from(checks).map(function(c){return c.value;}).join(',');
+    var view = document.getElementById('comparison-view');
+    // Use htmx.ajax (not raw fetch + innerHTML) so the inline <script> in
+    // the compare partial actually runs — innerHTML doesn't execute scripts.
+    htmx.ajax('GET', '/api/benchmarks/compare?ids='+ids, {target: view, swap: 'innerHTML'})
+        .then(function(){ view.scrollIntoView({behavior:'smooth'}); });
+}
+
+function exportSelectedRuns(btn, format) {
+    var root = benchContainer(btn);
+    if (!root) return;
+    var checks = root.querySelectorAll('.bench-check:checked');
+    if (checks.length === 0) { alert('Select benchmarks to export.'); return; }
+    var ids = Array.from(checks).map(function(c){return c.value;}).join(',');
+    var fmt = format || 'csv';
+    window.location = '/api/benchmarks/export?ids=' + ids + '&format=' + fmt;
+}
+
+function deleteSelectedRuns(btn) {
+    var root = benchContainer(btn);
+    if (!root) return;
+    var checks = root.querySelectorAll('.bench-check:checked');
+    if (checks.length === 0) { alert('Select benchmarks to delete.'); return; }
+    if (!confirm('Delete '+checks.length+' benchmark(s)?')) return;
+    var ids = Array.from(checks).map(function(c){return c.value;}).join(',');
+    fetch('/api/benchmarks/batch-delete?ids='+ids, {method:'DELETE',headers:{'HX-Request':'true'}})
+        .then(function(){
+            document.body.dispatchEvent(new CustomEvent('jobChanged'));
+        });
+}
+
+function filterBenchmarks(input, q) {
     q = (q || '').trim().toLowerCase();
-    var root = document.getElementById('benchmark-list');
+    var root = benchContainer(input);
     if (!root) return;
 
     var rows = root.querySelectorAll('tbody.bench-row-group');
@@ -164,32 +186,155 @@ function filterBenchmarks(q) {
     });
 }
 
+// --- Preserve job-row expansion state across list refreshes (the list
+//     only refreshes on jobChanged now — no auto-poll — so this only
+//     fires when the user does something explicit, but still important
+//     so e.g. deleting one job doesn't collapse all the others.
 (function() {
-    var pollTimer = null;
-    document.body.addEventListener('benchmarkStarted', function(e) {
-        var id = e.detail && e.detail.id;
-        if (!id) return;
-        var el = document.getElementById('benchmark-progress');
-        el.style.display = '';
-        // Clear any existing poll
-        if (pollTimer) clearInterval(pollTimer);
-        pollTimer = setInterval(function() {
-            fetch('/api/benchmarks/' + id + '/progress', {headers: {'HX-Request': 'true'}})
-                .then(function(r) { return r.text(); })
-                .then(function(html) {
-                    el.innerHTML = html;
-                    // Check if done
-                    if (html.indexOf('complete') !== -1 || html.indexOf('failed') !== -1) {
-                        clearInterval(pollTimer);
-                        pollTimer = null;
-                        // Refresh the list
-                        htmx.ajax('GET', '/api/benchmarks', {target: '#benchmark-list', swap: 'innerHTML'});
-                        // Hide progress after a moment
-                        setTimeout(function() { el.style.display = 'none'; }, 5000);
-                    }
-                });
-        }, 2000);
+    var openSet = new Set();
+    document.body.addEventListener('htmx:beforeSwap', function(e) {
+        var t = e.detail && e.detail.target;
+        if (t && t.id === 'job-list') {
+            openSet.clear();
+            t.querySelectorAll('details.job-row[open]').forEach(function(d) {
+                openSet.add(d.dataset.jobId);
+            });
+        }
+    });
+    document.body.addEventListener('htmx:afterSwap', function(e) {
+        var t = e.detail && e.detail.target;
+        if (t && t.id === 'job-list') {
+            t.querySelectorAll('details.job-row').forEach(function(d) {
+                if (!openSet.has(d.dataset.jobId)) return;
+                d.open = true;
+                d.dataset.loaded = '1';
+                var slot = d.querySelector('.job-detail-slot');
+                if (!slot) return;
+                var url = slot.getAttribute('hx-get');
+                if (url) htmx.ajax('GET', url, {target: slot, swap: 'innerHTML'});
+            });
+        }
     });
 })();
+
+// --- About Benchmarks modal: lazy-loads its content on first open so
+//     the preset table + sample commands stay in sync with whatever the
+//     server is currently configured to do.
+function openBenchHelp() {
+    var dialog = document.getElementById('bench-help');
+    var slot = document.getElementById('bench-about-slot');
+    if (!slot.dataset.loaded) {
+        slot.dataset.loaded = '1';
+        fetch('/api/benchmarks/about', {headers:{'HX-Request':'true'}})
+            .then(function(r){ return r.text(); })
+            .then(function(html){ slot.innerHTML = html; });
+    }
+    dialog.showModal();
+}
+
+// --- Job form modal ---
+function openJobForm() {
+    var modal = document.getElementById('job-form-modal');
+    var slot = document.getElementById('job-form-slot');
+    slot.innerHTML = 'Loading…';
+    fetch('/api/benchmark-jobs/form', {headers:{'HX-Request':'true'}})
+        .then(function(r){return r.text();})
+        .then(function(html){
+            slot.innerHTML = html;
+            htmx.process(slot);
+            updateMatrixCount();
+        });
+    modal.showModal();
+}
+function closeJobForm() {
+    document.getElementById('job-form-modal').close();
+}
+function updateMatrixCount() {
+    var form = document.getElementById('new-job-form');
+    if (!form) return;
+    var m = form.querySelectorAll('input[name=model]:checked').length;
+    var b = form.querySelectorAll('input[name=build]:checked').length;
+    var p = form.querySelectorAll('input[name=preset]:checked').length;
+    var preview = document.getElementById('job-matrix-preview');
+    var btn = document.getElementById('job-submit-btn');
+    if (m && b && p) {
+        preview.textContent = m+' models × '+b+' builds × '+p+' presets = '+(m*b*p)+' cells';
+        btn.disabled = false;
+    } else {
+        preview.textContent = 'Select models, builds, and presets to compute the matrix size.';
+        btn.disabled = true;
+    }
+}
+function readOverrides(form) {
+    var ov = {};
+    var num = function(name){ var v=form.elements[name].value; return v===''?null:parseInt(v,10); };
+    var bool = function(name){ var v=form.elements[name].value; return v===''?null:(v==='true'); };
+    var str = function(name){ var v=form.elements[name].value; return v===''?null:v; };
+    if (num('ov_gpu_layers')!==null)       ov.gpu_layers = num('ov_gpu_layers');
+    if (num('ov_context_size')!==null)     ov.context_size = num('ov_context_size');
+    if (num('ov_threads')!==null)          ov.threads = num('ov_threads');
+    if (bool('ov_flash_attention')!==null) ov.flash_attention = bool('ov_flash_attention');
+    if (str('ov_kv_cache_quant')!==null)   ov.kv_cache_quant = str('ov_kv_cache_quant');
+    if (bool('ov_direct_io')!==null)       ov.direct_io = bool('ov_direct_io');
+    if (str('ov_gpu_assign')!==null)       ov.gpu_assign = str('ov_gpu_assign');
+    if (str('ov_tensor_split')!==null)     ov.tensor_split = str('ov_tensor_split');
+    if (str('ov_spec_type')!==null)        ov.spec_type = str('ov_spec_type');
+    return Object.keys(ov).length ? ov : null;
+}
+function submitNewJob() {
+    var form = document.getElementById('new-job-form');
+    var err = document.getElementById('job-form-error');
+    err.style.display = 'none';
+    var picked = function(name){ return Array.from(form.querySelectorAll('input[name='+name+']:checked')).map(function(c){return c.value;}); };
+    var payload = {
+        name: form.elements.name.value.trim(),
+        description: form.elements.description.value.trim(),
+        model_ids: picked('model'),
+        build_ids: picked('build'),
+        presets: picked('preset'),
+        overrides: readOverrides(form),
+    };
+    fetch('/api/benchmark-jobs', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)})
+        .then(function(r){
+            if (r.status === 201) {
+                closeJobForm();
+                document.body.dispatchEvent(new CustomEvent('jobChanged'));
+                return;
+            }
+            return r.text().then(function(t){ throw new Error('HTTP '+r.status+': '+t); });
+        })
+        .catch(function(e){ err.textContent = e.message; err.style.display = ''; });
+}
+
+// --- Job actions ---
+function cancelJob(id) {
+    if (!confirm('Cancel job '+id+'?')) return;
+    fetch('/api/benchmark-jobs/'+id+'/cancel', {method:'POST'}).then(function(){
+        document.body.dispatchEvent(new CustomEvent('jobChanged'));
+    });
+}
+function retryFailed(id) {
+    fetch('/api/benchmark-jobs/'+id+'/retry-failed', {method:'POST'}).then(function(r){
+        if (!r.ok) { return r.text().then(function(t){alert(t);}); }
+        document.body.dispatchEvent(new CustomEvent('jobChanged'));
+    });
+}
+function deleteJob(id, disposition) {
+    var msg = disposition==='cascade' ? 'Delete job '+id+' AND its runs?' : 'Delete job '+id+' but keep runs (move to Ad-Hoc)?';
+    if (!confirm(msg)) return;
+    fetch('/api/benchmark-jobs/'+id+'?runs='+disposition, {method:'DELETE'}).then(function(r){
+        if (!r.ok) { return r.text().then(function(t){alert(t);}); }
+        document.body.dispatchEvent(new CustomEvent('jobChanged'));
+    });
+}
+function compareSelectedCells(btn) {
+    var checks = btn.closest('.job-detail').querySelectorAll('.cell-check:checked');
+    if (checks.length < 2) { alert('Select at least 2 cells to compare.'); return; }
+    var ids = Array.from(checks).map(function(c){return c.value;}).join(',');
+    var view = document.getElementById('comparison-view');
+    htmx.ajax('GET', '/api/benchmarks/compare?ids='+ids, {target: view, swap: 'innerHTML'})
+        .then(function(){ view.scrollIntoView({behavior:'smooth'}); });
+}
+
 </script>
 {{end}}

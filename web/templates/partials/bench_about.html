@@ -1,0 +1,80 @@
+{{define "bench_about"}}
+<h5>What benchmarks measure</h5>
+<p>Two source paths produce results, both via real HTTP requests through the running router:</p>
+<ul>
+    <li><strong>internal-*</strong> presets drive an in-process loop that sends chat completion requests with a known prose prompt sized to a target token count and reads the timings llama.cpp returns in the response body.</li>
+    <li><strong>benchy-*</strong> presets shell out to <a href="https://github.com/eugr/llama-benchy" target="_blank" rel="noopener">llama-benchy</a> via <code>uvx</code>, an external API benchmarker that supports concurrency and works with sharded GGUFs (where the legacy <code>llama-bench</code> tool fell over).</li>
+</ul>
+
+<h5>Internal prompt</h5>
+<p>Every internal request is built by repeating a fixed prose passage until it hits the target character count, prefixed with a per-rep header to defeat llama.cpp's prompt cache. Approximate sizing: <code>{{.InternalPrompt.CharsPerToken}}</code> chars/token (English BPE average).</p>
+<details>
+    <summary><small>Per-repetition prefix template</small></summary>
+    <pre style="font-size:0.75rem;white-space:pre-wrap;margin:0.25rem 0 0;">{{.InternalPrompt.RepetitionPrefix}}</pre>
+</details>
+<details>
+    <summary><small>Prose passage</small></summary>
+    <pre style="font-size:0.75rem;white-space:pre-wrap;margin:0.25rem 0 0;max-height:240px;overflow-y:auto;">{{.InternalPrompt.Text}}</pre>
+</details>
+
+<h5>Presets</h5>
+<table role="grid" style="font-size:0.8rem;">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Source</th>
+            <th>Prompt sizes</th>
+            <th>Gen</th>
+            <th>Reps</th>
+            <th>Concurrency</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{range .Presets}}
+        <tr title="{{.Description}}">
+            <td><kbd>{{.Name}}</kbd></td>
+            <td>{{.EffectiveSource}}</td>
+            <td>{{range $i, $p := .PromptTokens}}{{if $i}}, {{end}}{{$p}}{{end}}</td>
+            <td>{{.GenTokens}}</td>
+            <td>{{.Repetitions}}</td>
+            <td>{{if .Concurrency}}{{range $i, $c := .Concurrency}}{{if $i}}, {{end}}{{$c}}{{end}}{{else}}—{{end}}</td>
+        </tr>
+    {{end}}
+    </tbody>
+</table>
+
+{{if .BenchyCommands}}
+<h5>llama-benchy commands</h5>
+<p>Exact <code>uvx</code> invocation generated for each benchy preset. Placeholders in <code>{braces}</code> are filled per cell at run time.</p>
+{{range .BenchyCommands}}
+    <details>
+        <summary><small><kbd>{{.PresetName}}</kbd></small></summary>
+        <pre style="font-size:0.75rem;white-space:pre-wrap;word-break:break-all;margin:0.25rem 0 0;">{{.Command}}</pre>
+    </details>
+{{end}}
+{{end}}
+
+<h5>Metrics</h5>
+<dl>
+    <dt><strong>PP t/s</strong> (Prompt Processing tokens/sec)</dt>
+    <dd>How fast the model reads and processes input prompt tokens. GPU compute-bound; benefits from batching.</dd>
+
+    <dt><strong>TG t/s</strong> (Token Generation tokens/sec)</dt>
+    <dd>How fast the model generates response tokens. Memory bandwidth-bound on GPU; this is the speed you feel during chat.</dd>
+
+    <dt><strong>TTFT</strong> (Time To First Token, ms)</dt>
+    <dd>Wall-clock time from request to first response token. Includes prompt processing.</dd>
+
+    <dt><strong>TTFR</strong> (Time To First Response, ms) <small style="color:var(--pico-muted-color);">— benchy only</small></dt>
+    <dd>llama-benchy's separately-timed first-response measurement, distinct from end-to-end TTFT.</dd>
+
+    <dt><strong>peak t/s</strong> <small style="color:var(--pico-muted-color);">— benchy only</small></dt>
+    <dd>Peak observed throughput within the run, useful when concurrency &gt; 1 to spot saturation.</dd>
+
+    <dt><strong>e2e_ttft</strong> (end-to-end TTFT, ms) <small style="color:var(--pico-muted-color);">— benchy only</small></dt>
+    <dd>llama-benchy's end-to-end first-token timing, comparable to TTFT above.</dd>
+</dl>
+
+<h5>Live performance</h5>
+<p>The Server tab's Live Performance panel passively captures timing data from every chat completion routed through the proxy — no explicit benchmark needed. It shows a rolling average of real-world performance across recent requests.</p>
+{{end}}

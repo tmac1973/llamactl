@@ -1,9 +1,0 @@
-{{define "benchmark_progress"}}
-{{if eq .Status "running"}}
-&#x23F3; {{if .Detail}}{{.Detail}}{{else}}Benchmark starting...{{end}}
-{{else if eq .Status "completed"}}
-Benchmark complete!
-{{else if eq .Status "failed"}}
-Benchmark failed: {{.Error}}
-{{end}}
-{{end}}

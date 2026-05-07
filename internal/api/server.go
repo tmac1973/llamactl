@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"reflect"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -37,9 +37,8 @@ type Server struct {
 	registry        *models.Registry
 	process         *process.Manager
 	monitor         *monitor.Monitor
-	bench           *benchmark.Store
-	benchProgress   map[string]chan benchmark.ProgressUpdate
-	benchProgressMu sync.RWMutex
+	bench *benchmark.Store
+	jobs  *benchmark.JobQueue
 	dirtyModels     map[string]bool // models whose config changed since last load
 }
 
@@ -53,19 +52,20 @@ func NewServer(cfg *config.Config, configPath string) *Server {
 	mon := monitor.New(3 * time.Second)
 	mon.Start()
 
+	bld := builder.NewBuilder(cfg.DataDir)
 	s := &Server{
 		cfg:           cfg,
 		configPath:    configPath,
-		builder:       builder.NewBuilder(cfg.DataDir),
+		builder:       bld,
 		hfClient:      huggingface.NewClient(cfg.HFToken),
 		downloader:    huggingface.NewDownloader(cfg.DataDir, cfg.ModelsPath(), cfg.HFToken),
 		registry:      models.NewRegistry(cfg.DataDir, cfg.ModelsPath()),
 		process:       process.NewManager(),
 		monitor:       mon,
-		bench:         benchmark.NewStore(cfg.DataDir),
-		benchProgress: make(map[string]chan benchmark.ProgressUpdate),
+		bench:         benchmark.NewStore(cfg.DataDir, builderResolver(bld)),
 		dirtyModels:   make(map[string]bool),
 	}
+	s.jobs = benchmark.NewJobQueue(s.bench, newJobEnv(s))
 	s.downloader.SetOnComplete(s.onDownloadComplete)
 	s.registry.BackfillGGUFMeta()
 	if n := s.registry.DeduplicateModels(); n > 0 {
@@ -118,6 +118,28 @@ func (s *Server) parseTemplates() map[string]*template.Template {
 					return '_'
 				}
 			}, s)
+		},
+		// deref turns a pointer like *int / *bool / *string / *float64
+		// into its underlying value for templates. Non-pointers pass
+		// through; nil pointers return empty string.
+		"deref": func(v interface{}) interface{} {
+			if v == nil {
+				return ""
+			}
+			rv := reflect.ValueOf(v)
+			if rv.Kind() == reflect.Ptr {
+				if rv.IsNil() {
+					return ""
+				}
+				return rv.Elem().Interface()
+			}
+			return v
+		},
+		"shortSHA": func(s string) string {
+			if len(s) > 12 {
+				return s[:12]
+			}
+			return s
 		},
 		"divf": func(a, b interface{}) float64 {
 			af, bf := toFloat64(a), toFloat64(b)
@@ -232,16 +254,27 @@ func (s *Server) buildRouter() chi.Router {
 			r.Delete("/{id}", s.handleDeleteBuild)
 		})
 		r.Get("/gpu-map", s.handleGPUMap)
+		r.Route("/benchmark-jobs", func(r chi.Router) {
+			r.Get("/", s.handleListJobs)
+			r.Post("/", s.handleCreateJob)
+			r.Get("/form", s.handleJobForm)
+			r.Get("/{id}", s.handleGetJob)
+			r.Delete("/{id}", s.handleDeleteJob)
+			r.Post("/{id}/cancel", s.handleCancelJob)
+			r.Post("/{id}/retry-failed", s.handleRetryFailedCells)
+			r.Get("/{id}/progress", s.handleJobProgress)
+			r.Get("/{id}/export", s.handleExportJob)
+		})
 		r.Route("/benchmarks", func(r chi.Router) {
 			r.Get("/", s.handleListBenchmarks)
 			r.Post("/", s.handleStartBenchmark)
+			r.Get("/about", s.handleBenchmarksAbout)
 			r.Get("/form", s.handleBenchmarkForm)
 			r.Get("/compare", s.handleCompareBenchmarks)
 			r.Get("/export", s.handleExportBenchmarks)
 			r.Delete("/batch-delete", s.handleBatchDeleteBenchmarks)
 			r.Get("/{id}", s.handleGetBenchmark)
 			r.Delete("/{id}", s.handleDeleteBenchmark)
-			r.Get("/{id}/progress", s.handleBenchmarkProgress)
 		})
 		r.Get("/timings", s.handleTimings)
 		r.Get("/timings/{model_id}", s.handleTimings)

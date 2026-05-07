@@ -8,9 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -19,10 +16,9 @@ import (
 type RunConfig struct {
 	Run        BenchmarkRun
 	Preset     Preset
-	ModelPath  string // GGUF file path for llama-bench
 	RouterURL  string // e.g. "http://localhost:8080"
 	RouterName string // model name the router knows
-	BinaryDir  string // build dir containing llama-bench
+	HFRepoID   string // HuggingFace repo id; passed to llama-benchy as --tokenizer
 }
 
 // ProgressUpdate is sent during benchmark execution.
@@ -106,7 +102,46 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig, progress chan<- Progres
 		return
 	}
 
-	// Step 3: Run benchmarks
+	// Step 3: Run benchmarks (internal API loop or llama-benchy shell-out).
+	switch cfg.Preset.EffectiveSource() {
+	case PresetSourceBenchy:
+		send("benchmark", "Running llama-benchy via uvx — output will appear when finished...", 30)
+		concurrency := cfg.Preset.Concurrency
+		if len(concurrency) == 0 {
+			concurrency = []int{1}
+		}
+		results, cmdStr, err := runLlamaBenchy(ctx, BenchyConfig{
+			BaseURL:         cfg.RouterURL + "/v1",
+			APIKey:          "EMPTY",
+			ServedModelName: cfg.RouterName,
+			Tokenizer:       cfg.HFRepoID,
+			PromptSizes:     cfg.Preset.PromptTokens,
+			GenSizes:        []int{cfg.Preset.GenTokens},
+			Runs:            cfg.Preset.Repetitions,
+			Concurrency:     concurrency,
+		})
+		run.BenchyCommand = cmdStr
+		if err != nil {
+			run.Status = StatusFailed
+			run.Error = err.Error()
+			send("error", run.Error, 0)
+			return
+		}
+		run.LlamaBenchy = results
+		run.Summary = summarizeBenchy(results)
+		run.Status = StatusCompleted
+		send("done", "Benchmark complete", 100)
+		return
+
+	case PresetSourceInternal, "":
+		// fallthrough to internal API loop below
+	default:
+		run.Status = StatusFailed
+		run.Error = fmt.Sprintf("unknown preset source: %q", cfg.Preset.Source)
+		send("error", run.Error, 0)
+		return
+	}
+
 	totalTests := 0
 	for _, pp := range cfg.Preset.PromptTokens {
 		_ = pp
@@ -150,31 +185,7 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig, progress chan<- Progres
 		return
 	}
 
-	// Step 4: llama-bench (if preset says so and binary exists)
-	if cfg.Preset.RunLlamaBench && cfg.BinaryDir != "" && cfg.ModelPath != "" {
-		benchBinary := filepath.Join(cfg.BinaryDir, "llama-bench")
-		if _, err := os.Stat(benchBinary); err == nil {
-			// Unload all models from server to free VRAM for llama-bench
-			send("llama-bench", "Unloading model from server for raw benchmark...", 88)
-			r.unloadAllModels(cfg.RouterURL)
-
-			send("llama-bench", "Running llama-bench — raw inference without server overhead...", 90)
-			lb, benchErr := r.runLlamaBench(ctx, cfg)
-			if benchErr != nil {
-				slog.Warn("llama-bench failed", "error", benchErr)
-				run.Warnings = append(run.Warnings, fmt.Sprintf("llama-bench failed: %v", benchErr))
-			} else {
-				run.LlamaBench = lb
-			}
-
-			// Don't reload — the router will auto-load on next request,
-			// and reloading here causes conflicts with back-to-back benchmarks.
-		} else {
-			run.Warnings = append(run.Warnings, "llama-bench binary not found — rebuild llama.cpp to include it")
-		}
-	}
-
-	// Step 5: Compute summary
+	// Compute summary
 	run.Summary = ComputeSummary(run.Results)
 	run.Status = StatusCompleted
 	send("done", "Benchmark complete", 100)
@@ -279,20 +290,31 @@ func (r *Runner) unloadModel(routerURL, modelName string) {
 	slog.Info("benchmark: unload requested", "name", modelName)
 }
 
-// benchPromptText is a fixed, deterministic text used for benchmarking.
-const benchPromptText = `The history of computing is a story of human ingenuity and the relentless pursuit of automation. From the earliest mechanical calculators of the 17th century to the modern silicon chips that power our world, each generation has built upon the discoveries of the last. Charles Babbage conceived of the Analytical Engine in the 1830s, a mechanical general-purpose computer that, had it been built, would have contained many features of modern computers. Ada Lovelace, working with Babbage, wrote what is often considered the first computer program. The 20th century brought electronic computing into reality. Alan Turing formalized the concept of computation itself, while engineers at the University of Pennsylvania built ENIAC, one of the first electronic general-purpose computers. The invention of the transistor at Bell Labs in 1947 revolutionized electronics, leading to smaller, faster, and more reliable computers. The integrated circuit, developed independently by Jack Kilby and Robert Noyce, made it possible to place thousands and eventually billions of transistors on a single chip. This exponential growth in computing power, described by Moore's Law, has driven decades of innovation. Personal computers brought computing to the masses in the 1980s, the internet connected them in the 1990s, and smartphones made computing truly ubiquitous in the 2000s. Today, artificial intelligence and machine learning represent the latest frontier, with large language models demonstrating remarkable capabilities in understanding and generating human language. These models, trained on vast amounts of text data, can engage in conversation, write code, analyze documents, and assist with creative tasks. The computational requirements for training and running these models have driven advances in GPU computing, distributed systems, and specialized hardware accelerators. `
+// BenchPromptText is the deterministic prose passage the internal API
+// benchmark repeats to fill prompts. Exported so the "About benchmarks"
+// modal can disclose it verbatim.
+const BenchPromptText = `The history of computing is a story of human ingenuity and the relentless pursuit of automation. From the earliest mechanical calculators of the 17th century to the modern silicon chips that power our world, each generation has built upon the discoveries of the last. Charles Babbage conceived of the Analytical Engine in the 1830s, a mechanical general-purpose computer that, had it been built, would have contained many features of modern computers. Ada Lovelace, working with Babbage, wrote what is often considered the first computer program. The 20th century brought electronic computing into reality. Alan Turing formalized the concept of computation itself, while engineers at the University of Pennsylvania built ENIAC, one of the first electronic general-purpose computers. The invention of the transistor at Bell Labs in 1947 revolutionized electronics, leading to smaller, faster, and more reliable computers. The integrated circuit, developed independently by Jack Kilby and Robert Noyce, made it possible to place thousands and eventually billions of transistors on a single chip. This exponential growth in computing power, described by Moore's Law, has driven decades of innovation. Personal computers brought computing to the masses in the 1980s, the internet connected them in the 1990s, and smartphones made computing truly ubiquitous in the 2000s. Today, artificial intelligence and machine learning represent the latest frontier, with large language models demonstrating remarkable capabilities in understanding and generating human language. These models, trained on vast amounts of text data, can engage in conversation, write code, analyze documents, and assist with creative tasks. The computational requirements for training and running these models have driven advances in GPU computing, distributed systems, and specialized hardware accelerators. `
+
+// BenchPromptPrefixTemplate is the per-repetition prefix prepended to
+// every internal prompt. The "%d" is filled with the repetition number,
+// which varies the prompt across runs to defeat llama.cpp's prompt
+// cache. Exposed so the About modal can show the actual template.
+const BenchPromptPrefixTemplate = "This is benchmark repetition number %d. Please analyze the following text carefully and provide a detailed response.\n\n"
+
+// BenchPromptCharsPerToken is the chars-per-token approximation used
+// when sizing prompts to a target token count (English prose averages
+// ~4 chars/token under most BPE tokenizers).
+const BenchPromptCharsPerToken = 4
 
 // buildPrompt constructs a prompt of approximately the target token count
 // by repeating the benchmark text. The repetition parameter varies the
 // prompt to defeat llama.cpp's prompt cache.
 func buildPrompt(targetTokens int, repetition int) string {
-	// Rough approximation: 1 token ≈ 4 characters for English text
-	targetChars := targetTokens * 4
+	targetChars := targetTokens * BenchPromptCharsPerToken
 	var b strings.Builder
-	// Prefix with repetition-specific text to defeat prompt caching
-	b.WriteString(fmt.Sprintf("This is benchmark repetition number %d. Please analyze the following text carefully and provide a detailed response.\n\n", repetition))
+	b.WriteString(fmt.Sprintf(BenchPromptPrefixTemplate, repetition))
 	for b.Len() < targetChars {
-		b.WriteString(benchPromptText)
+		b.WriteString(BenchPromptText)
 	}
 	text := b.String()
 	if len(text) > targetChars {
@@ -381,75 +403,3 @@ func (r *Runner) runOneTest(ctx context.Context, routerURL, model string, prompt
 	}, nil
 }
 
-// runLlamaBench executes the llama-bench binary for raw inference benchmarking.
-func (r *Runner) runLlamaBench(ctx context.Context, cfg RunConfig) (*LlamaBenchResult, error) {
-	benchBinary := filepath.Join(cfg.BinaryDir, "llama-bench")
-
-	args := []string{
-		"-m", cfg.ModelPath,
-		"-p", fmt.Sprintf("%d", cfg.Preset.PromptTokens[0]),
-		"-n", fmt.Sprintf("%d", cfg.Preset.GenTokens),
-		"-r", fmt.Sprintf("%d", cfg.Preset.Repetitions),
-		"-o", "json",
-		"-ngl", fmt.Sprintf("%d", cfg.Run.Config.GPULayers),
-		"-t", fmt.Sprintf("%d", cfg.Run.Config.Threads),
-	}
-	if cfg.Run.Config.FlashAttention {
-		args = append(args, "-fa", "1")
-	}
-	if cfg.Run.Config.TensorSplit != "" {
-		args = append(args, "-ts", cfg.Run.Config.TensorSplit)
-	}
-	if cfg.Run.Config.DirectIO {
-		args = append(args, "--direct-io", "1")
-	}
-	if cfg.Run.Config.KVCacheQuant != "" {
-		args = append(args, "-ctk", cfg.Run.Config.KVCacheQuant, "-ctv", cfg.Run.Config.KVCacheQuant)
-	}
-
-	// Set LD_LIBRARY_PATH for shared libs co-located with the binary
-	cmd := exec.CommandContext(ctx, benchBinary, args...)
-	cmd.Env = append(cmd.Environ(), "LD_LIBRARY_PATH="+cfg.BinaryDir)
-
-	slog.Info("running llama-bench", "binary", benchBinary, "args", strings.Join(args, " "))
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("llama-bench: %w\nstderr: %s", err, stderr.String())
-	}
-
-	return parseLlamaBenchJSON(out)
-}
-
-// parseLlamaBenchJSON parses llama-bench JSON output.
-// llama-bench outputs one JSON array with objects per test.
-func parseLlamaBenchJSON(data []byte) (*LlamaBenchResult, error) {
-	var entries []struct {
-		TestType string  `json:"test"`     // "pp" or "tg"
-		AvgTS    float64 `json:"avg_ts"`
-		NPrompt  int     `json:"n_prompt"`
-		NGen     int     `json:"n_gen"`
-		Reps     int     `json:"n_repetitions"`
-	}
-	if err := json.Unmarshal(data, &entries); err != nil {
-		return nil, fmt.Errorf("parse llama-bench output: %w", err)
-	}
-
-	result := &LlamaBenchResult{}
-	for _, e := range entries {
-		switch {
-		case e.NPrompt > 0 && e.NGen == 0:
-			result.PromptTokPerSec = e.AvgTS
-			result.PromptTokens = e.NPrompt
-			result.Repetitions = e.Reps
-		case e.NGen > 0 && e.NPrompt == 0:
-			result.GenTokPerSec = e.AvgTS
-			result.GenTokens = e.NGen
-		}
-	}
-	if result.PromptTokPerSec == 0 && result.GenTokPerSec == 0 {
-		return nil, fmt.Errorf("no results in llama-bench output")
-	}
-	return result, nil
-}

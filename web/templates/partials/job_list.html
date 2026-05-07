@@ -1,0 +1,41 @@
+{{define "job_list"}}
+{{if not .}}
+<p>No benchmark jobs yet. Click <strong>+ New Batch Job</strong> to create one.</p>
+{{else}}
+<div class="job-list">
+{{range $entry := .}}
+{{$j := $entry.Job}}
+<details class="job-row" data-job-id="{{$j.ID}}"
+         ontoggle="if(this.open && !this.dataset.loaded){this.dataset.loaded='1';htmx.trigger(this.querySelector('.job-detail-slot'),'showJobDetail');}">
+    <summary>
+        <span class="job-row-line1">
+            <strong>{{$j.Name}}</strong>
+            <span id="job-status-{{$j.ID}}" class="job-status status-{{$j.Status}}" title="status: {{$j.Status}}">{{$j.Status}}</span>
+            {{if eq $j.ID "adhoc"}}
+                <span id="job-progress-{{$j.ID}}" class="job-progress">{{$entry.AdhocRuns}} run{{if ne $entry.AdhocRuns 1}}s{{end}}</span>
+            {{else}}
+                <span id="job-progress-{{$j.ID}}" class="job-progress">
+                    {{$entry.Done}}/{{$entry.Total}} cells
+                    {{if gt $entry.Failed 0}}<span class="cell-failed-tag" title="failed cells">· {{$entry.Failed}} failed</span>{{end}}
+                </span>
+            {{end}}
+        </span>
+        <span class="job-row-line2">
+            {{if $j.Description}}<small class="job-desc">{{$j.Description}}</small>{{end}}
+            <small class="job-meta">
+                {{if not $j.CreatedAt.IsZero}}created {{$j.CreatedAt.Format "Jan 2 15:04"}}{{end}}
+                {{if not $j.FinishedAt.IsZero}} · finished {{$j.FinishedAt.Format "Jan 2 15:04"}}{{end}}
+            </small>
+        </span>
+    </summary>
+    <div class="job-detail-slot"
+         hx-get="/api/benchmark-jobs/{{$j.ID}}"
+         hx-trigger="showJobDetail"
+         hx-swap="innerHTML">
+        Loading…
+    </div>
+</details>
+{{end}}
+</div>
+{{end}}
+{{end}}
