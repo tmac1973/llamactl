@@ -1,4 +1,38 @@
 {{define "benchmark_compare"}}
+<style>
+.bench-compare-bars { display:block; margin-bottom: 0.75rem; }
+.bench-compare-row {
+    display:flex; align-items:center; gap:0.5rem; margin:0.25rem 0;
+}
+.bench-compare-label {
+    width:280px; font-size:0.8rem; text-align:right;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.bench-compare-bartrack {
+    flex:1; background:var(--pico-muted-border-color);
+    border-radius:4px; height:1.2rem;
+}
+.bench-compare-barfill { border-radius:4px; height:100%; min-width:2px; }
+.bench-compare-value { width:60px; font-size:0.85rem; }
+
+.bench-compare-table th[data-run-id] {
+    min-width:160px; max-width:280px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.bench-sort-bar {
+    display:flex; gap:0.4rem; align-items:center;
+    margin-bottom:0.5rem; flex-wrap:wrap;
+}
+.bench-sort-bar button {
+    margin:0; padding:0.15rem 0.55rem; font-size:0.8rem; width:auto;
+}
+.bench-sort-bar button.active {
+    background:var(--pico-primary);
+    color:var(--pico-primary-inverse);
+    border-color:var(--pico-primary);
+}
+</style>
+
 <div style="margin-bottom: 1rem;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
         <h5 style="margin:0;">Comparison: {{len .Runs}} runs</h5>
@@ -9,17 +43,31 @@
         </button>
     </div>
 
+    <div class="bench-sort-bar">
+        <small>Sort by:</small>
+        <button type="button" class="outline secondary" data-sort-key="name"   data-sort-dir="asc"  onclick="sortBenchCompare(this)">Name</button>
+        <button type="button" class="outline secondary active" data-sort-key="gen"    data-sort-dir="desc" onclick="sortBenchCompare(this)">Gen tok/s ▼</button>
+        <button type="button" class="outline secondary" data-sort-key="prompt" data-sort-dir="desc" onclick="sortBenchCompare(this)">Prompt tok/s ▼</button>
+        <button type="button" class="outline secondary" data-sort-key="ttft"   data-sort-dir="asc"  onclick="sortBenchCompare(this)">TTFT ▲</button>
+    </div>
+
     {{if gt .MaxGenTPS 0.0}}
     <small><strong>Generation Speed (tokens/sec)</strong></small>
-    <div style="margin-bottom: 0.75rem;">
+    <div class="bench-compare-bars">
         {{range .Runs}}
         {{if .Summary}}
-        <div style="display:flex;align-items:center;gap:0.5rem;margin:0.25rem 0;">
-            <div style="width:150px;font-size:0.8rem;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{.ModelName}} ({{.Quant}})</div>
-            <div style="flex:1;background:var(--pico-muted-border-color);border-radius:4px;height:1.2rem;">
-                <div style="width:{{printf "%.1f" (pctOf .Summary.AvgGenTokPerSec $.MaxGenTPS)}}%;background:var(--pico-primary);border-radius:4px;height:100%;min-width:2px;"></div>
+        {{$build := .EffectiveBuild}}
+        <div class="bench-compare-row"
+             data-run-id="{{.ID}}"
+             data-sort-name="{{.ModelName}}"
+             data-sort-gen="{{printf "%.4f" .Summary.AvgGenTokPerSec}}"
+             data-sort-prompt="{{printf "%.4f" .Summary.AvgPromptTokPerSec}}"
+             data-sort-ttft="{{printf "%.4f" .Summary.AvgTTFTMs}}">
+            <div class="bench-compare-label" title="{{.ModelID}}">{{.ModelName}} ({{.Quant}})</div>
+            <div class="bench-compare-bartrack">
+                <div class="bench-compare-barfill" style="width:{{printf "%.1f" (pctOf .Summary.AvgGenTokPerSec $.MaxGenTPS)}}%;background:var(--pico-primary);"></div>
             </div>
-            <div style="width:60px;font-size:0.85rem;"><strong>{{printf "%.1f" .Summary.AvgGenTokPerSec}}</strong></div>
+            <div class="bench-compare-value"><strong>{{printf "%.1f" .Summary.AvgGenTokPerSec}}</strong></div>
         </div>
         {{end}}
         {{end}}
@@ -28,15 +76,20 @@
 
     {{if gt .MaxPromptTPS 0.0}}
     <small><strong>Prompt Processing (tokens/sec)</strong></small>
-    <div style="margin-bottom: 0.75rem;">
+    <div class="bench-compare-bars">
         {{range .Runs}}
         {{if .Summary}}
-        <div style="display:flex;align-items:center;gap:0.5rem;margin:0.25rem 0;">
-            <div style="width:150px;font-size:0.8rem;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{.ModelName}} ({{.Quant}})</div>
-            <div style="flex:1;background:var(--pico-muted-border-color);border-radius:4px;height:1.2rem;">
-                <div style="width:{{printf "%.1f" (pctOf .Summary.AvgPromptTokPerSec $.MaxPromptTPS)}}%;background:var(--pico-ins-color);border-radius:4px;height:100%;min-width:2px;"></div>
+        <div class="bench-compare-row"
+             data-run-id="{{.ID}}"
+             data-sort-name="{{.ModelName}}"
+             data-sort-gen="{{printf "%.4f" .Summary.AvgGenTokPerSec}}"
+             data-sort-prompt="{{printf "%.4f" .Summary.AvgPromptTokPerSec}}"
+             data-sort-ttft="{{printf "%.4f" .Summary.AvgTTFTMs}}">
+            <div class="bench-compare-label" title="{{.ModelID}}">{{.ModelName}} ({{.Quant}})</div>
+            <div class="bench-compare-bartrack">
+                <div class="bench-compare-barfill" style="width:{{printf "%.1f" (pctOf .Summary.AvgPromptTokPerSec $.MaxPromptTPS)}}%;background:var(--pico-ins-color);"></div>
             </div>
-            <div style="width:60px;font-size:0.85rem;"><strong>{{printf "%.0f" .Summary.AvgPromptTokPerSec}}</strong></div>
+            <div class="bench-compare-value"><strong>{{printf "%.0f" .Summary.AvgPromptTokPerSec}}</strong></div>
         </div>
         {{end}}
         {{end}}
@@ -45,58 +98,128 @@
 
     <small><strong>Details</strong></small>
     <div style="overflow-x:auto;">
-    <table role="grid" style="font-size:0.85rem;">
+    <table role="grid" class="bench-compare-table" style="font-size:0.85rem;">
         <thead>
             <tr>
                 <th></th>
-                {{range .Runs}}<th>{{.ModelName}}<br><small>{{.Quant}}</small></th>{{end}}
+                {{range .Runs}}
+                <th data-run-id="{{.ID}}" title="{{.ModelID}}">{{.ModelName}}<br><small>{{.Quant}}</small></th>
+                {{end}}
             </tr>
         </thead>
         <tbody>
             <tr>
                 <td>PP t/s</td>
-                {{range .Runs}}<td>{{if .Summary}}{{printf "%.0f" .Summary.AvgPromptTokPerSec}}{{else}}—{{end}}</td>{{end}}
+                {{range .Runs}}<td data-run-id="{{.ID}}">{{if .Summary}}{{printf "%.0f" .Summary.AvgPromptTokPerSec}}{{else}}—{{end}}</td>{{end}}
             </tr>
             <tr>
                 <td>TG t/s</td>
-                {{range .Runs}}<td>{{if .Summary}}<strong>{{printf "%.1f" .Summary.AvgGenTokPerSec}}</strong>{{else}}—{{end}}</td>{{end}}
+                {{range .Runs}}<td data-run-id="{{.ID}}">{{if .Summary}}<strong>{{printf "%.1f" .Summary.AvgGenTokPerSec}}</strong>{{else}}—{{end}}</td>{{end}}
             </tr>
             <tr>
                 <td>TTFT (ms)</td>
-                {{range .Runs}}<td>{{if .Summary}}{{printf "%.0f" .Summary.AvgTTFTMs}}{{else}}—{{end}}</td>{{end}}
+                {{range .Runs}}<td data-run-id="{{.ID}}">{{if .Summary}}{{printf "%.0f" .Summary.AvgTTFTMs}}{{else}}—{{end}}</td>{{end}}
             </tr>
             <tr>
                 <td>Size</td>
-                {{range .Runs}}<td>{{printf "%.1f" .SizeGB}} GB</td>{{end}}
+                {{range .Runs}}<td data-run-id="{{.ID}}">{{printf "%.1f" .SizeGB}} GB</td>{{end}}
             </tr>
             <tr>
                 <td>GPUs</td>
-                {{range .Runs}}<td>{{if .Config.GPUAssign}}{{.Config.GPUAssign}}{{else}}all{{end}}</td>{{end}}
+                {{range .Runs}}<td data-run-id="{{.ID}}">{{if .Config.GPUAssign}}{{.Config.GPUAssign}}{{else}}all{{end}}</td>{{end}}
             </tr>
             <tr>
                 <td>Context</td>
-                {{range .Runs}}<td>{{.Config.ContextSize}}</td>{{end}}
+                {{range .Runs}}<td data-run-id="{{.ID}}">{{.Config.ContextSize}}</td>{{end}}
             </tr>
             <tr>
                 <td>KV Quant</td>
-                {{range .Runs}}<td>{{if .Config.KVCacheQuant}}{{.Config.KVCacheQuant}}{{else}}—{{end}}</td>{{end}}
+                {{range .Runs}}<td data-run-id="{{.ID}}">{{if .Config.KVCacheQuant}}{{.Config.KVCacheQuant}}{{else}}—{{end}}</td>{{end}}
             </tr>
             <tr>
                 <td>Flash Attn</td>
-                {{range .Runs}}<td>{{if .Config.FlashAttention}}yes{{else}}no{{end}}</td>{{end}}
+                {{range .Runs}}<td data-run-id="{{.ID}}">{{if .Config.FlashAttention}}yes{{else}}no{{end}}</td>{{end}}
             </tr>
             <tr>
                 <td>Build</td>
-                {{range .Runs}}<td>{{if .BuildID}}<small><kbd>{{.BuildID}}</kbd></small>{{else if .BuildRef}}{{.BuildRef}}{{else}}—{{end}}</td>{{end}}
+                {{range .Runs}}
+                {{$b := .EffectiveBuild}}
+                <td data-run-id="{{.ID}}" title="{{$b.Tag}}{{if $b.GitSHA}} · {{$b.GitSHA}}{{end}}">
+                    {{if $b.Profile}}{{$b.Profile}}{{end}}{{if $b.GitRef}} · {{$b.GitRef}}{{end}}{{if and (not $b.Profile) (not $b.GitRef)}}—{{end}}
+                </td>
+                {{end}}
             </tr>
             {{if .HasLlamaBench}}
             <tr>
                 <td>llama-bench TG</td>
-                {{range .Runs}}<td>{{if .LlamaBench}}{{printf "%.1f" .LlamaBench.GenTokPerSec}}{{else}}—{{end}}</td>{{end}}
+                {{range .Runs}}<td data-run-id="{{.ID}}">{{if .LlamaBench}}{{printf "%.1f" .LlamaBench.GenTokPerSec}}{{else}}—{{end}}</td>{{end}}
             </tr>
             {{end}}
         </tbody>
     </table>
     </div>
 </div>
+
+<script>
+(function() {
+    // Initial sort matches the active button (Gen tok/s desc).
+    sortBenchCompare(document.querySelector('.bench-sort-bar button.active'));
+})();
+
+function sortBenchCompare(btn) {
+    if (!btn) return;
+    var bar = btn.closest('.bench-sort-bar');
+    if (!bar) return;
+    bar.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+
+    var key = btn.dataset.sortKey;     // name | gen | prompt | ttft
+    var dir = btn.dataset.sortDir;     // asc | desc
+    var attr = 'sort' + key.charAt(0).toUpperCase() + key.slice(1);
+    var view = btn.closest('#comparison-view');
+    if (!view) return;
+
+    // Collect run IDs + sort values from any one of the bar charts (they
+    // all carry the same dataset attributes per run).
+    var anyRow = view.querySelector('.bench-compare-row[data-run-id]');
+    if (!anyRow) return;
+    var rows = view.querySelectorAll('.bench-compare-row[data-run-id]');
+    var byId = {};
+    rows.forEach(function(r) {
+        if (byId[r.dataset.runId] !== undefined) return;
+        var v = r.dataset[attr];
+        var num = parseFloat(v);
+        byId[r.dataset.runId] = isNaN(num) ? v : num;
+    });
+    var ids = Object.keys(byId);
+    ids.sort(function(a, b) {
+        var va = byId[a], vb = byId[b];
+        var cmp;
+        if (typeof va === 'string' || typeof vb === 'string') {
+            cmp = String(va).localeCompare(String(vb), undefined, {numeric:true, sensitivity:'base'});
+        } else {
+            cmp = va - vb;
+        }
+        return dir === 'desc' ? -cmp : cmp;
+    });
+
+    // Re-order each bar chart's row siblings.
+    view.querySelectorAll('.bench-compare-bars').forEach(function(container) {
+        var rowMap = {};
+        container.querySelectorAll('.bench-compare-row').forEach(function(r) { rowMap[r.dataset.runId] = r; });
+        ids.forEach(function(id) { if (rowMap[id]) container.appendChild(rowMap[id]); });
+    });
+
+    // Re-order table columns row by row. The first <td>/<th> per row is
+    // a label without data-run-id, so re-appending only the run-id'd
+    // cells preserves the label position naturally.
+    view.querySelectorAll('.bench-compare-table tr').forEach(function(tr) {
+        var cellMap = {};
+        Array.from(tr.children).forEach(function(td) {
+            if (td.dataset.runId) cellMap[td.dataset.runId] = td;
+        });
+        ids.forEach(function(id) { if (cellMap[id]) tr.appendChild(cellMap[id]); });
+    });
+}
+</script>
 {{end}}
