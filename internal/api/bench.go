@@ -135,7 +135,8 @@ func (s *Server) renderBenchmarkList(w http.ResponseWriter, runs []benchmark.Ben
 		<button type="button" class="outline secondary" onclick="collapseAllBenchGroups(this)">Collapse All</button>
 		<button type="button" class="outline secondary" onclick="expandAllBenchGroups(this)">Expand All</button>
 		<button type="button" class="outline secondary" onclick="compareSelectedRuns(this)">Compare</button>
-		<button type="button" class="outline secondary" onclick="exportSelectedRuns(this)">Export CSV</button>
+		<button type="button" class="outline secondary" onclick="exportSelectedRuns(this, 'csv')">Export CSV</button>
+		<button type="button" class="outline secondary" onclick="exportSelectedRuns(this, 'json')">Export JSON</button>
 		<button type="button" class="outline secondary" onclick="deleteSelectedRuns(this)">Delete Selected</button>
 	</div>`))
 
@@ -341,78 +342,58 @@ func (s *Server) handleBatchDeleteBenchmarks(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusOK)
 }
 
-// handleExportBenchmarks exports selected benchmark runs as CSV.
+// handleExportBenchmarks exports an arbitrary selection of runs in
+// either CSV (cells or summary scope) or JSON. Routes through the
+// shared exporter so the column schema matches /api/benchmark-jobs/{id}/export.
 func (s *Server) handleExportBenchmarks(w http.ResponseWriter, r *http.Request) {
 	idsParam := r.URL.Query().Get("ids")
 	if idsParam == "" {
 		http.Error(w, "ids parameter required", http.StatusBadRequest)
 		return
 	}
+	format, err := parseExportFormat(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	scope, err := parseExportScope(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	var runs []benchmark.BenchmarkRun
+	jobIDs := map[string]struct{}{}
 	for _, id := range strings.Split(idsParam, ",") {
 		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
 		if run, err := s.bench.Get(id); err == nil {
 			runs = append(runs, *run)
+			if run.JobID != "" {
+				jobIDs[run.JobID] = struct{}{}
+			}
 		}
 	}
 
-	w.Header().Set("Content-Type", "text/csv")
-	w.Header().Set("Content-Disposition", "attachment; filename=benchmarks.csv")
-
-	// Header — one row per test point, with run metadata repeated
-	fmt.Fprintln(w, "Model,Quant,Size (GB),Preset,Row Type,Prompt Tokens,Gen Tokens,Rep,PP t/s,TG t/s,TTFT (ms),Total (ms),GPU Layers,Context,GPU Assign,Tensor Split,Flash Attn,KV Quant,Direct IO,Threads,Spec Type,Build,Build Ref,GPUs,Date")
-
-	for _, run := range runs {
-		gpuNames := ""
-		for i, g := range run.GPUs {
-			if i > 0 {
-				gpuNames += "; "
-			}
-			gpuNames += g.Name
+	jobs := make([]*benchmark.BenchmarkJob, 0, len(jobIDs))
+	for jid := range jobIDs {
+		if j, err := s.bench.GetJob(jid); err == nil {
+			jobs = append(jobs, j)
 		}
+	}
+	jobLU := newJobLookup(jobs)
 
-		common := fmt.Sprintf("%s,%s,%.1f,%s",
-			run.ModelName, run.Quant, run.SizeGB, run.Preset)
-		config := fmt.Sprintf("%d,%d,%s,%s,%t,%s,%t,%d,%s,%s,%s,\"%s\",%s",
-			run.Config.GPULayers,
-			run.Config.ContextSize,
-			run.Config.GPUAssign,
-			run.Config.TensorSplit,
-			run.Config.FlashAttention,
-			run.Config.KVCacheQuant,
-			run.Config.DirectIO,
-			run.Config.Threads,
-			run.Config.SpecType,
-			run.BuildID,
-			run.BuildRef,
-			gpuNames,
-			run.CreatedAt.Format("2006-01-02 15:04"))
-
-		// Individual test results
-		for _, r := range run.Results {
-			fmt.Fprintf(w, "%s,api,%d,%d,%d,%.0f,%.1f,%.0f,%.0f,%s\n",
-				common, r.PromptTokens, r.GenTokens, r.Repetition,
-				r.PromptTokPerSec, r.GenTokPerSec, r.TTFTMs, r.TotalMs,
-				config)
-		}
-
-		// Summary row
-		if run.Summary != nil {
-			fmt.Fprintf(w, "%s,api-avg,,,,%.0f,%.1f,%.0f,,%s\n",
-				common,
-				run.Summary.AvgPromptTokPerSec, run.Summary.AvgGenTokPerSec, run.Summary.AvgTTFTMs,
-				config)
-		}
-
-		// llama-bench results
-		if run.LlamaBench != nil {
-			fmt.Fprintf(w, "%s,llama-bench,%d,%d,%d,%.0f,%.1f,,,%s\n",
-				common,
-				run.LlamaBench.PromptTokens, run.LlamaBench.GenTokens, run.LlamaBench.Repetitions,
-				run.LlamaBench.PromptTokPerSec, run.LlamaBench.GenTokPerSec,
-				config)
-		}
+	switch format {
+	case exportFormatJSON:
+		_ = writeJSONExport(w, "benchmarks.json", ExportEnvelope{
+			Version: exportEnvelopeVersion,
+			Jobs:    jobs,
+			Runs:    runs,
+		})
+	default:
+		_ = writeCSVExport(w, fmt.Sprintf("benchmarks-%s.csv", scope), runs, jobLU, scope)
 	}
 }
 

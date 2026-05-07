@@ -149,13 +149,14 @@ function compareSelectedRuns(btn) {
         .then(function(){ view.scrollIntoView({behavior:'smooth'}); });
 }
 
-function exportSelectedRuns(btn) {
+function exportSelectedRuns(btn, format) {
     var root = benchContainer(btn);
     if (!root) return;
     var checks = root.querySelectorAll('.bench-check:checked');
     if (checks.length === 0) { alert('Select benchmarks to export.'); return; }
     var ids = Array.from(checks).map(function(c){return c.value;}).join(',');
-    window.location = '/api/benchmarks/export?ids='+ids;
+    var fmt = format || 'csv';
+    window.location = '/api/benchmarks/export?ids=' + ids + '&format=' + fmt;
 }
 
 function deleteSelectedRuns(btn) {

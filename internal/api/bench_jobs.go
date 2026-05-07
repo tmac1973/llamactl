@@ -356,8 +356,9 @@ func (s *Server) handleJobProgress(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleExportJob is a minimal JSON-only export stub. Step 9 replaces
-// it with full CSV (per-cell rows + summary) and self-contained JSON.
+// handleExportJob serves a per-job export. Both formats accept the
+// same scope param (?scope=cells|summary) since CSV honours it and
+// JSON is always full-fidelity.
 func (s *Server) handleExportJob(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	job, err := s.bench.GetJob(id)
@@ -365,23 +366,29 @@ func (s *Server) handleExportJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	format := r.URL.Query().Get("format")
-	if format == "" {
-		format = "json"
-	}
-	if format != "json" {
-		http.Error(w, "only format=json is wired up; CSV ships with step 9", http.StatusNotImplemented)
+	format, err := parseExportFormat(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	payload := struct {
-		Job  *benchmark.BenchmarkJob   `json:"job"`
-		Runs []benchmark.BenchmarkRun  `json:"runs"`
-	}{
-		Job:  job,
-		Runs: s.bench.RunsForJob(id),
+	scope, err := parseExportScope(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="job-%s.json"`, id))
-	respondJSON(w, payload)
+	runs := s.bench.RunsForJob(id)
+	jobs := newJobLookup([]*benchmark.BenchmarkJob{job})
+
+	switch format {
+	case exportFormatJSON:
+		_ = writeJSONExport(w, fmt.Sprintf("job-%s.json", id), ExportEnvelope{
+			Version: exportEnvelopeVersion,
+			Jobs:    []*benchmark.BenchmarkJob{job},
+			Runs:    runs,
+		})
+	default: // csv
+		_ = writeCSVExport(w, fmt.Sprintf("job-%s-%s.csv", id, scope), runs, jobs, scope)
+	}
 }
 
 func jobInTerminalState(status string) bool {
