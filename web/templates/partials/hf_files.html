@@ -27,13 +27,13 @@
                 <button type="button"
                         hx-post="/api/hf/download"
                         hx-vals='{"model_id":"{{$.ID}}","filename":"{{$f.Filename}}"}'
-                        hx-target="#dl-{{$i}}"
+                        hx-target="#dl-{{cssID $.ID}}-{{$i}}"
                         hx-swap="innerHTML">
                     Download
                 </button>
             </td>
         </tr>
-        <tr id="dl-{{$i}}"></tr>
+        <tr id="dl-{{cssID $.ID}}-{{$i}}"></tr>
         {{end}}
     </tbody>
 </table>
