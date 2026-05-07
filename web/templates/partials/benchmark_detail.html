@@ -14,7 +14,7 @@
                 {{if .Config.GPUAssign}}GPU Assign: {{.Config.GPUAssign}} | {{end}}
                 {{if .Config.TensorSplit}}Tensor Split: {{.Config.TensorSplit}} | {{end}}
                 Flash Attn: {{if .Config.FlashAttention}}on{{else}}off{{end}}
-                {{if .Config.KVCacheQuant}} | KV Quant: {{.Config.KVCacheQuant}}{{end}}
+                | KV Quant: {{or .Config.KVCacheQuant "f16"}}
                 {{if .Config.DirectIO}} | Direct I/O: on{{end}}
                 {{if .Config.SpecType}} | Spec: {{.Config.SpecType}}{{end}}
             </small>

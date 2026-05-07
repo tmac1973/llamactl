@@ -131,7 +131,7 @@
             <td>{{printf "%.1f" .SizeGB}} GB</td>
             <td>{{if .Config.GPUAssign}}{{.Config.GPUAssign}}{{else}}all{{end}}</td>
             <td>{{.Config.ContextSize}}</td>
-            <td>{{if .Config.KVCacheQuant}}{{.Config.KVCacheQuant}}{{else}}—{{end}}</td>
+            <td>{{or .Config.KVCacheQuant "f16"}}</td>
             <td>{{if .Config.FlashAttention}}yes{{else}}no{{end}}</td>
             <td title="{{$b.Tag}}{{if $b.GitSHA}} · {{$b.GitSHA}}{{end}}">
                 {{if $b.Profile}}{{$b.Profile}}{{end}}{{if $b.GitRef}} · {{$b.GitRef}}{{end}}{{if and (not $b.Profile) (not $b.GitRef)}}—{{end}}
