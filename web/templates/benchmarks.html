@@ -143,9 +143,10 @@ function compareSelectedRuns(btn) {
     if (checks.length < 2) { alert('Select at least 2 benchmarks to compare.'); return; }
     var ids = Array.from(checks).map(function(c){return c.value;}).join(',');
     var view = document.getElementById('comparison-view');
-    fetch('/api/benchmarks/compare?ids='+ids, {headers:{'HX-Request':'true'}})
-        .then(function(r){return r.text();})
-        .then(function(h){ view.innerHTML = h; view.scrollIntoView({behavior:'smooth'}); });
+    // Use htmx.ajax (not raw fetch + innerHTML) so the inline <script> in
+    // the compare partial actually runs — innerHTML doesn't execute scripts.
+    htmx.ajax('GET', '/api/benchmarks/compare?ids='+ids, {target: view, swap: 'innerHTML'})
+        .then(function(){ view.scrollIntoView({behavior:'smooth'}); });
 }
 
 function exportSelectedRuns(btn) {
@@ -346,9 +347,8 @@ function compareSelectedCells(btn) {
     if (checks.length < 2) { alert('Select at least 2 cells to compare.'); return; }
     var ids = Array.from(checks).map(function(c){return c.value;}).join(',');
     var view = document.getElementById('comparison-view');
-    fetch('/api/benchmarks/compare?ids='+ids, {headers:{'HX-Request':'true'}})
-        .then(function(r){return r.text();})
-        .then(function(h){ view.innerHTML = h; view.scrollIntoView({behavior:'smooth'}); });
+    htmx.ajax('GET', '/api/benchmarks/compare?ids='+ids, {target: view, swap: 'innerHTML'})
+        .then(function(){ view.scrollIntoView({behavior:'smooth'}); });
 }
 
 </script>
