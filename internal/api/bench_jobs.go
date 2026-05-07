@@ -155,8 +155,10 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 // parent list row without re-rendering the entire list.
 func (s *Server) renderJobDetail(w http.ResponseWriter, job *benchmark.BenchmarkJob) {
 	type cellRow struct {
+		Idx       int
 		Cell      benchmark.JobCell
 		ModelName string
+		Quant     string
 		BuildLbl  string
 		TGTPS     string // formatted, "—" when no summary
 		PPTPS     string
@@ -164,18 +166,26 @@ func (s *Server) renderJobDetail(w http.ResponseWriter, job *benchmark.Benchmark
 	}
 	rows := make([]cellRow, 0, len(job.Cells))
 	var done, failed int
-	for _, c := range job.Cells {
+	for i, c := range job.Cells {
 		switch c.Status {
 		case benchmark.CellStatusCompleted:
 			done++
 		case benchmark.CellStatusFailed:
 			failed++
 		}
-		row := cellRow{Cell: c, ModelName: shortenModelName(c.ModelID), BuildLbl: c.BuildID, TGTPS: "—", PPTPS: "—"}
+		row := cellRow{Idx: i, Cell: c, ModelName: shortenModelName(c.ModelID), BuildLbl: c.BuildID, TGTPS: "—", PPTPS: "—"}
+		// Pull Quant from the registry first so pending cells (no run
+		// yet) still show it; the run's value wins once it exists.
+		if m, err := s.registry.Get(c.ModelID); err == nil {
+			row.Quant = m.Quant
+		}
 		if c.BenchmarkRunID != "" {
 			if run, err := s.bench.Get(c.BenchmarkRunID); err == nil {
 				if run.ModelName != "" {
 					row.ModelName = run.ModelName
+				}
+				if run.Quant != "" {
+					row.Quant = run.Quant
 				}
 				if run.BuildID != "" {
 					row.BuildLbl = run.BuildID

@@ -39,6 +39,7 @@
                 <th style="width:2rem;"><input type="checkbox" style="margin:0;"
                     onchange="this.closest('table').querySelectorAll('.cell-check').forEach(function(c){c.checked=this.checked}.bind(this));"></th>
                 <th>Model</th>
+                <th>Quant</th>
                 <th>Build</th>
                 <th>Preset</th>
                 <th>Status</th>
@@ -50,9 +51,10 @@
         </thead>
         <tbody>
         {{range .Rows}}
-        <tr>
+        <tr id="cell-row-{{$j.ID}}-{{.Idx}}">
             <td>{{if .Cell.BenchmarkRunID}}<input type="checkbox" class="cell-check" value="{{.Cell.BenchmarkRunID}}" style="margin:0;">{{end}}</td>
             <td>{{.ModelName}}</td>
+            <td>{{if .Quant}}<kbd>{{.Quant}}</kbd>{{else}}—{{end}}</td>
             <td><kbd>{{.BuildLbl}}</kbd></td>
             <td><small>{{.Cell.Preset}}</small></td>
             <td><span class="cell-status status-{{.Cell.Status}}">{{.Cell.Status}}</span>
@@ -69,7 +71,12 @@
                 {{end}}
             </td>
         </tr>
-        <tr><td colspan="9" class="bench-detail"></td></tr>
+        {{/*
+          hx-preserve keeps the user's expanded inline detail across the
+          parent's 2s polling swaps. The id needs to be stable, which
+          .Idx (the cell's position in the immutable Cells slice) gives us.
+        */}}
+        <tr id="cell-detail-{{$j.ID}}-{{.Idx}}" hx-preserve="true"><td colspan="10" class="bench-detail"></td></tr>
         {{end}}
         </tbody>
     </table>
