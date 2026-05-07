@@ -35,7 +35,7 @@
     </header>
     <div id="job-list"
          hx-get="/api/benchmark-jobs"
-         hx-trigger="load, jobChanged from:body, every 5s"
+         hx-trigger="load, jobChanged from:body"
          hx-swap="innerHTML">
         Loading…
     </div>
@@ -215,38 +215,6 @@ function filterBenchmarks(q) {
         tb.style.display = (tb._matches && !collapsed[name]) ? '' : 'none';
     });
 }
-
-// --- Preserve job-row expansion state across list refreshes (the list
-//     polls itself every 5s and also re-fetches on jobChanged events).
-//     Without this, the user's expanded view collapses every poll cycle.
-(function() {
-    var openSet = new Set();
-    document.body.addEventListener('htmx:beforeSwap', function(e) {
-        var t = e.detail && e.detail.target;
-        if (t && t.id === 'job-list') {
-            openSet.clear();
-            t.querySelectorAll('details.job-row[open]').forEach(function(d) {
-                openSet.add(d.dataset.jobId);
-            });
-        }
-    });
-    document.body.addEventListener('htmx:afterSwap', function(e) {
-        var t = e.detail && e.detail.target;
-        if (t && t.id === 'job-list') {
-            t.querySelectorAll('details.job-row').forEach(function(d) {
-                if (!openSet.has(d.dataset.jobId)) return;
-                d.open = true;
-                d.dataset.loaded = '1';
-                var slot = d.querySelector('.job-detail-slot');
-                if (!slot) return;
-                // Don't rely on the brand-new slot having its hx-trigger
-                // wired up yet — fetch directly via the URL on the slot.
-                var url = slot.getAttribute('hx-get');
-                if (url) htmx.ajax('GET', url, {target: slot, swap: 'innerHTML'});
-            });
-        }
-    });
-})();
 
 // --- Job form modal ---
 function openJobForm() {

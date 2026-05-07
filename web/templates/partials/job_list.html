@@ -10,11 +10,11 @@
     <summary>
         <span class="job-row-line1">
             <strong>{{$j.Name}}</strong>
-            <span class="job-status status-{{$j.Status}}" title="status: {{$j.Status}}">{{$j.Status}}</span>
+            <span id="job-status-{{$j.ID}}" class="job-status status-{{$j.Status}}" title="status: {{$j.Status}}">{{$j.Status}}</span>
             {{if eq $j.ID "adhoc"}}
-                <span class="job-progress">{{$entry.AdhocRuns}} run{{if ne $entry.AdhocRuns 1}}s{{end}}</span>
+                <span id="job-progress-{{$j.ID}}" class="job-progress">{{$entry.AdhocRuns}} run{{if ne $entry.AdhocRuns 1}}s{{end}}</span>
             {{else}}
-                <span class="job-progress">
+                <span id="job-progress-{{$j.ID}}" class="job-progress">
                     {{$entry.Done}}/{{$entry.Total}} cells
                     {{if gt $entry.Failed 0}}<span class="cell-failed-tag" title="failed cells">· {{$entry.Failed}} failed</span>{{end}}
                 </span>

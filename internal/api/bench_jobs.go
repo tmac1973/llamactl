@@ -150,7 +150,9 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 
 // renderJobDetail enriches a job's cells with their linked run summary
 // before rendering, so the matrix view can show TG t/s without a second
-// round-trip per cell.
+// round-trip per cell. Also tallies done/failed/total so the OOB
+// summary update fragments at the top of the partial can patch the
+// parent list row without re-rendering the entire list.
 func (s *Server) renderJobDetail(w http.ResponseWriter, job *benchmark.BenchmarkJob) {
 	type cellRow struct {
 		Cell      benchmark.JobCell
@@ -161,7 +163,14 @@ func (s *Server) renderJobDetail(w http.ResponseWriter, job *benchmark.Benchmark
 		ErrorShort string
 	}
 	rows := make([]cellRow, 0, len(job.Cells))
+	var done, failed int
 	for _, c := range job.Cells {
+		switch c.Status {
+		case benchmark.CellStatusCompleted:
+			done++
+		case benchmark.CellStatusFailed:
+			failed++
+		}
 		row := cellRow{Cell: c, ModelName: shortenModelName(c.ModelID), BuildLbl: c.BuildID, TGTPS: "—", PPTPS: "—"}
 		if c.BenchmarkRunID != "" {
 			if run, err := s.bench.Get(c.BenchmarkRunID); err == nil {
@@ -186,9 +195,12 @@ func (s *Server) renderJobDetail(w http.ResponseWriter, job *benchmark.Benchmark
 		rows = append(rows, row)
 	}
 	s.renderPartial(w, "job_detail", struct {
-		Job  *benchmark.BenchmarkJob
-		Rows []cellRow
-	}{Job: job, Rows: rows})
+		Job    *benchmark.BenchmarkJob
+		Rows   []cellRow
+		Done   int
+		Failed int
+		Total  int
+	}{Job: job, Rows: rows, Done: done, Failed: failed, Total: len(job.Cells)})
 }
 
 // handleJobForm renders the new-job modal contents (multi-select models,

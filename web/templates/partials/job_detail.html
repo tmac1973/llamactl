@@ -1,5 +1,16 @@
 {{define "job_detail"}}
 {{$j := .Job}}
+{{/*
+  OOB swaps target the summary spans rendered by job_list.html so the
+  collapsed-view status badge and cell-progress text stay live without
+  re-rendering the whole list (which causes a visible flash). HTMX
+  silently ignores OOB targets that don't exist on the page yet.
+*/}}
+<span id="job-status-{{$j.ID}}" hx-swap-oob="true" class="job-status status-{{$j.Status}}" title="status: {{$j.Status}}">{{$j.Status}}</span>
+<span id="job-progress-{{$j.ID}}" hx-swap-oob="true" class="job-progress">
+    {{.Done}}/{{.Total}} cells
+    {{if gt .Failed 0}}<span class="cell-failed-tag" title="failed cells">· {{.Failed}} failed</span>{{end}}
+</span>
 <div class="job-detail"
      {{if eq $j.Status "running"}}
      hx-get="/api/benchmark-jobs/{{$j.ID}}"
