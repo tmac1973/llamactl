@@ -96,9 +96,14 @@ func filterRunsByJob(runs []benchmark.BenchmarkRun, jobID string) []benchmark.Be
 
 // renderBenchmarkList emits the grouped, searchable benchmarks table.
 // Groups by ModelName; each group is collapsed by default. The wrapping
-// JS in benchmarks.html drives toggle/filter using data-model and
-// data-search attributes — same pattern as the models page.
+// JS in benchmarks.html drives toggle/filter/compare/export/delete using
+// data-model and data-search attributes plus the .bench-runs-container
+// scope so the same renderer can serve multiple list contexts (today
+// just the adhoc job's expanded view; tomorrow per-job filtered views).
 func (s *Server) renderBenchmarkList(w http.ResponseWriter, runs []benchmark.BenchmarkRun) {
+	w.Write([]byte(`<div class="bench-runs-container">`))
+	defer w.Write([]byte(`</div>`))
+
 	if len(runs) == 0 {
 		w.Write([]byte("<p>No benchmarks yet. Run one above to get started.</p>"))
 		return
@@ -126,9 +131,12 @@ func (s *Server) renderBenchmarkList(w http.ResponseWriter, runs []benchmark.Ben
 	sort.Slice(names, func(i, j int) bool { return strings.ToLower(names[i]) < strings.ToLower(names[j]) })
 
 	w.Write([]byte(`<div class="model-list-controls">
-		<input type="search" class="model-filter" placeholder="Filter by model, quant, build, preset…" oninput="filterBenchmarks(this.value)" autocomplete="off">
-		<button type="button" class="outline secondary" onclick="collapseAllBenchGroups()">Collapse All</button>
-		<button type="button" class="outline secondary" onclick="expandAllBenchGroups()">Expand All</button>
+		<input type="search" class="model-filter" placeholder="Filter by model, quant, build, preset…" oninput="filterBenchmarks(this, this.value)" autocomplete="off">
+		<button type="button" class="outline secondary" onclick="collapseAllBenchGroups(this)">Collapse All</button>
+		<button type="button" class="outline secondary" onclick="expandAllBenchGroups(this)">Expand All</button>
+		<button type="button" class="outline secondary" onclick="compareSelectedRuns(this)">Compare</button>
+		<button type="button" class="outline secondary" onclick="exportSelectedRuns(this)">Export CSV</button>
+		<button type="button" class="outline secondary" onclick="deleteSelectedRuns(this)">Delete Selected</button>
 	</div>`))
 
 	w.Write([]byte(`<table role="grid">
