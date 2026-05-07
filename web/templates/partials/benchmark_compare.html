@@ -101,60 +101,44 @@
     <table role="grid" class="bench-compare-table" style="font-size:0.85rem;">
         <thead>
             <tr>
-                <th></th>
-                {{range .Runs}}
-                <th data-run-id="{{.ID}}" title="{{.ModelID}}">{{.ModelName}}<br><small>{{.Quant}}</small></th>
-                {{end}}
+                <th>Model</th>
+                <th>Quant</th>
+                <th title="Prompt Processing tokens/sec">PP t/s</th>
+                <th title="Token Generation tokens/sec">TG t/s</th>
+                <th title="Time To First Token, milliseconds">TTFT (ms)</th>
+                <th>Size</th>
+                <th>GPUs</th>
+                <th>Context</th>
+                <th>KV Quant</th>
+                <th>Flash Attn</th>
+                <th>Build</th>
+                {{if .HasLlamaBench}}<th title="llama-bench TG t/s (legacy)">lb TG</th>{{end}}
             </tr>
         </thead>
         <tbody>
-            <tr>
-                <td>PP t/s</td>
-                {{range .Runs}}<td data-run-id="{{.ID}}">{{if .Summary}}{{printf "%.0f" .Summary.AvgPromptTokPerSec}}{{else}}—{{end}}</td>{{end}}
-            </tr>
-            <tr>
-                <td>TG t/s</td>
-                {{range .Runs}}<td data-run-id="{{.ID}}">{{if .Summary}}<strong>{{printf "%.1f" .Summary.AvgGenTokPerSec}}</strong>{{else}}—{{end}}</td>{{end}}
-            </tr>
-            <tr>
-                <td>TTFT (ms)</td>
-                {{range .Runs}}<td data-run-id="{{.ID}}">{{if .Summary}}{{printf "%.0f" .Summary.AvgTTFTMs}}{{else}}—{{end}}</td>{{end}}
-            </tr>
-            <tr>
-                <td>Size</td>
-                {{range .Runs}}<td data-run-id="{{.ID}}">{{printf "%.1f" .SizeGB}} GB</td>{{end}}
-            </tr>
-            <tr>
-                <td>GPUs</td>
-                {{range .Runs}}<td data-run-id="{{.ID}}">{{if .Config.GPUAssign}}{{.Config.GPUAssign}}{{else}}all{{end}}</td>{{end}}
-            </tr>
-            <tr>
-                <td>Context</td>
-                {{range .Runs}}<td data-run-id="{{.ID}}">{{.Config.ContextSize}}</td>{{end}}
-            </tr>
-            <tr>
-                <td>KV Quant</td>
-                {{range .Runs}}<td data-run-id="{{.ID}}">{{if .Config.KVCacheQuant}}{{.Config.KVCacheQuant}}{{else}}—{{end}}</td>{{end}}
-            </tr>
-            <tr>
-                <td>Flash Attn</td>
-                {{range .Runs}}<td data-run-id="{{.ID}}">{{if .Config.FlashAttention}}yes{{else}}no{{end}}</td>{{end}}
-            </tr>
-            <tr>
-                <td>Build</td>
-                {{range .Runs}}
-                {{$b := .EffectiveBuild}}
-                <td data-run-id="{{.ID}}" title="{{$b.Tag}}{{if $b.GitSHA}} · {{$b.GitSHA}}{{end}}">
-                    {{if $b.Profile}}{{$b.Profile}}{{end}}{{if $b.GitRef}} · {{$b.GitRef}}{{end}}{{if and (not $b.Profile) (not $b.GitRef)}}—{{end}}
-                </td>
-                {{end}}
-            </tr>
-            {{if .HasLlamaBench}}
-            <tr>
-                <td>llama-bench TG</td>
-                {{range .Runs}}<td data-run-id="{{.ID}}">{{if .LlamaBench}}{{printf "%.1f" .LlamaBench.GenTokPerSec}}{{else}}—{{end}}</td>{{end}}
-            </tr>
-            {{end}}
+        {{range .Runs}}
+        {{$b := .EffectiveBuild}}
+        <tr data-run-id="{{.ID}}"
+            data-sort-name="{{.ModelName}}"
+            {{if .Summary}}data-sort-gen="{{printf "%.4f" .Summary.AvgGenTokPerSec}}"
+            data-sort-prompt="{{printf "%.4f" .Summary.AvgPromptTokPerSec}}"
+            data-sort-ttft="{{printf "%.4f" .Summary.AvgTTFTMs}}"{{end}}>
+            <td title="{{.ModelID}}" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{.ModelName}}</td>
+            <td><kbd>{{.Quant}}</kbd></td>
+            <td>{{if .Summary}}{{printf "%.0f" .Summary.AvgPromptTokPerSec}}{{else}}—{{end}}</td>
+            <td>{{if .Summary}}<strong>{{printf "%.1f" .Summary.AvgGenTokPerSec}}</strong>{{else}}—{{end}}</td>
+            <td>{{if .Summary}}{{printf "%.0f" .Summary.AvgTTFTMs}}{{else}}—{{end}}</td>
+            <td>{{printf "%.1f" .SizeGB}} GB</td>
+            <td>{{if .Config.GPUAssign}}{{.Config.GPUAssign}}{{else}}all{{end}}</td>
+            <td>{{.Config.ContextSize}}</td>
+            <td>{{if .Config.KVCacheQuant}}{{.Config.KVCacheQuant}}{{else}}—{{end}}</td>
+            <td>{{if .Config.FlashAttention}}yes{{else}}no{{end}}</td>
+            <td title="{{$b.Tag}}{{if $b.GitSHA}} · {{$b.GitSHA}}{{end}}">
+                {{if $b.Profile}}{{$b.Profile}}{{end}}{{if $b.GitRef}} · {{$b.GitRef}}{{end}}{{if and (not $b.Profile) (not $b.GitRef)}}—{{end}}
+            </td>
+            {{if $.HasLlamaBench}}<td>{{if .LlamaBench}}{{printf "%.1f" .LlamaBench.GenTokPerSec}}{{else}}—{{end}}</td>{{end}}
+        </tr>
+        {{end}}
         </tbody>
     </table>
     </div>
@@ -210,15 +194,12 @@ function sortBenchCompare(btn) {
         ids.forEach(function(id) { if (rowMap[id]) container.appendChild(rowMap[id]); });
     });
 
-    // Re-order table columns row by row. The first <td>/<th> per row is
-    // a label without data-run-id, so re-appending only the run-id'd
-    // cells preserves the label position naturally.
-    view.querySelectorAll('.bench-compare-table tr').forEach(function(tr) {
-        var cellMap = {};
-        Array.from(tr.children).forEach(function(td) {
-            if (td.dataset.runId) cellMap[td.dataset.runId] = td;
-        });
-        ids.forEach(function(id) { if (cellMap[id]) tr.appendChild(cellMap[id]); });
+    // Re-order rows in the details table tbody. One <tr> per run, so
+    // re-appending in sorted order moves them all into place.
+    view.querySelectorAll('.bench-compare-table tbody').forEach(function(tbody) {
+        var rowMap = {};
+        tbody.querySelectorAll('tr[data-run-id]').forEach(function(tr) { rowMap[tr.dataset.runId] = tr; });
+        ids.forEach(function(id) { if (rowMap[id]) tbody.appendChild(rowMap[id]); });
     });
 }
 </script>
