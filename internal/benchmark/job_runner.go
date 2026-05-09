@@ -44,6 +44,16 @@ type JobEnv interface {
 
 	// RouterURL returns the base URL the runner should target.
 	RouterURL() string
+
+	// HFToken returns the configured HuggingFace token (empty when
+	// unset). Forwarded to llama-benchy as HF_TOKEN so anonymous
+	// rate limiting doesn't sink mid-batch tokenizer fetches.
+	HFToken() string
+
+	// HFCacheDir returns a persistent directory for the HuggingFace
+	// cache. Forwarded as HF_HOME so the tokenizer downloads once
+	// and is reused across every benchmark in a batch.
+	HFCacheDir() string
 }
 
 // ModelInfo bundles registry data for a single model so the JobRunner
@@ -278,6 +288,8 @@ func (q *JobQueue) runCell(ctx context.Context, job *BenchmarkJob, cell *JobCell
 		RouterURL:  q.env.RouterURL(),
 		RouterName: modelInfo.RouterName,
 		HFRepoID:   modelInfo.HFRepoID,
+		HFToken:    q.env.HFToken(),
+		HFHome:     q.env.HFCacheDir(),
 	}, nil)
 
 	final, err := q.store.Get(run.ID)

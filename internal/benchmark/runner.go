@@ -19,6 +19,8 @@ type RunConfig struct {
 	RouterURL  string // e.g. "http://localhost:8080"
 	RouterName string // model name the router knows
 	HFRepoID   string // HuggingFace repo id; passed to llama-benchy as --tokenizer
+	HFToken    string // forwarded as HF_TOKEN to llama-benchy (avoids HF rate limiting)
+	HFHome     string // forwarded as HF_HOME so the tokenizer cache persists across runs
 }
 
 // ProgressUpdate is sent during benchmark execution.
@@ -119,6 +121,8 @@ func (r *Runner) Run(ctx context.Context, cfg RunConfig, progress chan<- Progres
 			GenSizes:        []int{cfg.Preset.GenTokens},
 			Runs:            cfg.Preset.Repetitions,
 			Concurrency:     concurrency,
+			HFToken:         cfg.HFToken,
+			HFHome:          cfg.HFHome,
 		})
 		run.BenchyCommand = cmdStr
 		if err != nil {

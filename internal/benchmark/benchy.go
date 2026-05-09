@@ -69,6 +69,21 @@ type BenchyConfig struct {
 	Runs            int
 	Concurrency     []int
 	SaveResultPath  string
+
+	// HFToken is forwarded as the HF_TOKEN env var to lift the
+	// anonymous-request rate limit on huggingface.co. llama-benchy fetches
+	// the tokenizer (via transformers/AutoTokenizer) on every invocation;
+	// without a token, repeated runs hit HTTP 429s, the gpt2 fallback
+	// silently fires, and prompts.py crashes with ZeroDivisionError when
+	// the corpus comes back empty. Carried via env (not args) so it never
+	// lands in the disclosed command string.
+	HFToken string
+
+	// HFHome is forwarded as the HF_HOME env var so the tokenizer cache
+	// persists across benchmark runs instead of being downloaded into a
+	// fresh tempdir each invocation. Empty leaves the default
+	// (~/.cache/huggingface) untouched.
+	HFHome string
 }
 
 // BuildBenchyArgs returns the argument vector passed to `uvx`. Pure
@@ -189,6 +204,19 @@ func runLlamaBenchy(ctx context.Context, c BenchyConfig) ([]LlamaBenchyResult, s
 	// the parent context for cancellation rather than imposing our own
 	// timeout.
 	cmd := exec.CommandContext(ctx, "uvx", args...)
+	if c.HFToken != "" || c.HFHome != "" {
+		env := os.Environ()
+		if c.HFToken != "" {
+			env = append(env, "HF_TOKEN="+c.HFToken)
+		}
+		if c.HFHome != "" {
+			if err := os.MkdirAll(c.HFHome, 0o755); err != nil {
+				return nil, cmdStr, fmt.Errorf("create HF_HOME dir %q: %w", c.HFHome, err)
+			}
+			env = append(env, "HF_HOME="+c.HFHome)
+		}
+		cmd.Env = env
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 

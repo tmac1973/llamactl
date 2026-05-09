@@ -170,6 +170,15 @@ func (e *jobEnv) RouterURL() string {
 	return fmt.Sprintf("http://localhost:%d", e.s.cfg.LlamaPort)
 }
 
+func (e *jobEnv) HFToken() string { return e.s.cfg.HFToken }
+
+// HFCacheDir is a stable subdir of DataDir so the tokenizer cache
+// survives container restarts (DataDir is the mounted volume) and
+// doesn't bloat the writable layer.
+func (e *jobEnv) HFCacheDir() string {
+	return filepath.Join(e.s.cfg.DataDir, "hf-cache")
+}
+
 // shortenModelName mirrors the trim done in handleStartBenchmark so cell
 // runs label the same way as the existing single-run path.
 func shortenModelName(modelID string) string {
