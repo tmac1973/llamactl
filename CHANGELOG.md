@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.1.1](https://github.com/tmac1973/llama-toolchest/compare/v2.1.0...v2.1.1) (2026-05-09)
+
+
+### Bug Fixes
+
+* **benchmark:** forward HF_TOKEN and HF_HOME to llama-benchy ([376194c](https://github.com/tmac1973/llama-toolchest/commit/376194ce6c749962260f4c859890133a2421bd46))
+* **setup:** install uv in container images for llama-benchy ([ea412fe](https://github.com/tmac1973/llama-toolchest/commit/ea412fe4a2a21c19479bb88e3371a7f2dddab6a2))
+* **ui:** unique download progress slot IDs per HF model ([8d2073f](https://github.com/tmac1973/llama-toolchest/commit/8d2073f71330ea0872236686f477206bbe5284a4))
+* **ui:** unique download progress slot IDs per HF model ([3f2e414](https://github.com/tmac1973/llama-toolchest/commit/3f2e414d4d3a9f453f671041baa41f26ac1b97b7))
+
 ## [2.1.0](https://github.com/tmac1973/llama-toolchest/compare/v2.0.0...v2.1.0) (2026-05-07)
 
 
