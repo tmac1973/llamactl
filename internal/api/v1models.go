@@ -96,28 +96,8 @@ func (s *Server) handleV1Model(w http.ResponseWriter, r *http.Request) {
 }
 
 // findModelByAny looks up a model by registry ID, public name, router name,
-// or user-defined alias.
+// or user-defined alias. Thin wrapper around registry.FindByAny so existing
+// API-package call sites stay readable.
 func (s *Server) findModelByAny(name string) (*models.Model, *models.ModelConfig) {
-	// Direct registry ID match
-	if m, err := s.registry.Get(name); err == nil {
-		cfg, _ := s.registry.GetConfig(m.ID)
-		return m, cfg
-	}
-
-	// Search by public name, router name, or alias
-	for _, m := range s.registry.List() {
-		if m.PublicName() == name || s.registry.RouterName(m.ID) == name {
-			cfg, _ := s.registry.GetConfig(m.ID)
-			return m, cfg
-		}
-		if cfg, err := s.registry.GetConfig(m.ID); err == nil {
-			for _, alias := range cfg.Aliases {
-				if alias == name {
-					return m, cfg
-				}
-			}
-		}
-	}
-
-	return nil, nil
+	return s.registry.FindByAny(name)
 }
