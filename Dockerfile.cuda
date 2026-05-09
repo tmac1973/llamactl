@@ -25,6 +25,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates libssl-dev
 
+# uv is required by the llama-benchy benchmark integration — the
+# benchmark runner shells out to `uvx llama-benchy`. Install
+# system-wide so the llama-toolchest service finds it on $PATH.
+RUN curl -LsSf https://astral.sh/uv/install.sh \
+    | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
+
 RUN --mount=type=bind,target=/build_context \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \

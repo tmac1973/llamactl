@@ -423,6 +423,23 @@ container_deps() {
         echo ""
     fi
 
+    # Optional: uv inside the container (for llama-benchy presets).
+    # Only checkable when the container is running. Newer images (built
+    # after the uv layer was added to the Dockerfiles) include it
+    # automatically; older images need a rebuild.
+    echo "  Benchmark integration (optional — for llama-benchy presets):"
+    if container_exists llama-toolchest && $CONTAINER_CMD container inspect -f '{{.State.Running}}' llama-toolchest 2>/dev/null | grep -qx "true"; then
+        if $CONTAINER_CMD exec llama-toolchest sh -c 'command -v uvx' >/dev/null 2>&1; then
+            printf "    %-25s %s\n" "uv (in container)" "OK"
+        else
+            printf "    %-25s %s\n" "uv (in container)" "missing — llama-benchy benchmark presets won't run"
+            echo "            ./setup.sh rebuild   # the Dockerfile installs uv; rebuild to pick it up"
+        fi
+    else
+        printf "    %-25s %s\n" "uv (in container)" "container not running — cannot verify"
+    fi
+    echo ""
+
     if [[ $rc -eq 0 ]]; then
         ok "All container dependencies satisfied."
     else

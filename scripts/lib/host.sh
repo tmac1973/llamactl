@@ -936,12 +936,31 @@ host_deps() {
     echo "  Backend SDKs:"
     host_report_sdk_deps || rc=1
     echo ""
+    echo "  Benchmark integration (optional — for llama-benchy presets):"
+    host_report_uv_dep
+    echo ""
     if [[ $rc -eq 0 ]]; then
         ok "All host dependencies satisfied."
     else
         warn "One or more dependencies are missing — see commands above."
     fi
     return $rc
+}
+
+# uv (with `uvx`) is required by the llama-benchy benchmark integration —
+# the runner shells out to `uvx llama-benchy`. Missing uv only disables
+# the llama-benchy preset family on the Benchmarks page; the internal
+# API benchmarks still work. Reports OK or WARN, never fails the deps
+# check.
+host_report_uv_dep() {
+    if command -v uvx >/dev/null 2>&1; then
+        local ver
+        ver="$(uv --version 2>/dev/null | awk '{print $2}')"
+        printf "    %-7s %s\n" "uv" "OK${ver:+ ($ver)}"
+    else
+        printf "    %-7s %s\n" "uv" "missing — llama-benchy benchmark presets won't run"
+        echo "            curl -LsSf https://astral.sh/uv/install.sh | sh"
+    fi
 }
 
 host_status() {

@@ -49,6 +49,12 @@ ENV ROCM_PATH=/opt/rocm \
   HIP_DEVICE_LIB_PATH=/opt/rocm/amdgcn/bitcode \
   PATH=/opt/rocm/bin:/opt/rocm/llvm/bin:$PATH
 
+# uv is required by the llama-benchy benchmark integration — the
+# benchmark runner shells out to `uvx llama-benchy`. Install
+# system-wide so the llama-toolchest service finds it on $PATH.
+RUN curl -LsSf https://astral.sh/uv/install.sh \
+    | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
+
 RUN --mount=type=bind,target=/build_context \
     --mount=type=cache,target=/var/cache/dnf \
     set -e; \
