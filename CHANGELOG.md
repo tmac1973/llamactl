@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.2](https://github.com/tmac1973/llama-toolchest/compare/v2.1.1...v2.1.2) (2026-05-09)
+
+
+### Bug Fixes
+
+* **api:** make /v1 and /api/models endpoints behave consistently ([b9519e9](https://github.com/tmac1973/llama-toolchest/commit/b9519e992a83d8d71deebc33d74c774854c227cc))
+* **api:** make /v1 and /api/models endpoints behave consistently ([d1cc197](https://github.com/tmac1973/llama-toolchest/commit/d1cc197a671f525535ad6227964a6f573a2a8f58))
+
 ## [2.1.1](https://github.com/tmac1973/llama-toolchest/compare/v2.1.0...v2.1.1) (2026-05-09)
 
 
