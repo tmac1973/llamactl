@@ -309,6 +309,42 @@ func (r *Registry) Get(id string) (*Model, error) {
 	return m, nil
 }
 
+// FindByAny resolves any name a client might use — registry ID, OpenAI
+// public name, or user alias — to the underlying model and its config.
+// Returns nil, nil when nothing matches. The OpenAI v1 endpoints, the
+// chat-completion auto-loader, and the /api/models/{id}/* handlers all
+// route through here so a single canonical lookup applies everywhere.
+func (r *Registry) FindByAny(name string) (*Model, *ModelConfig) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if m, ok := r.data.Models[name]; ok {
+		return m, r.data.Configs[m.ID]
+	}
+	for _, m := range r.data.Models {
+		if m.PublicName() == name {
+			return m, r.data.Configs[m.ID]
+		}
+		if cfg := r.data.Configs[m.ID]; cfg != nil {
+			for _, alias := range cfg.Aliases {
+				if alias == name {
+					return m, cfg
+				}
+			}
+		}
+	}
+	return nil, nil
+}
+
+// ResolveID returns the canonical registry ID for a name supplied as a
+// registry ID, public name, or alias. Returns the input unchanged when no
+// model matches, so callers can still pass it on to error paths.
+func (r *Registry) ResolveID(name string) string {
+	if m, _ := r.FindByAny(name); m != nil {
+		return m.ID
+	}
+	return name
+}
+
 // Remove removes a model entry from the registry without deleting files.
 func (r *Registry) Remove(id string) error {
 	r.mu.Lock()

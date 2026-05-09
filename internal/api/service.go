@@ -213,8 +213,77 @@ func (s *Server) handleServiceLogsClear(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleLoadedModels returns a list of models known to the router for the server page.
+// handleLoadedModels returns a list of models known to the router. HTMX
+// requests get an HTML fragment for the server page; everything else gets
+// a JSON payload suitable for programmatic clients.
 func (s *Server) handleLoadedModels(w http.ResponseWriter, r *http.Request) {
+	if isHTMX(r) {
+		s.renderLoadedModelsHTML(w)
+		return
+	}
+	s.renderLoadedModelsJSON(w)
+}
+
+// renderLoadedModelsJSON returns the loaded-models list as JSON.
+// Each entry surfaces every name a client might use to address the model
+// (router section ID, OpenAI public name, registry ID, aliases) so callers
+// can correlate with /v1/models without parsing HTML glyphs.
+func (s *Server) renderLoadedModelsJSON(w http.ResponseWriter) {
+	type loadedModel struct {
+		ID         string   `json:"id"`                    // router section ID (the name /models/load accepts)
+		Status     string   `json:"status"`                // "loaded", "loading", "unloaded"
+		Aliases    []string `json:"aliases,omitempty"`     // every other name the router will accept
+		PublicName string   `json:"public_name,omitempty"` // canonical OpenAI-style ID (matches /v1/models)
+		RegistryID string   `json:"registry_id,omitempty"` // long internal ID (matches /api/models/)
+	}
+
+	out := struct {
+		Running bool          `json:"running"`
+		Models  []loadedModel `json:"models"`
+	}{Models: []loadedModel{}}
+
+	if !s.process.IsRunning() {
+		respondJSON(w, out)
+		return
+	}
+	out.Running = true
+
+	routerModels, err := s.process.ListModels()
+	if err != nil {
+		slog.Debug("failed to list router models", "error", err)
+		respondJSON(w, out)
+		return
+	}
+
+	for _, rm := range routerModels {
+		entry := loadedModel{
+			ID:      rm.ID,
+			Status:  rm.Status.Value,
+			Aliases: rm.Aliases,
+		}
+		// Find the registry model behind this router entry so we can
+		// surface its canonical IDs. Match by router-section name first,
+		// then by alias (the router's primary ID may not equal m.ID).
+		if reg, _ := s.findModelByAny(rm.ID); reg != nil {
+			entry.RegistryID = reg.ID
+			entry.PublicName = reg.PublicName()
+		} else {
+			for _, a := range rm.Aliases {
+				if reg, _ := s.findModelByAny(a); reg != nil {
+					entry.RegistryID = reg.ID
+					entry.PublicName = reg.PublicName()
+					break
+				}
+			}
+		}
+		out.Models = append(out.Models, entry)
+	}
+
+	respondJSON(w, out)
+}
+
+// renderLoadedModelsHTML returns the htmx fragment for the server page.
+func (s *Server) renderLoadedModelsHTML(w http.ResponseWriter) {
 	respondHTML(w)
 	if !s.process.IsRunning() {
 		return
@@ -257,7 +326,7 @@ func (s *Server) handleServiceHealth(w http.ResponseWriter, r *http.Request) {
 
 // handleActivateModel loads a model via the router.
 func (s *Server) handleActivateModel(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.registry.ResolveID(chi.URLParam(r, "id"))
 
 	// Ensure router is running
 	if !s.process.IsRunning() {
@@ -298,7 +367,7 @@ func (s *Server) handleActivateModel(w http.ResponseWriter, r *http.Request) {
 
 // handleDeactivateModel unloads a model via the router.
 func (s *Server) handleDeactivateModel(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.registry.ResolveID(chi.URLParam(r, "id"))
 
 	if err := s.process.UnloadModel(s.registry.RouterName(id)); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -351,7 +420,7 @@ func (s *Server) startRouter() error {
 
 // handleModelEnable toggles a model's enabled state and updates the preset.
 func (s *Server) handleModelEnable(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.registry.ResolveID(chi.URLParam(r, "id"))
 
 	r.ParseForm()
 	enabled := r.FormValue("enabled") == "true"
@@ -406,7 +475,7 @@ func (s *Server) handleModelEnable(w http.ResponseWriter, r *http.Request) {
 
 // handleModelVRAMEstimate returns a VRAM estimate for a model with given config params.
 func (s *Server) handleModelVRAMEstimate(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.registry.ResolveID(chi.URLParam(r, "id"))
 
 	model, err := s.registry.Get(id)
 	if err != nil {
@@ -443,7 +512,7 @@ func (s *Server) handleModelVRAMEstimate(w http.ResponseWriter, r *http.Request)
 
 // handleGetModelConfig returns the launch config for a model.
 func (s *Server) handleGetModelConfig(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.registry.ResolveID(chi.URLParam(r, "id"))
 
 	cfg, err := s.registry.GetConfig(id)
 	if err != nil {
@@ -550,7 +619,7 @@ func (s *Server) handleGetModelConfig(w http.ResponseWriter, r *http.Request) {
 
 // handleUpdateModelConfig updates the launch config for a model.
 func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.registry.ResolveID(chi.URLParam(r, "id"))
 
 	// Fetch existing config to preserve fields not in the form (e.g. Enabled).
 	cfg, err := s.registry.GetConfig(id)

@@ -28,7 +28,7 @@ func (s *Server) handleListEmbeddingModels(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	respondJSON(w, embeddingModels)
+	respondJSON(w, withPublicNames(embeddingModels))
 }
 
 func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +52,38 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, modelList)
+	respondJSON(w, withPublicNames(modelList))
+}
+
+// withPublicNames wraps each model with its OpenAI-style public name so
+// the JSON listing surfaces the same ID that /v1/models advertises. Without
+// this, a client that discovers models via /api/models/ has no way to map
+// them to /v1/chat/completions request bodies.
+func withPublicNames(list []*models.Model) []map[string]any {
+	out := make([]map[string]any, 0, len(list))
+	for _, m := range list {
+		entry := map[string]any{
+			"id":                 m.ID,
+			"public_name":        m.PublicName(),
+			"model_id":           m.ModelID,
+			"filename":           m.Filename,
+			"quant":              m.Quant,
+			"size_bytes":         m.SizeBytes,
+			"file_path":          m.FilePath,
+			"vram_est_gb":        m.VRAMEstGB,
+			"downloaded_at":      m.DownloadedAt,
+			"arch":               m.Arch,
+			"n_layers":           m.NLayers,
+			"n_embd":             m.NEmbd,
+			"n_head":             m.NHead,
+			"n_kv_head":          m.NKVHead,
+			"context_length":     m.ContextLength,
+			"supports_tools":     m.SupportsTools,
+			"has_builtin_vision": m.HasBuiltinVision,
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 func (s *Server) handleEmbeddingPresets(w http.ResponseWriter, r *http.Request) {
@@ -118,7 +149,7 @@ func (s *Server) handleScanModels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetModel(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.registry.ResolveID(chi.URLParam(r, "id"))
 	m, err := s.registry.Get(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -130,7 +161,7 @@ func (s *Server) handleGetModel(w http.ResponseWriter, r *http.Request) {
 
 // handleModelInfo returns enriched model metadata with capabilities and config.
 func (s *Server) handleModelInfo(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.registry.ResolveID(chi.URLParam(r, "id"))
 	m, err := s.registry.Get(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -155,6 +186,7 @@ func (s *Server) handleModelInfo(w http.ResponseWriter, r *http.Request) {
 
 	info := map[string]any{
 		"id":             m.ID,
+		"public_name":    m.PublicName(),
 		"model_id":       m.ModelID,
 		"filename":       m.Filename,
 		"arch":           m.Arch,
@@ -190,7 +222,7 @@ func (s *Server) handleModelInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteModel(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.registry.ResolveID(chi.URLParam(r, "id"))
 
 	var err error
 	if r.URL.Query().Get("keep_files") == "true" {
