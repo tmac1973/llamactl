@@ -298,6 +298,20 @@ func (r *Registry) List() []*Model {
 	return out
 }
 
+// HasFile reports whether the registry already contains a model matching the
+// given HuggingFace repo + filename. Used to mark "already downloaded" in the
+// HF browse UI so we don't show a Download button for files we already have.
+func (r *Registry) HasFile(modelID, filename string) (*Model, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, m := range r.data.Models {
+		if m.ModelID == modelID && m.Filename == filename {
+			return m, true
+		}
+	}
+	return nil, false
+}
+
 // Get returns a model by ID.
 func (r *Registry) Get(id string) (*Model, error) {
 	r.mu.RLock()

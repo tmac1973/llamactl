@@ -96,7 +96,11 @@ func (d *Downloader) SetOnComplete(fn CompletionFunc) {
 }
 
 // Start begins a download in the background. Returns the download ID.
-func (d *Downloader) Start(ctx context.Context, modelID, filename string) (string, error) {
+// expectedBytes is a caller-provided size hint (from the HF tree API) so the
+// in-flight reservation in AvailableForDownload is accurate from the moment
+// Start returns, before the download goroutine has done its own HEAD. Pass 0
+// when the size is unknown.
+func (d *Downloader) Start(ctx context.Context, modelID, filename string, expectedBytes int64) (string, error) {
 	// Create a stable download ID — replace all slashes to keep it URL-safe
 	safeName := strings.ReplaceAll(modelID, "/", "--")
 	safeFilename := strings.ReplaceAll(strings.TrimSuffix(filename, ".gguf"), "/", "--")
@@ -112,6 +116,15 @@ func (d *Downloader) Start(ctx context.Context, modelID, filename string) (strin
 	dl := &download{
 		cancel: cancel,
 		subs:   make(map[chan DownloadStatus]struct{}),
+		// Seed lastStatus so PendingBytes counts this download immediately,
+		// before run() reports its first progress tick.
+		lastStatus: DownloadStatus{
+			ID:         downloadID,
+			ModelID:    modelID,
+			Filename:   filename,
+			TotalBytes: expectedBytes,
+			Status:     "downloading",
+		},
 	}
 	d.active[downloadID] = dl
 	d.mu.Unlock()
@@ -156,6 +169,52 @@ func (d *Downloader) ListActive() []DownloadStatus {
 		dl.subMu.Unlock()
 	}
 	return out
+}
+
+// PendingBytes returns the sum of remaining bytes across all active downloads.
+// Used by AvailableForDownload to reserve space for in-flight downloads so a
+// second download started while a first is still running sees the correct
+// post-completion free space, not the current free space.
+func (d *Downloader) PendingBytes() int64 {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var pending int64
+	for _, dl := range d.active {
+		dl.subMu.Lock()
+		s := dl.lastStatus
+		dl.subMu.Unlock()
+		if s.Status != "downloading" {
+			continue
+		}
+		remaining := s.TotalBytes - s.BytesDownloaded
+		if remaining > 0 {
+			pending += remaining
+		}
+	}
+	return pending
+}
+
+// FreeBytes returns the free space on the filesystem hosting modelsDir.
+func (d *Downloader) FreeBytes() int64 {
+	return freeBytesAt(d.modelsDir)
+}
+
+// AvailableForDownload returns how many bytes a new download is allowed to
+// consume: free disk minus the safety margin minus the bytes already reserved
+// by in-flight downloads. Returns -1 when free space can't be determined, so
+// callers can distinguish "unknown" from "actually full" — we don't want a
+// failed statfs to falsely ghost every download button. A non-negative result
+// is clamped to zero (genuinely no room).
+func (d *Downloader) AvailableForDownload() int64 {
+	free := d.FreeBytes()
+	if free < 0 {
+		return -1
+	}
+	avail := free - DiskSafetyMarginBytes - d.PendingBytes()
+	if avail < 0 {
+		return 0
+	}
+	return avail
 }
 
 // Cancel stops an active download.

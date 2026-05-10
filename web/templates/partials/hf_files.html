@@ -1,5 +1,13 @@
 {{define "hf_files"}}
 <hr>
+<p style="font-size: 0.85rem; color: var(--pico-muted-color);">
+    {{if lt $.AvailableBytes 0}}
+        <small>Disk space unavailable — downloads not gated by free space.</small>
+    {{else}}
+        <strong>{{printf "%.1f" (divGB $.AvailableBytes)}} GB</strong> available for new downloads
+        <small>(free: {{printf "%.1f" (divGB $.FreeBytes)}} GB · reserved: {{printf "%.1f" (divGB $.SafetyMargin)}} GB safety + in-flight downloads)</small>
+    {{end}}
+</p>
 <table role="grid">
     <thead>
         <tr><th>File</th><th>Quant</th><th>Size</th><th>VRAM Est.</th><th>Fit</th><th></th></tr>
@@ -24,13 +32,24 @@
                 {{end}}
             </td>
             <td>
-                <button type="button"
-                        hx-post="/api/hf/download"
-                        hx-vals='{"model_id":"{{$.ID}}","filename":"{{$f.Filename}}"}'
-                        hx-target="#dl-{{cssID $.ID}}-{{$i}}"
-                        hx-swap="innerHTML">
-                    Download
-                </button>
+                {{if $f.AlreadyDownloaded}}
+                    <ins title="Already in your local model registry">Downloaded</ins>
+                    <a href="/models" style="margin-left: 0.4rem; font-size: 0.85rem;">View</a>
+                {{else if not $f.FitsOnDisk}}
+                    <button type="button" disabled
+                            style="opacity: 0.5; cursor: not-allowed;"
+                            title="Not enough free disk space — needs {{printf "%.1f" (divGB $f.Size)}} GB, only {{printf "%.1f" (divGB $.AvailableBytes)}} GB available after the 2 GB safety margin and in-flight downloads. Free space and try again.">
+                        Won't Fit
+                    </button>
+                {{else}}
+                    <button type="button"
+                            hx-post="/api/hf/download"
+                            hx-vals='{"model_id":"{{$.ID}}","filename":"{{$f.Filename}}","size":"{{$f.Size}}"}'
+                            hx-target="#dl-{{cssID $.ID}}-{{$i}}"
+                            hx-swap="innerHTML">
+                        Download
+                    </button>
+                {{end}}
             </td>
         </tr>
         <tr id="dl-{{cssID $.ID}}-{{$i}}"></tr>
