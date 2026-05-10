@@ -118,7 +118,7 @@ func (s *Server) handleDownloadEmbeddingPreset(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	downloadID, err := s.downloader.Start(r.Context(), repo, filename)
+	downloadID, err := s.downloader.Start(r.Context(), repo, filename, 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
