@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.0](https://github.com/tmac1973/llama-toolchest/compare/v2.1.2...v2.2.0) (2026-05-10)
+
+
+### Features
+
+* **hf:** mark downloaded models and gate downloads by free disk space ([3f07aa2](https://github.com/tmac1973/llama-toolchest/commit/3f07aa230711f8740d33c35356f448f5dd42f2a4))
+* **hf:** mark downloaded models and gate downloads by free disk space ([01b0af1](https://github.com/tmac1973/llama-toolchest/commit/01b0af181b26b01196a793e6c576c6492a5b6a22))
+
 ## [2.1.2](https://github.com/tmac1973/llama-toolchest/compare/v2.1.1...v2.1.2) (2026-05-09)
 
 
