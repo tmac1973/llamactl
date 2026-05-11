@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.2](https://github.com/tmac1973/llama-toolchest/compare/v2.2.1...v2.2.2) (2026-05-11)
+
+
+### Bug Fixes
+
+* **bench:** show build profile in comparison bar labels ([48c9f10](https://github.com/tmac1973/llama-toolchest/commit/48c9f10933e1757773dfd2ac820895eff0351901))
+* **bench:** show build profile in comparison bar labels ([00d73a8](https://github.com/tmac1973/llama-toolchest/commit/00d73a8247def33b04f795c899eaada350dd2993))
+
 ## [2.2.1](https://github.com/tmac1973/llama-toolchest/compare/v2.2.0...v2.2.1) (2026-05-11)
 
 
