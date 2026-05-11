@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.1](https://github.com/tmac1973/llama-toolchest/compare/v2.2.0...v2.2.1) (2026-05-11)
+
+
+### Bug Fixes
+
+* **bench:** preserve cell-check selection across running-job polls ([d7c746b](https://github.com/tmac1973/llama-toolchest/commit/d7c746b78615cf8c572c651de033ff3b53ca9a89))
+* **bench:** preserve cell-check selection across running-job polls ([7aa79e2](https://github.com/tmac1973/llama-toolchest/commit/7aa79e27c5ba627670fb81ddca80d4677fe8905a))
+
 ## [2.2.0](https://github.com/tmac1973/llama-toolchest/compare/v2.1.2...v2.2.0) (2026-05-10)
 
 
