@@ -5,7 +5,7 @@
     display:flex; align-items:center; gap:0.5rem; margin:0.25rem 0;
 }
 .bench-compare-label {
-    width:280px; font-size:0.8rem; text-align:right;
+    width:380px; font-size:0.8rem; text-align:right;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 .bench-compare-bartrack {
@@ -56,14 +56,18 @@
     <div class="bench-compare-bars">
         {{range .Runs}}
         {{if .Summary}}
-        {{$build := .EffectiveBuild}}
+        {{$b := .EffectiveBuild}}
+        {{$buildLabel := ""}}
+        {{if $b.Profile}}{{$buildLabel = $b.Profile}}{{end}}
+        {{if $b.GitRef}}{{if $buildLabel}}{{$buildLabel = printf "%s · %s" $buildLabel $b.GitRef}}{{else}}{{$buildLabel = $b.GitRef}}{{end}}{{end}}
+        {{if not $buildLabel}}{{$buildLabel = "build?"}}{{end}}
         <div class="bench-compare-row"
              data-run-id="{{.ID}}"
              data-sort-name="{{.ModelName}}"
              data-sort-gen="{{printf "%.4f" .Summary.AvgGenTokPerSec}}"
              data-sort-prompt="{{printf "%.4f" .Summary.AvgPromptTokPerSec}}"
              data-sort-ttft="{{printf "%.4f" .Summary.AvgTTFTMs}}">
-            <div class="bench-compare-label" title="{{.ModelID}}">{{.ModelName}} ({{.Quant}})</div>
+            <div class="bench-compare-label" title="{{.ModelName}} · {{.Quant}} · {{$buildLabel}}{{if .ModelID}} ({{.ModelID}}){{end}}">{{.ModelName}} ({{.Quant}}) ({{$buildLabel}})</div>
             <div class="bench-compare-bartrack">
                 <div class="bench-compare-barfill" style="width:{{printf "%.1f" (pctOf .Summary.AvgGenTokPerSec $.MaxGenTPS)}}%;background:var(--pico-primary);"></div>
             </div>
@@ -79,13 +83,18 @@
     <div class="bench-compare-bars">
         {{range .Runs}}
         {{if .Summary}}
+        {{$b := .EffectiveBuild}}
+        {{$buildLabel := ""}}
+        {{if $b.Profile}}{{$buildLabel = $b.Profile}}{{end}}
+        {{if $b.GitRef}}{{if $buildLabel}}{{$buildLabel = printf "%s · %s" $buildLabel $b.GitRef}}{{else}}{{$buildLabel = $b.GitRef}}{{end}}{{end}}
+        {{if not $buildLabel}}{{$buildLabel = "build?"}}{{end}}
         <div class="bench-compare-row"
              data-run-id="{{.ID}}"
              data-sort-name="{{.ModelName}}"
              data-sort-gen="{{printf "%.4f" .Summary.AvgGenTokPerSec}}"
              data-sort-prompt="{{printf "%.4f" .Summary.AvgPromptTokPerSec}}"
              data-sort-ttft="{{printf "%.4f" .Summary.AvgTTFTMs}}">
-            <div class="bench-compare-label" title="{{.ModelID}}">{{.ModelName}} ({{.Quant}})</div>
+            <div class="bench-compare-label" title="{{.ModelName}} · {{.Quant}} · {{$buildLabel}}{{if .ModelID}} ({{.ModelID}}){{end}}">{{.ModelName}} ({{.Quant}}) ({{$buildLabel}})</div>
             <div class="bench-compare-bartrack">
                 <div class="bench-compare-barfill" style="width:{{printf "%.1f" (pctOf .Summary.AvgPromptTokPerSec $.MaxPromptTPS)}}%;background:var(--pico-ins-color);"></div>
             </div>
