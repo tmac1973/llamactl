@@ -36,7 +36,7 @@
     <table role="grid" style="font-size:0.85rem;margin-top:0.5rem;">
         <thead>
             <tr>
-                <th style="width:2rem;"><input type="checkbox" style="margin:0;"
+                <th style="width:2rem;"><input type="checkbox" id="cell-check-all-{{$j.ID}}" hx-preserve="true" style="margin:0;"
                     onchange="this.closest('table').querySelectorAll('.cell-check').forEach(function(c){c.checked=this.checked}.bind(this));"></th>
                 <th>Model</th>
                 <th>Quant</th>
@@ -52,7 +52,7 @@
         <tbody>
         {{range .Rows}}
         <tr id="cell-row-{{$j.ID}}-{{.Idx}}">
-            <td>{{if .Cell.BenchmarkRunID}}<input type="checkbox" class="cell-check" value="{{.Cell.BenchmarkRunID}}" style="margin:0;">{{end}}</td>
+            <td>{{if .Cell.BenchmarkRunID}}<input type="checkbox" id="cell-check-{{.Cell.BenchmarkRunID}}" hx-preserve="true" class="cell-check" value="{{.Cell.BenchmarkRunID}}" style="margin:0;">{{end}}</td>
             <td>{{.ModelName}}</td>
             <td>{{if .Quant}}<kbd>{{.Quant}}</kbd>{{else}}—{{end}}</td>
             <td><kbd>{{.BuildLbl}}</kbd></td>
