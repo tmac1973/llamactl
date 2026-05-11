@@ -199,10 +199,14 @@ func (s *Server) handleModelInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if cfg != nil {
+		ctxSize := cfg.ContextSize
+		if ctxSize == 0 {
+			ctxSize = m.ContextLength
+		}
 		configMap := map[string]any{
 			"enabled":         cfg.Enabled,
 			"gpu_layers":      cfg.GPULayers,
-			"context_size":    cfg.ContextSize,
+			"context_size":    ctxSize,
 			"threads":         cfg.Threads,
 			"flash_attention": cfg.FlashAttention,
 		}
