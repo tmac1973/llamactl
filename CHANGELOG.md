@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.2.3](https://github.com/tmac1973/llama-toolchest/compare/v2.2.2...v2.2.3) (2026-05-11)
+
+
+### Bug Fixes
+
+* **api:** resolve default context_size in /api/models/{id}/info ([f6be200](https://github.com/tmac1973/llama-toolchest/commit/f6be200f33ed1e02fac51f75736a68371c69b3fd))
+* **api:** resolve default context_size in model info endpoint ([551d01a](https://github.com/tmac1973/llama-toolchest/commit/551d01acdaca9d605db2877ab8dcc88e69e5b6d1))
+
 ## [2.2.2](https://github.com/tmac1973/llama-toolchest/compare/v2.2.1...v2.2.2) (2026-05-11)
 
 
