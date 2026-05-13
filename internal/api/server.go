@@ -48,6 +48,16 @@ type Server struct {
 // the first page render.
 func (s *Server) SetVersion(v string) { s.version = v }
 
+// Shutdown releases server-owned resources that outlive the HTTP listener.
+// Today that's the child llama-server router: without this, the cgroup keeps
+// it alive until systemd's TimeoutStopSec fires SIGKILL.
+func (s *Server) Shutdown() {
+	if err := s.process.Stop(); err != nil {
+		// "router not running" is the expected case when nothing was started.
+		slog.Debug("router stop during shutdown", "error", err)
+	}
+}
+
 func NewServer(cfg *config.Config, configPath string) *Server {
 	mon := monitor.New(3 * time.Second)
 	mon.Start()

@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/tmlabonte/llamactl/internal/api"
 	"github.com/tmlabonte/llamactl/internal/config"
@@ -64,7 +65,22 @@ func main() {
 
 	<-ctx.Done()
 	slog.Info("shutting down")
-	httpSrv.Shutdown(context.Background())
+
+	// Stop the child llama-server in parallel with draining HTTP connections.
+	// The HTTP deadline keeps us well under systemd's TimeoutStopSec (90s) even
+	// when slow handlers (benchmark warmup, /api/monitor polls) are in flight.
+	done := make(chan struct{})
+	go func() {
+		srv.Shutdown()
+		close(done)
+	}()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+		slog.Warn("http shutdown", "error", err)
+	}
+	<-done
 }
 
 func initDataDir(cfg *config.Config) error {
