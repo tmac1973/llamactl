@@ -473,6 +473,93 @@ func (s *Store) DeleteJob(id string, disposition DeleteDisposition) error {
 	return nil
 }
 
+// UpdateJobDefinition replaces a job's editable fields (name/description/
+// matrix/overrides) and rebuilds its cell list. Cells whose (model, build,
+// preset) coordinate still exists in the new matrix AND were already
+// completed are carried over with their run intact; everything else
+// starts fresh as pending. Runs no longer reachable from any cell are
+// orphaned to the Ad-Hoc job so the user keeps the history. The caller
+// must Submit the returned job to actually re-run it.
+//
+// Refuses to edit the synthetic adhoc job. Does not check whether the
+// queue is busy — that's the JobQueue's responsibility on Submit.
+func (s *Store) UpdateJobDefinition(id, name, description string, modelIDs, buildIDs, presets []string, overrides *ConfigOverrides) (*BenchmarkJob, error) {
+	if id == AdhocJobID {
+		return nil, fmt.Errorf("cannot edit the synthetic %q job", AdhocJobID)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	idx := -1
+	for i := range s.jobs {
+		if s.jobs[i].ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return nil, fmt.Errorf("job not found: %s", id)
+	}
+	job := s.jobs[idx]
+
+	type cellKey struct{ Model, Build, Preset string }
+	prev := make(map[cellKey]JobCell, len(job.Cells))
+	for _, c := range job.Cells {
+		prev[cellKey{c.ModelID, c.BuildID, c.Preset}] = c
+	}
+
+	newCells := ExpandCells(modelIDs, buildIDs, presets)
+	keptRuns := make(map[string]bool)
+	for i := range newCells {
+		k := cellKey{newCells[i].ModelID, newCells[i].BuildID, newCells[i].Preset}
+		if old, ok := prev[k]; ok && old.Status == CellStatusCompleted {
+			newCells[i] = old
+			if old.BenchmarkRunID != "" {
+				keptRuns[old.BenchmarkRunID] = true
+			}
+		}
+	}
+
+	// Anything previously linked to this job that didn't survive into a
+	// kept cell becomes adhoc, preserving the run history.
+	orphaned := false
+	for i := range s.runs {
+		if s.runs[i].JobID != id || keptRuns[s.runs[i].ID] {
+			continue
+		}
+		s.runs[i].JobID = AdhocJobID
+		orphaned = true
+	}
+	if orphaned && !s.hasJobLocked(AdhocJobID) {
+		s.jobs = append(s.jobs, newAdhocJob(time.Now()))
+		// hasJobLocked failed because the slice didn't contain an adhoc
+		// entry; appending it can move the backing array, so re-find the
+		// index of the job we're editing.
+		for i := range s.jobs {
+			if s.jobs[i].ID == id {
+				idx = i
+				break
+			}
+		}
+	}
+
+	job.Name = name
+	job.Description = description
+	job.ModelIDs = modelIDs
+	job.BuildIDs = buildIDs
+	job.Presets = presets
+	job.Overrides = overrides
+	job.Cells = newCells
+	job.Status = JobStatusPending
+	job.StartedAt = time.Time{}
+	job.FinishedAt = time.Time{}
+	s.jobs[idx] = job
+
+	s.persist()
+	out := job
+	return &out, nil
+}
+
 // RunsForJob returns all runs belonging to the given job, newest first.
 func (s *Store) RunsForJob(jobID string) []BenchmarkRun {
 	s.mu.RLock()

@@ -125,6 +125,54 @@ func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, job)
 }
 
+// handleUpdateJob edits a job's definition (name/description/matrix/
+// overrides) and re-submits it. Completed cells survive any matrix
+// change that still includes their (model, build, preset) point; runs
+// behind cells that no longer exist are reassigned to Ad-Hoc.
+func (s *Server) handleUpdateJob(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == benchmark.AdhocJobID {
+		http.Error(w, "the Ad-Hoc job cannot be edited", http.StatusBadRequest)
+		return
+	}
+	var req jobCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.ModelIDs) == 0 || len(req.BuildIDs) == 0 || len(req.Presets) == 0 {
+		http.Error(w, "model_ids, build_ids, and presets are all required", http.StatusBadRequest)
+		return
+	}
+
+	updated, err := s.bench.UpdateJobDefinition(id, req.Name, req.Description, req.ModelIDs, req.BuildIDs, req.Presets, req.Overrides)
+	if err != nil {
+		// "synthetic" is the adhoc-edit refusal; anything else means the
+		// job wasn't found.
+		if strings.Contains(err.Error(), "synthetic") {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	if err := s.jobs.Submit(*updated); err != nil {
+		if errors.Is(err, benchmark.ErrJobAlreadyRunning) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	respondJSON(w, updated)
+}
+
 // handleGetJob returns one job (with its cells).
 func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

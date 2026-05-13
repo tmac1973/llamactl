@@ -90,6 +90,8 @@
         {{else}}
         <button type="button" class="outline secondary" style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
                 onclick="retryFailed('{{$j.ID}}')">Retry failed</button>
+        <button type="button" class="outline secondary" style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;"
+                onclick="openJobEditForm('{{$j.ID}}')">Edit &amp; Re-run</button>
         {{end}}
         <a class="outline secondary" role="button" style="margin:0;padding:0.2rem 0.6rem;font-size:0.8rem;width:auto;text-decoration:none;"
            href="/api/benchmark-jobs/{{$j.ID}}/export?format=csv&scope=cells" download>CSV (cells)</a>

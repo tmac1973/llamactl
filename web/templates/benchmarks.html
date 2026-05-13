@@ -46,7 +46,7 @@
     <article>
         <header>
             <button type="button" aria-label="Close" rel="prev" onclick="closeJobForm();"></button>
-            New Batch Job
+            <span id="job-form-title">New Batch Job</span>
         </header>
         <div id="job-form-slot">Loading…</div>
     </article>
@@ -233,7 +233,13 @@ function openBenchHelp() {
 }
 
 // --- Job form modal ---
+// editingJobID is empty for a new job; set to a job ID when the modal
+// was opened via "Edit & Re-run" so submit chooses PUT over POST.
+var editingJobID = '';
+
 function openJobForm() {
+    editingJobID = '';
+    document.getElementById('job-form-title').textContent = 'New Batch Job';
     var modal = document.getElementById('job-form-modal');
     var slot = document.getElementById('job-form-slot');
     slot.innerHTML = 'Loading…';
@@ -245,6 +251,69 @@ function openJobForm() {
             updateMatrixCount();
         });
     modal.showModal();
+}
+function openJobEditForm(id) {
+    editingJobID = id;
+    document.getElementById('job-form-title').textContent = 'Edit Batch Job';
+    var modal = document.getElementById('job-form-modal');
+    var slot = document.getElementById('job-form-slot');
+    slot.innerHTML = 'Loading…';
+    // Fetch the job JSON and the form HTML in parallel, then pre-fill.
+    Promise.all([
+        fetch('/api/benchmark-jobs/'+encodeURIComponent(id), {headers:{'Accept':'application/json'}}).then(function(r){
+            if (!r.ok) throw new Error('failed to load job: HTTP '+r.status);
+            return r.json();
+        }),
+        fetch('/api/benchmark-jobs/form', {headers:{'HX-Request':'true'}}).then(function(r){return r.text();}),
+    ]).then(function(arr) {
+        var job = arr[0], html = arr[1];
+        slot.innerHTML = html;
+        htmx.process(slot);
+        prefillJobForm(job);
+        updateMatrixCount();
+    }).catch(function(e){
+        slot.textContent = e.message;
+    });
+    modal.showModal();
+}
+function prefillJobForm(job) {
+    var form = document.getElementById('new-job-form');
+    if (!form) return;
+    form.elements.name.value = job.name || '';
+    form.elements.description.value = job.description || '';
+    var setChecked = function(name, values) {
+        var set = {};
+        (values || []).forEach(function(v){ set[v] = true; });
+        form.querySelectorAll('input[name='+name+']').forEach(function(c){ c.checked = !!set[c.value]; });
+    };
+    setChecked('model', job.model_ids);
+    setChecked('build', job.build_ids);
+    setChecked('preset', job.presets);
+    var ov = job.overrides || {};
+    var setField = function(name, val) {
+        var el = form.elements[name];
+        if (!el) return;
+        if (val === null || val === undefined) { el.value = ''; return; }
+        el.value = String(val);
+    };
+    setField('ov_gpu_layers',      ov.gpu_layers);
+    setField('ov_context_size',    ov.context_size);
+    setField('ov_threads',         ov.threads);
+    setField('ov_flash_attention', ov.flash_attention === undefined || ov.flash_attention === null ? null : (ov.flash_attention ? 'true' : 'false'));
+    setField('ov_kv_cache_quant',  ov.kv_cache_quant);
+    setField('ov_direct_io',       ov.direct_io === undefined || ov.direct_io === null ? null : (ov.direct_io ? 'true' : 'false'));
+    setField('ov_gpu_assign',      ov.gpu_assign);
+    setField('ov_tensor_split',    ov.tensor_split);
+    setField('ov_spec_type',       ov.spec_type);
+    // Reveal the overrides <details> if any override is set so the user
+    // can see what they're editing without an extra click.
+    if (Object.keys(ov).length > 0) {
+        var det = form.querySelector('details');
+        if (det) det.open = true;
+    }
+    // Tweak submit button label so it reads natural in edit mode.
+    var btn = document.getElementById('job-submit-btn');
+    if (btn) btn.textContent = 'Save & Re-run';
 }
 function closeJobForm() {
     document.getElementById('job-form-modal').close();
@@ -294,9 +363,12 @@ function submitNewJob() {
         presets: picked('preset'),
         overrides: readOverrides(form),
     };
-    fetch('/api/benchmark-jobs', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)})
+    var isEdit = !!editingJobID;
+    var url = isEdit ? '/api/benchmark-jobs/'+encodeURIComponent(editingJobID) : '/api/benchmark-jobs';
+    var method = isEdit ? 'PUT' : 'POST';
+    fetch(url, {method:method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)})
         .then(function(r){
-            if (r.status === 201) {
+            if (r.ok) {
                 closeJobForm();
                 document.body.dispatchEvent(new CustomEvent('jobChanged'));
                 return;
