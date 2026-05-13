@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.3.0](https://github.com/tmac1973/llama-toolchest/compare/v2.2.3...v2.3.0) (2026-05-13)
+
+
+### Features
+
+* **bench:** edit and re-run batch benchmark jobs ([466875e](https://github.com/tmac1973/llama-toolchest/commit/466875ec34dd4307aba77dfd95e810f3d2c13e39))
+* **bench:** edit and re-run batch benchmark jobs ([009cf32](https://github.com/tmac1973/llama-toolchest/commit/009cf3214d2603f76b2c11a4ecd50c838c5f9a67))
+
+
+### Bug Fixes
+
+* **api:** distinguish live vs. pending restart-requiring fields in /info ([6142957](https://github.com/tmac1973/llama-toolchest/commit/614295780742da6b8f8a6038fd7561c22d7eebdd))
+* **api:** report live vs. pending values for restart-requiring config fields ([0b30334](https://github.com/tmac1973/llama-toolchest/commit/0b3033406cc202ecdc2553bdeefaacb460fb6f29))
+* **shutdown:** stop child llama-server in parallel with HTTP drain ([08e0f13](https://github.com/tmac1973/llama-toolchest/commit/08e0f1382f0edb7acf1e941bac133a178fbec534))
+
 ## [2.2.3](https://github.com/tmac1973/llama-toolchest/compare/v2.2.2...v2.2.3) (2026-05-11)
 
 
