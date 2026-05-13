@@ -199,25 +199,78 @@ func (s *Server) handleModelInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if cfg != nil {
-		ctxSize := cfg.ContextSize
-		if ctxSize == 0 {
-			ctxSize = m.ContextLength
+		// The router reads preset.ini only at startup, so any field that's
+		// baked into the launch command line is "what will be live after
+		// the next restart" — not necessarily what's live now. When we have
+		// a snapshot from the last router start, prefer it as the primary
+		// value and add a `<field>_pending` key whenever the configured
+		// value differs. Sampling params and aliases are not snapshotted
+		// because the proxy applies them per-request.
+		live := cfg
+		hasSnapshot := false
+		if snap, ok := s.runningConfigs[id]; ok && s.process.IsRunning() {
+			live = snap
+			hasSnapshot = true
 		}
+
+		// context_size resolves 0 → model's trained context length in every
+		// other surface (see f6be200). Do the same on both sides so we don't
+		// flag a spurious "pending" diff between e.g. configured=0 and
+		// live=131072 when they mean the same thing.
+		resolveCtx := func(v int) int {
+			if v == 0 {
+				return m.ContextLength
+			}
+			return v
+		}
+		liveCtx := resolveCtx(live.ContextSize)
+		configuredCtx := resolveCtx(cfg.ContextSize)
+
 		configMap := map[string]any{
-			"enabled":         cfg.Enabled,
-			"gpu_layers":      cfg.GPULayers,
-			"context_size":    ctxSize,
-			"threads":         cfg.Threads,
-			"flash_attention": cfg.FlashAttention,
+			"enabled":         live.Enabled,
+			"gpu_layers":      live.GPULayers,
+			"context_size":    liveCtx,
+			"threads":         live.Threads,
+			"flash_attention": live.FlashAttention,
 		}
-		if cfg.TensorSplit != "" {
-			configMap["tensor_split"] = cfg.TensorSplit
+		// Optional string fields: include the key when either side has a
+		// value, so an edit that *clears* the field still shows up as a
+		// pending change rather than silently disappearing.
+		if live.TensorSplit != "" || cfg.TensorSplit != "" {
+			configMap["tensor_split"] = live.TensorSplit
 		}
-		if cfg.KVCacheQuant != "" {
-			configMap["kv_cache_quant"] = cfg.KVCacheQuant
+		if live.KVCacheQuant != "" || cfg.KVCacheQuant != "" {
+			configMap["kv_cache_quant"] = live.KVCacheQuant
 		}
-		if cfg.MmprojPath != "" {
-			configMap["mmproj_path"] = cfg.MmprojPath
+		if live.MmprojPath != "" || cfg.MmprojPath != "" {
+			configMap["mmproj_path"] = live.MmprojPath
+		}
+
+		if hasSnapshot {
+			if cfg.Enabled != live.Enabled {
+				configMap["enabled_pending"] = cfg.Enabled
+			}
+			if cfg.GPULayers != live.GPULayers {
+				configMap["gpu_layers_pending"] = cfg.GPULayers
+			}
+			if liveCtx != configuredCtx {
+				configMap["context_size_pending"] = configuredCtx
+			}
+			if cfg.Threads != live.Threads {
+				configMap["threads_pending"] = cfg.Threads
+			}
+			if cfg.FlashAttention != live.FlashAttention {
+				configMap["flash_attention_pending"] = cfg.FlashAttention
+			}
+			if cfg.TensorSplit != live.TensorSplit {
+				configMap["tensor_split_pending"] = cfg.TensorSplit
+			}
+			if cfg.KVCacheQuant != live.KVCacheQuant {
+				configMap["kv_cache_quant_pending"] = cfg.KVCacheQuant
+			}
+			if cfg.MmprojPath != live.MmprojPath {
+				configMap["mmproj_path_pending"] = cfg.MmprojPath
+			}
 		}
 		info["config"] = configMap
 	}
