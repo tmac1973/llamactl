@@ -40,6 +40,12 @@ type Server struct {
 	bench *benchmark.Store
 	jobs  *benchmark.JobQueue
 	dirtyModels     map[string]bool // models whose config changed since last load
+	// runningConfigs holds a value-copy of each model's launch config at the
+	// time the router last started, so /api/models/{id}/info can report the
+	// live value of any restart-requiring field separately from a config
+	// edit that hasn't been picked up yet (the router reads preset.ini only
+	// at startup). Populated by startRouter, cleared by Stop.
+	runningConfigs map[string]*models.ModelConfig
 }
 
 // SetVersion records the build's version string. main.go calls this with
@@ -47,6 +53,16 @@ type Server struct {
 // "v1.2.3" or "dev-<sha>" depending on the build. Must be called before
 // the first page render.
 func (s *Server) SetVersion(v string) { s.version = v }
+
+// Shutdown releases server-owned resources that outlive the HTTP listener.
+// Today that's the child llama-server router: without this, the cgroup keeps
+// it alive until systemd's TimeoutStopSec fires SIGKILL.
+func (s *Server) Shutdown() {
+	if err := s.process.Stop(); err != nil {
+		// "router not running" is the expected case when nothing was started.
+		slog.Debug("router stop during shutdown", "error", err)
+	}
+}
 
 func NewServer(cfg *config.Config, configPath string) *Server {
 	mon := monitor.New(3 * time.Second)
@@ -63,7 +79,8 @@ func NewServer(cfg *config.Config, configPath string) *Server {
 		process:       process.NewManager(),
 		monitor:       mon,
 		bench:         benchmark.NewStore(cfg.DataDir, builderResolver(bld)),
-		dirtyModels:   make(map[string]bool),
+		dirtyModels:    make(map[string]bool),
+		runningConfigs: make(map[string]*models.ModelConfig),
 	}
 	s.jobs = benchmark.NewJobQueue(s.bench, newJobEnv(s))
 	s.downloader.SetOnComplete(s.onDownloadComplete)

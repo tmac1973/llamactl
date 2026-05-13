@@ -168,8 +168,6 @@ func (s *Server) handleServiceStart(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		// Clear dirty flags — fresh start uses the latest preset.ini
-		s.dirtyModels = make(map[string]bool)
 	}
 	s.handleServiceStatus(w, r)
 }
@@ -179,6 +177,9 @@ func (s *Server) handleServiceStop(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// Nothing is live anymore — drop the snapshot so /info falls back to
+	// reporting just the configured value.
+	s.runningConfigs = make(map[string]*models.ModelConfig)
 	s.handleServiceStatus(w, r)
 }
 
@@ -197,8 +198,6 @@ func (s *Server) handleServiceRestart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	// Clear dirty flags — the router just reloaded with the latest preset.ini
-	s.dirtyModels = make(map[string]bool)
 	s.handleServiceStatus(w, r)
 }
 
@@ -410,12 +409,32 @@ func (s *Server) startRouter() error {
 		slog.Warn("failed to write preset INI", "error", err)
 	}
 
-	return s.process.Start(process.RouterConfig{
+	if err := s.process.Start(process.RouterConfig{
 		BinaryPath: binaryPath,
 		PresetPath: presetPath,
 		ModelsMax:  s.cfg.ModelsMax,
 		Port:       s.cfg.LlamaPort,
-	})
+	}); err != nil {
+		return err
+	}
+
+	// The router has just (re)read preset.ini. Snapshot each model's launch
+	// config so /api/models/{id}/info can report live values for
+	// restart-requiring fields vs. a subsequent edit. Value-copy (not a
+	// shared pointer) because handleUpdateModelConfig mutates the registry's
+	// config struct in place.
+	snapshot := make(map[string]*models.ModelConfig)
+	for _, m := range s.registry.List() {
+		cfg, err := s.registry.GetConfig(m.ID)
+		if err != nil {
+			continue
+		}
+		cp := *cfg
+		snapshot[m.ID] = &cp
+	}
+	s.runningConfigs = snapshot
+	s.dirtyModels = make(map[string]bool)
+	return nil
 }
 
 // handleModelEnable toggles a model's enabled state and updates the preset.
