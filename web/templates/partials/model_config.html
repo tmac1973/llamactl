@@ -173,6 +173,9 @@
                 <dt><strong>Draft Model</strong></dt>
                 <dd>Uses a separate smaller model of the same architecture to propose tokens. Highest and most consistent speedups (1.5-2.5x typical). Requires a compatible model — download one with the same architecture but smaller size (e.g., 0.5B-1B) and it will appear in the dropdown. Uses extra VRAM for the draft model.</dd>
 
+                <dt><strong>MTP (Multi-Token Prediction)</strong></dt>
+                <dd>Self-speculation built into the model — the same GGUF carries an MTP head that drafts tokens for itself, so no separate draft model is needed. Used by Qwen3.6-MTP and DeepSeek-V3-MTP releases. Typical speedup 1.5-2x with zero extra VRAM. <strong>Limitations:</strong> requires the main model to be MTP-enabled (look for "MTP" in the filename), is incompatible with <em>parallel &gt; 1</em>, and does not work with <code>--mmproj</code> vision projectors.</dd>
+
                 <dt><strong>N-gram Simple</strong></dt>
                 <dd>Searches the generation history for matching token patterns and reuses what followed. Zero overhead, no extra VRAM. Works best when the model repeats patterns (code refactoring, structured output). No benefit for entirely novel text.</dd>
 
@@ -228,6 +231,7 @@
             <select name="spec_type">
                 <option value="" {{if eq .Config.SpecType ""}}selected{{end}}>Disabled</option>
                 <option value="draft" {{if eq .Config.SpecType "draft"}}selected{{end}}>Draft Model{{if not .DraftCandidates}} (no compatible models){{end}}</option>
+                <option value="draft-mtp" {{if eq .Config.SpecType "draft-mtp"}}selected{{end}}>MTP (self-speculation)</option>
                 <option value="ngram-simple" {{if eq .Config.SpecType "ngram-simple"}}selected{{end}}>N-gram Simple</option>
                 <option value="ngram-cache" {{if eq .Config.SpecType "ngram-cache"}}selected{{end}}>N-gram Cache</option>
                 <option value="ngram-map-k" {{if eq .Config.SpecType "ngram-map-k"}}selected{{end}}>N-gram Map-K</option>
@@ -269,7 +273,52 @@
         </label>
     </div>
     {{end}}
-    {{if and (ne .Config.SpecType "") (ne .Config.SpecType "draft")}}
+    {{if eq .Config.SpecType "draft"}}
+    <small><strong>Draft model resources</strong> — leave blank to inherit llama-server defaults. Set these when the draft model needs its own GPU offload, context, or cache type.</small>
+    <div class="grid">
+        <label title="Context size for the draft model. Default: inherits from main ctx-size.">
+            Draft Ctx Size
+            <input type="number" name="draft_ctx_size" value="{{if gt .Config.DraftCtxSize 0}}{{.Config.DraftCtxSize}}{{end}}"
+                   min="0" placeholder="Inherit">
+        </label>
+        <label title="Number of draft-model layers to offload to GPU. Default: 0 (CPU only).">
+            Draft GPU Layers
+            <input type="number" name="draft_gpu_layers" value="{{if gt .Config.DraftGPULayers 0}}{{.Config.DraftGPULayers}}{{end}}"
+                   min="0" max="999" placeholder="0">
+        </label>
+        <label title="Comma-separated device list for the draft model (e.g. CUDA0 or CUDA1). Default: same as main model.">
+            Draft Device
+            <input type="text" name="draft_device" value="{{.Config.DraftDevice}}"
+                   placeholder="e.g. CUDA0">
+        </label>
+    </div>
+    <div class="grid">
+        <label title="Keep MoE weights of the first N draft-model layers in CPU memory. Saves draft-model VRAM at the cost of speed.">
+            Draft CPU MoE Layers
+            <input type="number" name="draft_cpu_moe" value="{{if gt .Config.DraftCPUMoE 0}}{{.Config.DraftCPUMoE}}{{end}}"
+                   min="0" placeholder="0">
+        </label>
+        <label title="KV cache quantization for the draft model. Default: inherits from main cache type.">
+            Draft KV Cache Quant
+            <select name="draft_kv_cache_quant">
+                <option value="" {{if eq .Config.DraftKVCacheQuant ""}}selected{{end}}>Inherit</option>
+                <option value="f16" {{if eq .Config.DraftKVCacheQuant "f16"}}selected{{end}}>f16</option>
+                <option value="q8_0" {{if eq .Config.DraftKVCacheQuant "q8_0"}}selected{{end}}>q8_0</option>
+                <option value="q4_0" {{if eq .Config.DraftKVCacheQuant "q4_0"}}selected{{end}}>q4_0</option>
+            </select>
+        </label>
+    </div>
+    {{end}}
+    {{if eq .Config.SpecType "draft-mtp"}}
+    {{if or (gt .Config.Parallel 1) (ne .Config.MmprojPath "")}}
+    <small style="color:var(--pico-del-color)"><strong>⚠ MTP incompatibility:</strong>
+        {{if gt .Config.Parallel 1}}MTP requires parallel = 1 (currently {{.Config.Parallel}}). {{end}}
+        {{if ne .Config.MmprojPath ""}}MTP does not work with an mmproj vision projector. {{end}}
+        The server may fail to start until this is resolved.
+    </small>
+    {{end}}
+    {{end}}
+    {{if and (ne .Config.SpecType "") (ne .Config.SpecType "draft") (ne .Config.SpecType "draft-mtp")}}
     <div class="grid">
         <label title="Length of the n-gram used for lookup in generation history. Default: 12">
             N-gram Lookup Size

@@ -97,13 +97,21 @@ type ModelConfig struct {
 	MmprojPath       string `json:"mmproj_path,omitempty"` // path to mmproj GGUF for vision models
 
 	// Speculative decoding
-	SpecType       string `json:"spec_type,omitempty"`        // "", "draft", "ngram-simple", "ngram-cache", etc.
+	SpecType       string `json:"spec_type,omitempty"`        // "", "draft", "draft-mtp", "ngram-simple", "ngram-cache", etc.
 	DraftModelPath string `json:"draft_model_path,omitempty"` // path to draft model (when spec_type="draft")
 	DraftMax       int    `json:"draft_max,omitempty"`        // max draft tokens per step
 	DraftMin       int    `json:"draft_min,omitempty"`        // min draft tokens per step
 	DraftPMin      string `json:"draft_p_min,omitempty"`      // min probability threshold (string to allow empty=default)
 	NgramSizeN     int    `json:"ngram_size_n,omitempty"`     // n-gram lookup length
 	NgramSizeM     int    `json:"ngram_size_m,omitempty"`     // n-gram draft length
+
+	// Draft model resource overrides (only meaningful when spec_type="draft" —
+	// not used by MTP self-speculation since the draft *is* the main model).
+	DraftCtxSize      int    `json:"draft_ctx_size,omitempty"`       // --ctx-size-draft
+	DraftGPULayers    int    `json:"draft_gpu_layers,omitempty"`     // --gpu-layers-draft
+	DraftDevice       string `json:"draft_device,omitempty"`         // --device-draft
+	DraftCPUMoE       int    `json:"draft_cpu_moe,omitempty"`        // --n-cpu-moe-draft
+	DraftKVCacheQuant string `json:"draft_kv_cache_quant,omitempty"` // --cache-type-{k,v}-draft
 
 	Aliases    []string `json:"aliases,omitempty"` // user-defined friendly names
 	ExtraFlags string   `json:"extra_flags"`
@@ -189,9 +197,47 @@ func (c *ModelConfig) EffectiveFlagsFor(isEmbedding bool) string {
 		// mode-specific flags. Emit the right name based on SpecType.
 		switch c.SpecType {
 		case "draft":
+			// Internal value is still "draft" (legacy config compat) but
+			// llama.cpp renamed the spec-type enum value to "draft-simple"
+			// alongside the introduction of "draft-mtp" and "draft-eagle3".
+			// Without --spec-type, the draft model loads but isn't used —
+			// the default is "none".
+			parts = append(parts, "--spec-type", "draft-simple")
 			if c.DraftModelPath != "" {
 				parts = append(parts, "--model-draft", c.DraftModelPath)
 			}
+			if c.DraftMax > 0 {
+				parts = append(parts, "--spec-draft-n-max", strconv.Itoa(c.DraftMax))
+			}
+			if c.DraftMin > 0 {
+				parts = append(parts, "--spec-draft-n-min", strconv.Itoa(c.DraftMin))
+			}
+			if c.DraftPMin != "" {
+				parts = append(parts, "--spec-draft-p-min", c.DraftPMin)
+			}
+			// Draft model resource overrides. Without these, the draft model
+			// inherits llama-server defaults — which on a large MoE main
+			// model often means no GPU offload for the draft.
+			if c.DraftCtxSize > 0 {
+				parts = append(parts, "--ctx-size-draft", strconv.Itoa(c.DraftCtxSize))
+			}
+			if c.DraftGPULayers > 0 {
+				parts = append(parts, "--gpu-layers-draft", strconv.Itoa(c.DraftGPULayers))
+			}
+			if c.DraftDevice != "" {
+				parts = append(parts, "--device-draft", c.DraftDevice)
+			}
+			if c.DraftCPUMoE > 0 {
+				parts = append(parts, "--n-cpu-moe-draft", strconv.Itoa(c.DraftCPUMoE))
+			}
+			if c.DraftKVCacheQuant != "" {
+				parts = append(parts, "--cache-type-k-draft", c.DraftKVCacheQuant, "--cache-type-v-draft", c.DraftKVCacheQuant)
+			}
+		case "draft-mtp":
+			// MTP is self-speculation: the main GGUF carries the draft
+			// head, so no --model-draft is set and the draft-resource
+			// flags above don't apply. Only the draft sampling knobs do.
+			parts = append(parts, "--spec-type", "draft-mtp")
 			if c.DraftMax > 0 {
 				parts = append(parts, "--spec-draft-n-max", strconv.Itoa(c.DraftMax))
 			}

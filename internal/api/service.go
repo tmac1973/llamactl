@@ -34,6 +34,15 @@ func applySpecDefaults(cfg *models.ModelConfig) {
 		cfg.DraftPMin = "0.75"
 		cfg.NgramSizeN = 0
 		cfg.NgramSizeM = 0
+	case "draft-mtp":
+		// unsloth's MTP cookbook uses --spec-draft-n-max 6 for Qwen3.6.
+		// Leave min/p-min at llama.cpp defaults — MTP heads have their
+		// own acceptance logic and the broader knobs rarely help.
+		cfg.DraftMax = 6
+		cfg.DraftMin = 0
+		cfg.DraftPMin = ""
+		cfg.NgramSizeN = 0
+		cfg.NgramSizeM = 0
 	case "ngram-simple", "ngram-cache", "ngram-map-k", "ngram-map-k4v":
 		cfg.DraftMax = 16
 		cfg.DraftMin = 0
@@ -734,6 +743,25 @@ func (s *Server) handleUpdateModelConfig(w http.ResponseWriter, r *http.Request)
 		} else {
 			cfg.NgramSizeM = 0
 		}
+
+		// Draft model resource overrides (spec_type=draft only).
+		if v, err := strconv.Atoi(r.FormValue("draft_ctx_size")); err == nil && v > 0 {
+			cfg.DraftCtxSize = v
+		} else {
+			cfg.DraftCtxSize = 0
+		}
+		if v, err := strconv.Atoi(r.FormValue("draft_gpu_layers")); err == nil && v > 0 {
+			cfg.DraftGPULayers = v
+		} else {
+			cfg.DraftGPULayers = 0
+		}
+		cfg.DraftDevice = strings.TrimSpace(r.FormValue("draft_device"))
+		if v, err := strconv.Atoi(r.FormValue("draft_cpu_moe")); err == nil && v > 0 {
+			cfg.DraftCPUMoE = v
+		} else {
+			cfg.DraftCPUMoE = 0
+		}
+		cfg.DraftKVCacheQuant = r.FormValue("draft_kv_cache_quant")
 
 		// Populate recommended defaults only when the user actually switched
 		// modes — preserves any custom values they tuned within an existing

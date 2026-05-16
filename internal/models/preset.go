@@ -144,9 +144,37 @@ func writeConfigParams(b *strings.Builder, cfg *ModelConfig, isEmbedding bool) {
 		// mode-specific flags. Emit the right name based on SpecType.
 		switch cfg.SpecType {
 		case "draft":
+			b.WriteString("spec-type = draft-simple\n")
 			if cfg.DraftModelPath != "" {
 				b.WriteString(fmt.Sprintf("model-draft = %s\n", cfg.DraftModelPath))
 			}
+			if cfg.DraftMax > 0 {
+				b.WriteString(fmt.Sprintf("spec-draft-n-max = %d\n", cfg.DraftMax))
+			}
+			if cfg.DraftMin > 0 {
+				b.WriteString(fmt.Sprintf("spec-draft-n-min = %d\n", cfg.DraftMin))
+			}
+			if cfg.DraftPMin != "" {
+				b.WriteString(fmt.Sprintf("spec-draft-p-min = %s\n", cfg.DraftPMin))
+			}
+			if cfg.DraftCtxSize > 0 {
+				b.WriteString(fmt.Sprintf("ctx-size-draft = %d\n", cfg.DraftCtxSize))
+			}
+			if cfg.DraftGPULayers > 0 {
+				b.WriteString(fmt.Sprintf("gpu-layers-draft = %d\n", cfg.DraftGPULayers))
+			}
+			if cfg.DraftDevice != "" {
+				b.WriteString(fmt.Sprintf("device-draft = %s\n", cfg.DraftDevice))
+			}
+			if cfg.DraftCPUMoE > 0 {
+				b.WriteString(fmt.Sprintf("n-cpu-moe-draft = %d\n", cfg.DraftCPUMoE))
+			}
+			if cfg.DraftKVCacheQuant != "" {
+				b.WriteString(fmt.Sprintf("cache-type-k-draft = %s\n", cfg.DraftKVCacheQuant))
+				b.WriteString(fmt.Sprintf("cache-type-v-draft = %s\n", cfg.DraftKVCacheQuant))
+			}
+		case "draft-mtp":
+			b.WriteString("spec-type = draft-mtp\n")
 			if cfg.DraftMax > 0 {
 				b.WriteString(fmt.Sprintf("spec-draft-n-max = %d\n", cfg.DraftMax))
 			}
