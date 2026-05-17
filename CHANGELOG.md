@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.4.0](https://github.com/tmac1973/llama-toolchest/compare/v2.3.0...v2.4.0) (2026-05-17)
+
+
+### Features
+
+* **spec:** MTP + draft-resource flags, fix draft mode --spec-type ([a896a75](https://github.com/tmac1973/llama-toolchest/commit/a896a75cdf5bae89d79a07f7ad65c2cc710d28c7))
+* **spec:** support MTP, draft-resource flags, and refresh draft mode for current llama.cpp ([b33f7e8](https://github.com/tmac1973/llama-toolchest/commit/b33f7e8daaa8f72abf38a30a427776f6b45046c1))
+
 ## [2.3.0](https://github.com/tmac1973/llama-toolchest/compare/v2.2.3...v2.3.0) (2026-05-13)
 
 
